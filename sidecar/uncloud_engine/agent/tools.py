@@ -538,3 +538,107 @@ async def _generate_image(args: dict[str, Any]) -> str:
     if job.status != "done":
         raise RuntimeError("Image generation timed out")
     return f"Generated image with {model.name}, saved to: {job.output_path}"
+
+
+# ---------------------------------------------------------------- tool sets
+
+# Every tool description goes into the planner's prompt on every call, so the
+# full set is a real cost, not just a capability. A 27B copes with 31 options;
+# a small model on a laptop plans measurably worse with 31 than with 10. Groups
+# let the surface match the model actually doing the planning.
+TOOL_GROUPS: dict[str, dict] = {
+    "files": {
+        "label": "Files",
+        "note": "Read, write, edit, list, glob and grep.",
+        "ids": {"fs_read", "fs_write", "fs_list", "fs_edit", "fs_glob", "fs_grep"},
+    },
+    "shell": {
+        "label": "Shell",
+        "note": "Run commands.",
+        "ids": {"shell"},
+    },
+    "web": {
+        "label": "Web",
+        "note": "Search and read pages as text.",
+        "ids": {"web_search", "web_read", "http_fetch"},
+    },
+    "memory": {
+        "label": "Plan and memory",
+        "note": "Write a plan, track step status, remember facts across a run.",
+        "ids": {"plan_set", "plan_show", "plan_update", "note_save", "note_recall"},
+    },
+    "browser": {
+        "label": "Browser",
+        "note": "Drive a real browser by visible text: open, click, type, screenshot.",
+        "ids": {"browser_open", "browser_read", "browser_links",
+                "browser_click", "browser_type", "browser_screenshot"},
+    },
+    "devtools": {
+        "label": "Developer tools",
+        "note": "Console, network requests and JavaScript evaluation.",
+        "ids": {"browser_console", "browser_network", "browser_eval"},
+    },
+    "pointer": {
+        "label": "Pointer control",
+        "note": "Move, click, drag and scroll at pixel coordinates.",
+        "ids": {"browser_move", "browser_click_at", "browser_drag", "browser_scroll_at"},
+    },
+    "vision": {
+        "label": "Vision",
+        "note": "Look at images and capture the screen. Needs a vision model.",
+        "ids": {"see_image", "screen_capture"},
+    },
+    "media": {
+        "label": "Image generation",
+        "note": "Generate pictures with a local diffusion model.",
+        "ids": {"generate_image"},
+    },
+}
+
+# Chosen by model size on disk, as a rough stand-in for how much planning the
+# model can carry. Deliberately conservative: a confused plan wastes far more
+# time than a missing tool, and the user can always switch a group on.
+_AUTO_TIERS = [
+    (8.0,  ["files", "shell", "web"]),
+    (20.0, ["files", "shell", "web", "memory", "browser", "vision"]),
+]
+_AUTO_FULL = list(TOOL_GROUPS)
+
+
+def auto_groups(model_path: str | None) -> list[str]:
+    """Pick a tool set from the loaded model's size on disk."""
+    size_gb = 0.0
+    if model_path:
+        p = Path(model_path)
+        try:
+            if p.is_file():
+                size_gb = p.stat().st_size / (1024 ** 3)
+            elif p.is_dir():
+                size_gb = sum(
+                    f.stat().st_size for f in p.rglob("*") if f.is_file()
+                ) / (1024 ** 3)
+        except OSError:
+            size_gb = 0.0
+    for ceiling, groups in _AUTO_TIERS:
+        if size_gb and size_gb < ceiling:
+            return list(groups)
+    return list(_AUTO_FULL)
+
+
+def tools_for(groups: list[str] | None) -> list[dict]:
+    """The specs a planner should see. None means every tool."""
+    if not groups:
+        return list(TOOL_SPECS)
+    allowed: set[str] = set()
+    for g in groups:
+        spec = TOOL_GROUPS.get(g)
+        if spec:
+            allowed |= spec["ids"]
+    return [t for t in TOOL_SPECS if t["id"] in allowed]
+
+
+def group_summary() -> list[dict]:
+    return [
+        {"id": g, "label": v["label"], "note": v["note"], "count": len(v["ids"])}
+        for g, v in TOOL_GROUPS.items()
+    ]

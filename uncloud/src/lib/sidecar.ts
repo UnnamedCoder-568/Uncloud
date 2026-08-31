@@ -497,3 +497,26 @@ export async function startRuntime(): Promise<SidecarInfo> {
 export async function setKeepAwake(enabled: boolean) {
   return apiPost('/api/settings/keep_awake', { enabled });
 }
+
+export interface ToolGroup {
+  id: string;
+  label: string;
+  note: string;
+  count: number;
+}
+
+export interface AgentTools {
+  groups: ToolGroup[];
+  /** null means the set is chosen automatically from the loaded model's size. */
+  configured: string[] | null;
+  resolved: string[];
+  active_count: number;
+}
+
+export async function getAgentTools() {
+  return api<AgentTools>('/api/agent/tools');
+}
+
+export async function setAgentToolGroups(groups: string[] | null) {
+  return apiPost('/api/agent/tool_groups', { groups });
+}

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
-import { setModelsDir, setDeviceAccess, setHfToken, getSettings, setKeepAwake} from '../lib/sidecar';
-import type { Settings } from '../lib/sidecar';
+import { setModelsDir, setDeviceAccess, setHfToken, getSettings, setKeepAwake, getAgentTools, setAgentToolGroups} from '../lib/sidecar';
+import type { Settings, AgentTools } from '../lib/sidecar';
 
 export default function SettingsView() {
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -37,6 +37,24 @@ export default function SettingsView() {
     }
     await setDeviceAccess(next);
     setSettings({ ...settings, agent_device_access: next });
+  }
+
+  const [tools, setTools] = useState<AgentTools | null>(null);
+
+  useEffect(() => {
+    getAgentTools().then(setTools).catch(() => setTools(null));
+  }, []);
+
+  async function applyGroups(next: string[] | null) {
+    await setAgentToolGroups(next);
+    setTools(await getAgentTools());
+  }
+
+  function toggleGroup(id: string) {
+    if (!tools) return;
+    const base = tools.resolved;
+    const next = base.includes(id) ? base.filter((g) => g !== id) : [...base, id];
+    applyGroups(next);
   }
 
   async function toggleKeepAwake() {
@@ -104,6 +122,65 @@ export default function SettingsView() {
             </button>
           </div>
         </section>
+
+        {tools && (
+          <section className="card p-4">
+            <div className="flex items-start justify-between gap-4 mb-3">
+              <div>
+                <h2 className="text-sm mb-1">Agent tools</h2>
+                <p className="text-[11px] text-[var(--text-faint)] max-w-sm">
+                  Every tool's description goes into the planner's prompt, so a smaller
+                  model plans better against fewer of them. Left automatic, the set is
+                  chosen from the loaded model's size.
+                </p>
+              </div>
+              <span className="text-[11px] text-[var(--text-dim)] tabular-nums shrink-0">
+                {tools.active_count} active
+              </span>
+            </div>
+
+            <button
+              onClick={() => applyGroups(tools.configured === null ? tools.resolved : null)}
+              className={`w-full mb-3 text-[11px] px-3 py-2 rounded-lg transition ${
+                tools.configured === null
+                  ? 'accent-bar text-white'
+                  : 'bg-[var(--bg-inset)] text-[var(--text-dim)] hover:text-white'
+              }`}
+            >
+              {tools.configured === null ? 'Automatic — matched to the model' : 'Use automatic'}
+            </button>
+
+            <div className="flex flex-col gap-1.5">
+              {tools.groups.map((g) => {
+                const on = tools.resolved.includes(g.id);
+                return (
+                  <button
+                    key={g.id}
+                    onClick={() => toggleGroup(g.id)}
+                    className={`flex items-start gap-3 text-left px-3 py-2 rounded-lg transition ${
+                      on ? 'bg-[var(--bg-raised)]' : 'bg-transparent hover:bg-[var(--bg-raised)]/50'
+                    }`}
+                  >
+                    <span
+                      className={`mt-0.5 w-3.5 h-3.5 rounded shrink-0 ${
+                        on ? 'accent-bar' : 'border border-[var(--border)]'
+                      }`}
+                    />
+                    <span className="min-w-0">
+                      <span className="text-xs block">
+                        {g.label}
+                        <span className="text-[var(--text-faint)]"> · {g.count}</span>
+                      </span>
+                      <span className="text-[10px] text-[var(--text-faint)] block leading-relaxed">
+                        {g.note}
+                      </span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        )}
 
         <section className="card p-4">
           <h2 className="text-sm mb-1">Hugging Face token</h2>
