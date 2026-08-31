@@ -28,6 +28,43 @@ class CatalogEntry:
 
 
 CATALOG: list[CatalogEntry] = [
+    # ---- Small and current: the point of these is fitting comfortably ----
+    CatalogEntry(
+        id="z-image-turbo-mlx",
+        name="Z-Image Turbo (MLX)",
+        category="image", engine="mflux",
+        repo="Tongyi-MAI/Z-Image-Turbo",
+        size_gb=12.0,
+        description="6B model reaching FLUX-class photorealism in 8 steps. A third the "
+                    "size of Krea 2 Turbo, so it loads in a fraction of the time.",
+        tags=["fast", "recommended", "apple-silicon"],
+        mflux_cli="mflux-generate-z-image",
+        note="Quantise to 6-bit and this sits near 4GB — the lightest capable image "
+             "model here by a wide margin.",
+    ),
+    CatalogEntry(
+        id="flux2-klein-9b-uncensored-encoder",
+        name="FLUX.2 Klein 9B — Uncensored Text Encoder",
+        category="component", engine="text-encoder",
+        repo="ponpoke/flux2-klein-9b-uncensored-text-encoder",
+        size_gb=4.7,
+        description="Drop-in replacement for Klein's Qwen3 text encoder. Klein's "
+                    "restraint lives in that encoder, so swapping it is what actually "
+                    "changes what the model will render — and it is 4.7GB against 15GB.",
+        tags=["uncensored"],
+        note="A component, not a model. Pair it with FLUX.2 Klein 9B.",
+    ),
+    CatalogEntry(
+        id="flux2-klein-4b-mlx",
+        name="FLUX.2 Klein 4B (MLX)",
+        category="image", engine="mflux",
+        repo="black-forest-labs/FLUX.2-klein-4B",
+        size_gb=9.0,
+        description="The small Klein. Less capable than the 9B on complex scenes, but "
+                    "less than half the memory.",
+        tags=["fast", "apple-silicon"],
+        mflux_cli="mflux-generate-flux2-klein",
+    ),
     # ---- Text: general purpose, GGUF (llama.cpp, portable, CPU/Metal) ----
     CatalogEntry(
         id="llama-3.1-8b-instruct-gguf",

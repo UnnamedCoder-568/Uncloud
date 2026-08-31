@@ -20,6 +20,7 @@ _VARIANTS: dict[str, tuple[str, str, str]] = {
     "mflux-generate-krea2": ("mflux.models.krea2", "Krea2", "krea2"),
     "mflux-generate": ("mflux.models.flux.variants.txt2img.flux", "Flux1", "dev"),
     "mflux-generate-flux2-klein": ("mflux.models.flux2", "Flux2Klein", "flux2_klein_9b"),
+    "mflux-generate-z-image": ("mflux.models.z_image", "ZImageTurbo", "z_image_turbo"),
 }
 
 # Editing variants take a reference image and have their own classes; they stay
