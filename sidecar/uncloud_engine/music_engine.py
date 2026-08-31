@@ -7,8 +7,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 
-OUTPUT_DIR = Path.home() / ".uncloud" / "outputs" / "music"
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
 
 # Logic Pro imports either happily; 44.1kHz/24-bit is the usual session default.
 SAMPLE_RATES = [44100, 48000, 96000]
@@ -23,6 +22,7 @@ QUALITY_PRESETS = {"draft": 4, "standard": 8, "high": 16, "max": 32}
 STEM_NAMES = ("drums", "bass", "vocals", "other")
 
 
+from .config import output_dir_for
 from .power import keep_awake
 
 
@@ -154,7 +154,7 @@ class MusicEngine:
             )
 
         job.stage = "composing"
-        work_dir = OUTPUT_DIR / job.id
+        work_dir = output_dir_for("music") / job.id
         work_dir.mkdir(parents=True, exist_ok=True)
 
         cfg = {
@@ -189,7 +189,7 @@ class MusicEngine:
         if produced is None:
             produced = self._locate_audio(work_dir)
         job.stage = f"writing {audio_format}"
-        dest = OUTPUT_DIR / f"{job.id}.{audio_format}"
+        dest = output_dir_for("music") / f"{job.id}.{audio_format}"
         self._transcode(produced, dest, sample_rate, bit_depth, audio_format)
         return str(dest)
 

@@ -50,6 +50,8 @@ export interface Settings {
   onboarded: boolean;
   agent_device_access: boolean;
   keep_awake: boolean;
+  output_dir: string;
+  output_dir_is_default: boolean;
   hf_token_set: boolean;
 }
 
@@ -616,4 +618,8 @@ export async function fetchVideoBlobUrl(id: string): Promise<string> {
   });
   if (!resp.ok) throw new Error(`Failed to fetch video: ${resp.status}`);
   return URL.createObjectURL(await resp.blob());
+}
+
+export async function setOutputDir(path: string) {
+  return apiPost<{ ok: boolean; output_dir: string }>('/api/settings/output_dir', { path });
 }

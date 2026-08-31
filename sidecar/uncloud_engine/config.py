@@ -83,6 +83,27 @@ class Settings:
         self._save()
 
     @property
+    def output_dir(self) -> Path:
+        """Where generated work is written.
+
+        Defaults inside the config folder only because something has to work
+        before the user has chosen; a dotfolder is a bad home for images and
+        audio a person will want to open, send and keep, so this is meant to be
+        pointed somewhere real.
+        """
+        path = self._data.get("output_dir")
+        return Path(path) if path else CONFIG_DIR / "outputs"
+
+    def set_output_dir(self, path: str) -> None:
+        self._data["output_dir"] = path
+        Path(path).mkdir(parents=True, exist_ok=True)
+        self._save()
+
+    @property
+    def output_dir_is_default(self) -> bool:
+        return not self._data.get("output_dir")
+
+    @property
     def keep_awake(self) -> bool:
         """Whether to stop the machine sleeping while a job runs.
 
@@ -111,3 +132,15 @@ class Settings:
 
 
 settings = Settings()
+
+
+def output_dir_for(kind: str = "") -> Path:
+    """Resolve the output folder at call time.
+
+    Read live rather than captured at import, so changing the folder in
+    Settings takes effect without restarting the engine.
+    """
+    base = settings.output_dir
+    target = base / kind if kind else base
+    target.mkdir(parents=True, exist_ok=True)
+    return target

@@ -6,8 +6,7 @@ import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
-OUTPUT_DIR = Path.home() / ".uncloud" / "outputs" / "narration"
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
 
 VOICES_DIR = Path.home() / ".uncloud" / "voices"
 VOICES_DIR.mkdir(parents=True, exist_ok=True)
@@ -283,7 +282,7 @@ class NarrationEngine:
             if voice and voice.sample_path:
                 voice_sample = voice.sample_path
 
-        dest = OUTPUT_DIR / f"{job.id}.{audio_format}"
+        dest = output_dir_for("narration") / f"{job.id}.{audio_format}"
         cfg = {
             "model_dir": model_dir,
             "text": text,
