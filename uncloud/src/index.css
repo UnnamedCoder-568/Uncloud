@@ -1,0 +1,121 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import "tailwindcss";
+
+:root {
+  --bg: #0a0a0c;
+  --bg-raised: #111114;
+  --bg-inset: #08080a;
+  --border: #232329;
+  --border-soft: #1a1a1f;
+  --text: #e8e8ec;
+  --text-dim: #8b8b96;
+  --text-faint: #55555f;
+
+  --sans: 'Inter', system-ui, sans-serif;
+  --mono: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+
+  --grad: linear-gradient(90deg, #ff5f6d, #ffc371, #6ee7b7, #60a5fa, #c084fc);
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #2a2a31; border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: #38383f; }
+
+.font-mono { font-family: var(--mono); }
+
+/* Rainbow-underglow pill button, matching the reference style */
+.grad-button {
+  position: relative;
+  font-family: var(--sans);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: #fff;
+  background: #0d0d10;
+  border-radius: 999px;
+  padding: 14px 36px;
+  border: 1px solid #29292f;
+  cursor: pointer;
+  transition: transform 0.15s ease, border-color 0.15s ease;
+  isolation: isolate;
+}
+.grad-button::before {
+  content: "";
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  bottom: -1px;
+  height: 2px;
+  background: var(--grad);
+  border-radius: 999px;
+  filter: blur(0.5px);
+}
+.grad-button::after {
+  content: "";
+  position: absolute;
+  left: 15%;
+  right: 15%;
+  bottom: -14px;
+  height: 28px;
+  background: var(--grad);
+  filter: blur(18px);
+  opacity: 0.55;
+  z-index: -1;
+  border-radius: 999px;
+}
+.grad-button:hover { transform: translateY(-1px); border-color: #3a3a42; }
+.grad-button:active { transform: translateY(0); }
+.grad-button:disabled { opacity: 0.5; cursor: default; transform: none; }
+
+.grad-text {
+  background: var(--grad);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.card {
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+}
+
+.animate-in {
+  animation: fade-up 0.4s ease both;
+}
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.spinner {
+  width: 14px; height: 14px;
+  border: 2px solid #2a2a31;
+  border-top-color: var(--text-dim);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Wordmark cog — also the app's loading spinner, so the brand mark does double duty. */
+@keyframes uncloud-cog {
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  [style*="uncloud-cog"] { animation: none !important; }
+}

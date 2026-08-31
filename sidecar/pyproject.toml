@@ -1,0 +1,27 @@
+[project]
+name = "astro-engine"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "accelerate>=1.14.0",
+    "demucs>=4.0.1",
+    "diffusers>=0.39.0",
+    "fastapi>=0.141.1",
+    "faster-whisper>=1.2.1",
+    "httpx>=0.28.1",
+    "huggingface-hub>=1.28.0",
+    "kokoro>=0.9.4",
+    "mflux>=0.19.0 ; platform_machine == 'arm64' and sys_platform == 'darwin'",
+    "mlx-lm>=0.28 ; platform_machine == 'arm64' and sys_platform == 'darwin'",
+    "mlx-vlm>=0.4.4 ; platform_machine == 'arm64' and sys_platform == 'darwin'",
+    "playwright>=1.62.0",
+    "pydantic>=2.13.4",
+    "python-multipart>=0.0.32",
+    "soundfile>=0.14.0",
+    "torch>=2.13.0",
+    "trafilatura>=2.2.0",
+    "uvicorn[standard]>=0.52.3",
+    "websockets>=17.0.1",
+]

@@ -1,0 +1,136 @@
+from __future__ import annotations
+
+import asyncio
+import shutil
+import socket
+import subprocess
+import sys
+from dataclasses import dataclass
+
+import httpx
+
+LLAMA_SERVER_BIN = shutil.which("llama-server")
+
+
+def _free_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+@dataclass
+class ActiveEngine:
+    model_path: str
+    engine: str  # gguf | mlx
+    port: int
+    process: subprocess.Popen
+
+    @property
+    def base_url(self) -> str:
+        return f"http://127.0.0.1:{self.port}"
+
+
+class EngineManager:
+    """Owns at most one running text-inference backend at a time.
+
+    Both llama.cpp and mlx-lm expose an OpenAI-compatible /v1/chat/completions
+    endpoint, so once a backend is up the rest of the app talks one dialect.
+    """
+
+    def __init__(self) -> None:
+        self.active: ActiveEngine | None = None
+        self._lock = asyncio.Lock()
+
+    async def start(self, model_path: str, engine: str) -> ActiveEngine:
+        async with self._lock:
+            if self.active and self.active.model_path == model_path:
+                return self.active
+            if self.active:
+                self._stop_process(self.active)
+
+            port = _free_port()
+            if engine == "gguf":
+                proc = self._spawn_llama_cpp(model_path, port)
+            elif engine == "mlx":
+                proc = self._spawn_mlx(model_path, port)
+            elif engine == "mlx-vlm":
+                proc = self._spawn_mlx_vlm(model_path, port)
+            else:
+                raise ValueError(f"No text-inference launcher for engine: {engine}")
+
+            active = ActiveEngine(model_path=model_path, engine=engine, port=port, process=proc)
+            await self._wait_healthy(active)
+            self.active = active
+            return active
+
+    def _spawn_llama_cpp(self, model_path: str, port: int) -> subprocess.Popen:
+        if not LLAMA_SERVER_BIN:
+            raise RuntimeError("llama-server not found on PATH. Install with `brew install llama.cpp`.")
+        return subprocess.Popen(
+            [LLAMA_SERVER_BIN, "-m", model_path, "--port", str(port), "--host", "127.0.0.1",
+             "-ngl", "999", "-c", "8192"],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        )
+
+    def _spawn_mlx(self, model_path: str, port: int) -> subprocess.Popen:
+        return subprocess.Popen(
+            [sys.executable, "-m", "mlx_lm", "server", "--model", model_path,
+             "--port", str(port), "--host", "127.0.0.1"],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        )
+
+    def _spawn_mlx_vlm(self, model_path: str, port: int) -> subprocess.Popen:
+        """Vision-language models carry an image encoder alongside the text stack,
+        which mlx_lm's server can't drive — mlx_vlm serves the same OpenAI-shaped
+        API but accepts image content parts in messages."""
+        return subprocess.Popen(
+            [sys.executable, "-m", "mlx_vlm.server", "--model", model_path,
+             "--port", str(port), "--host", "127.0.0.1"],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        )
+
+    @property
+    def supports_vision(self) -> bool:
+        return self.active is not None and self.active.engine == "mlx-vlm"
+
+    async def _wait_healthy(self, active: ActiveEngine, timeout: float = 120.0) -> None:
+        deadline = asyncio.get_event_loop().time() + timeout
+        async with httpx.AsyncClient() as client:
+            while asyncio.get_event_loop().time() < deadline:
+                if active.process.poll() is not None:
+                    out = active.process.stdout.read().decode(errors="ignore") if active.process.stdout else ""
+                    raise RuntimeError(f"Engine process exited early:\n{out[-2000:]}")
+                try:
+                    r = await client.get(f"{active.base_url}/v1/models", timeout=2.0)
+                    if r.status_code < 500:
+                        return
+                except httpx.HTTPError:
+                    pass
+                await asyncio.sleep(0.5)
+        raise RuntimeError("Timed out waiting for the inference engine to become healthy.")
+
+    def _stop_process(self, active: ActiveEngine) -> None:
+        try:
+            active.process.terminate()
+            active.process.wait(timeout=5)
+        except Exception:  # noqa: BLE001
+            try:
+                active.process.kill()
+            except Exception:  # noqa: BLE001
+                pass
+
+    def stop(self) -> None:
+        if self.active:
+            self._stop_process(self.active)
+            self.active = None
+
+    def status(self) -> dict:
+        if not self.active:
+            return {"running": False}
+        return {
+            "running": True, "model_path": self.active.model_path,
+            "engine": self.active.engine, "port": self.active.port,
+        }
+
+
+engine_manager = EngineManager()

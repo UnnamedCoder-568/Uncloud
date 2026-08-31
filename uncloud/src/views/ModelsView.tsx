@@ -1,0 +1,163 @@
+import { useEffect, useState } from 'react';
+import { Download, HardDrive, Loader2, CheckCircle2, XCircle } from 'lucide-react';
+import { getCatalog, getLibrary, startDownload, listDownloads } from '../lib/sidecar';
+import type { CatalogEntry, LocalModel, DownloadState } from '../lib/sidecar';
+import { formatBytes, formatSpeed } from '../lib/format';
+
+const CATEGORIES: { id: string; label: string }[] = [
+  { id: 'text', label: 'Text' },
+  { id: 'image', label: 'Image' },
+  { id: 'video', label: 'Video' },
+  { id: 'voice-stt', label: 'Speech-to-Text' },
+  { id: 'voice-tts', label: 'Text-to-Speech' },
+];
+
+export default function ModelsView() {
+  const [category, setCategory] = useState('text');
+  const [catalog, setCatalog] = useState<CatalogEntry[]>([]);
+  const [library, setLibrary] = useState<LocalModel[]>([]);
+  const [downloads, setDownloads] = useState<DownloadState[]>([]);
+  const [onlyUncensored, setOnlyUncensored] = useState(false);
+
+  async function refresh() {
+    const [c, l, d] = await Promise.all([getCatalog(), getLibrary(), listDownloads()]);
+    setCatalog(c);
+    setLibrary(l);
+    setDownloads(d);
+  }
+
+  useEffect(() => {
+    refresh();
+    const t = setInterval(async () => setDownloads(await listDownloads()), 1200);
+    return () => clearInterval(t);
+  }, []);
+
+  const activeDownloadFor = (catalogId: string) =>
+    downloads.find((d) => d.catalog_id === catalogId && (d.status === 'downloading' || d.status === 'pending'));
+
+  async function download(entry: CatalogEntry) {
+    await startDownload(entry.id);
+    refresh();
+  }
+
+  const filteredCatalog = catalog
+    .filter((e) => e.category === category)
+    .filter((e) => !onlyUncensored || e.tags.includes('uncensored'));
+  const filteredLocal = library.filter((m) => m.category === category);
+
+  return (
+    <div className="h-full overflow-y-auto">
+      <header className="sticky top-0 bg-[var(--bg)]/90 backdrop-blur border-b border-[var(--border-soft)] px-6 pt-5 pb-3 z-10">
+        <h1 className="text-2xl font-semibold mb-4">Models</h1>
+        <div className="flex items-center justify-between">
+          <div className="flex gap-1 bg-[var(--bg-inset)] p-1 rounded-lg">
+            {CATEGORIES.map((c) => (
+              <button
+                key={c.id}
+                onClick={() => setCategory(c.id)}
+                className={`px-3 py-1.5 rounded-md text-xs transition ${
+                  category === c.id ? 'bg-[var(--bg-raised)] text-white' : 'text-[var(--text-faint)] hover:text-[var(--text-dim)]'
+                }`}
+              >
+                {c.label}
+              </button>
+            ))}
+          </div>
+          {category === 'text' && (
+            <label className="flex items-center gap-2 text-xs text-[var(--text-dim)] cursor-pointer select-none">
+              <input type="checkbox" checked={onlyUncensored} onChange={(e) => setOnlyUncensored(e.target.checked)} />
+              Uncensored only
+            </label>
+          )}
+        </div>
+      </header>
+
+      <div className="px-6 py-5">
+        {filteredLocal.length > 0 && (
+          <section className="mb-8">
+            <h2 className="text-[10px] uppercase tracking-[0.18em] text-[var(--text-faint)] mb-3">
+              Installed
+            </h2>
+            <div className="grid grid-cols-2 gap-3">
+              {filteredLocal.map((m) => (
+                <div key={m.id} className="card p-4 flex items-start gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-[var(--bg-inset)] flex items-center justify-center shrink-0">
+                    <HardDrive size={15} className="text-[var(--text-dim)]" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-sm truncate">{m.name}</div>
+                    <div className="text-[11px] text-[var(--text-faint)] font-mono mt-0.5">
+                      {m.engine.toUpperCase()} · {formatBytes(m.size_gb * 1024 ** 3)}
+                    </div>
+                    {m.note && <div className="text-[11px] text-amber-400/80 mt-1">{m.note}</div>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        <section>
+          <h2 className="text-[10px] uppercase tracking-[0.18em] text-[var(--text-faint)] mb-3">Download</h2>
+          <div className="grid grid-cols-2 gap-3">
+            {filteredCatalog.map((entry) => {
+              const active = activeDownloadFor(entry.id);
+              const done = downloads.find((d) => d.catalog_id === entry.id && d.status === 'done');
+              return (
+                <div key={entry.id} className="card p-4">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="text-sm">{entry.name}</div>
+                      <div className="text-[11px] text-[var(--text-faint)] mt-0.5">{entry.description}</div>
+                    </div>
+                    <div className="flex flex-wrap gap-1 justify-end shrink-0">
+                      {entry.tags.map((t) => (
+                        <span
+                          key={t}
+                          className={`text-[9px] px-1.5 py-0.5 rounded uppercase tracking-wide ${
+                            t === 'uncensored' ? 'bg-rose-950/60 text-rose-300' : 'bg-[var(--bg-inset)] text-[var(--text-faint)]'
+                          }`}
+                        >
+                          {t}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between mt-3">
+                    <span className="text-[11px] font-mono text-[var(--text-faint)]">
+                      {entry.size_gb.toFixed(1)} GB{entry.context_length ? ` · ${(entry.context_length / 1000).toFixed(0)}k ctx` : ''}
+                    </span>
+
+                    {entry.installed || done ? (
+                      <span className="flex items-center gap-1 text-[11px] text-emerald-400">
+                        <CheckCircle2 size={13} /> Installed
+                      </span>
+                    ) : active ? (
+                      <div className="flex items-center gap-2 text-[11px] text-[var(--text-dim)]">
+                        <Loader2 size={13} className="animate-spin" />
+                        {active.percent.toFixed(0)}%{active.speed_bytes_s > 0 ? ` · ${formatSpeed(active.speed_bytes_s)}` : ''}
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => download(entry)}
+                        className="flex items-center gap-1.5 text-[11px] bg-white text-black px-3 py-1.5 rounded-full hover:bg-white/90 transition"
+                      >
+                        <Download size={12} /> Download
+                      </button>
+                    )}
+                  </div>
+                  {downloads.find((d) => d.catalog_id === entry.id && d.status === 'error') && (
+                    <div className="flex items-center gap-1 text-[11px] text-rose-400 mt-2">
+                      <XCircle size={12} /> {downloads.find((d) => d.catalog_id === entry.id)?.error}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}
