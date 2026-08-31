@@ -19,6 +19,7 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 MAX_EDIT_PIXELS = 1024 * 1024
 
 
+from .output_check import verify_image
 from .power import keep_awake
 
 
@@ -124,6 +125,9 @@ class ImageEngine:
                     )
                 else:
                     raise ValueError(f"No image pipeline for engine: {engine}")
+                # Check before claiming success: a flat grey rectangle is a
+                # failure, not a picture, and must not be handed over as one.
+                verify_image(out)
                 job.output_path = out
                 job.status = "done"
         except Exception as exc:  # noqa: BLE001 - surface any generation failure to the UI
@@ -191,6 +195,7 @@ class ImageEngine:
                 cmd += ["--height", str(height)]
 
             await self._stream_mflux(job, cmd, out_path, mflux_cli)
+            verify_image(out_path, what="edited image")
             job.output_path = str(out_path)
             job.status = "done"
         except Exception as exc:  # noqa: BLE001 - surface any failure to the UI
