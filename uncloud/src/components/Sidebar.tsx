@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import Wordmark from './Wordmark';
-import { MessageSquare, Boxes, Workflow, ImageIcon, Clapperboard, Mic, Music, Settings, HelpCircle, ChevronLeft, ChevronRight } from 'lucide-react';
+import { MessageSquare, Boxes, Workflow, ImageIcon, Clapperboard, Mic, Music, Settings, HelpCircle, ChevronLeft, ChevronRight, FolderOpen} from 'lucide-react';
 
-export type View = 'chat' | 'models' | 'agent' | 'image' | 'video' | 'music' | 'voice' | 'guide' | 'settings';
+export type View = 'chat' | 'models' | 'agent' | 'image' | 'video' | 'music' | 'voice' | 'outputs' | 'guide' | 'settings';
 
 const items: { id: View; label: string; icon: React.ComponentType<{ size?: number; strokeWidth?: number; className?: string }> }[] = [
   { id: 'chat', label: 'Chat', icon: MessageSquare },
@@ -12,6 +12,7 @@ const items: { id: View; label: string; icon: React.ComponentType<{ size?: numbe
   { id: 'video', label: 'Video', icon: Clapperboard },
   { id: 'music', label: 'Music', icon: Music },
   { id: 'voice', label: 'Voice', icon: Mic },
+  { id: 'outputs', label: 'Outputs', icon: FolderOpen },
 ];
 
 function loadExpanded(): boolean {

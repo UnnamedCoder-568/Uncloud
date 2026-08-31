@@ -57,6 +57,19 @@ export default function ImageGenerate() {
     setGuidance(d.guidance);
   }
 
+  // Present only when an encoder component is installed. Klein's encoder is a
+  // causal LM, which is where its restraint lives; other pipelines ignore this.
+  const [encoder, setEncoder] = useState<LocalModel | null>(null);
+  const [useEncoder, setUseEncoder] = useState(false);
+
+  useEffect(() => {
+    getLibrary()
+      .then((ms) => setEncoder(ms.find((m) => m.engine === 'text-encoder') ?? null))
+      .catch(() => undefined);
+  }, []);
+
+  const encoderApplies = !!encoder && model?.engine === 'diffusers';
+
   async function generate() {
     if (!model || !prompt.trim()) return;
     setImageUrl(null);
@@ -64,6 +77,7 @@ export default function ImageGenerate() {
       negative_prompt: negativePrompt.trim() || undefined,
       steps, guidance, width, height,
       seed: seed.trim() ? Number(seed.trim()) : undefined,
+      text_encoder_path: encoderApplies && useEncoder ? encoder!.path : undefined,
     });
     setJob(newJob);
   }
@@ -261,6 +275,25 @@ export default function ImageGenerate() {
               </button>
             </div>
           </label>
+
+          {encoderApplies && (
+            <label className="flex items-start gap-2.5 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={useEncoder}
+                onChange={(e) => setUseEncoder(e.target.checked)}
+                className="mt-0.5 accent-[var(--accent)]"
+              />
+              <span className="min-w-0">
+                <span className="text-xs block">Uncensored text encoder</span>
+                <span className="text-[10px] text-[var(--text-faint)] block leading-snug">
+                  Swaps this pipeline's text encoder for {encoder!.name}. Only affects
+                  models whose encoder is a language model — FLUX.2 Klein. Reloads the
+                  pipeline the first time.
+                </span>
+              </span>
+            </label>
+          )}
 
           {model && (
             <button
