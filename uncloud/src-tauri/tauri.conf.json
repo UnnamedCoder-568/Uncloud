@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Uncloud",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "identifier": "com.uncloud.app",
   "build": {
     "frontendDist": "../dist",
@@ -46,7 +46,8 @@
       "../../sidecar/uncloud_engine/agent/*.py": "engine/uncloud_engine/agent/",
       "../../sidecar/scripts/*.py": "engine/scripts/",
       "../../sidecar/pyproject.toml": "engine/pyproject.toml",
-      "../../sidecar/uv.lock": "engine/uv.lock"
+      "../../sidecar/uv.lock": "engine/uv.lock",
+      "binaries/*": ""
     }
   }
 }

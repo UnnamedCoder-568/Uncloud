@@ -21,15 +21,19 @@ jobs:
         include:
           - os: macos-latest
             target: aarch64-apple-darwin
+            uv_target: aarch64-apple-darwin
             label: macOS (Apple Silicon)
           - os: macos-latest
             target: x86_64-apple-darwin
+            uv_target: x86_64-apple-darwin
             label: macOS (Intel)
           - os: ubuntu-22.04
             target: ''
+            uv_target: x86_64-unknown-linux-gnu
             label: Linux
           - os: windows-latest
             target: ''
+            uv_target: x86_64-pc-windows-msvc
             label: Windows
 
     runs-on: ${{ matrix.os }}
@@ -64,6 +68,27 @@ jobs:
       - name: Install frontend dependencies
         working-directory: uncloud
         run: npm ci
+
+      # Ship uv inside the app so a clean machine needs nothing preinstalled:
+      # uv fetches its own Python, then builds the engine environment on first run.
+      - name: Bundle uv
+        shell: bash
+        run: |
+          set -euo pipefail
+          T="${{ matrix.uv_target }}"
+          dest=uncloud/src-tauri/binaries
+          mkdir -p "$dest"
+          base="https://github.com/astral-sh/uv/releases/latest/download"
+          if [[ "$T" == *windows* ]]; then
+            curl -fsSL -o uv.zip "$base/uv-$T.zip"
+            unzip -j -o uv.zip 'uv.exe' -d "$dest"
+          else
+            curl -fsSL -o uv.tar.gz "$base/uv-$T.tar.gz"
+            tar -xzf uv.tar.gz
+            mv "uv-$T/uv" "$dest/uv"
+            chmod +x "$dest/uv"
+          fi
+          ls -la "$dest"
 
       - uses: swatinem/rust-cache@v2
         with:
