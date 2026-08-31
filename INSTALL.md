@@ -25,15 +25,25 @@ Uncloud runs entirely on your own machine. Nothing is sent to a server.
 
 ## Linux
 
-Download `uncloud_x.y.z_amd64.AppImage` (Intel/AMD) or the `aarch64` build for
-ARM machines such as NVIDIA DGX Spark.
+Three formats are built for **x86_64 (Intel/AMD)**: `.AppImage`, `.deb`, and `.rpm`.
+
+> **ARM machines — including NVIDIA DGX Spark — are not covered by these downloads.**
+> CI builds x86_64 only, so an ARM box has to build from source:
+>
+> ```bash
+> git clone https://github.com/aswinajith96-gif/Uncloud.git
+> cd Uncloud/uncloud && npm ci && npm run tauri build
+> ```
+>
+> The Rust and web toolchains are both ARM-native, so this works; it just takes
+> about ten minutes rather than being a download.
 
 ```bash
 chmod +x uncloud_*.AppImage
 ./uncloud_*.AppImage
 ```
 
-Debian and Ubuntu can use the `.deb` instead:
+Debian and Ubuntu can use the `.deb` instead (Fedora and RHEL: the `.rpm`):
 
 ```bash
 sudo dpkg -i uncloud_*.deb
