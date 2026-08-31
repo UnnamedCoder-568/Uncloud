@@ -31,6 +31,21 @@ TOOL_SPECS = [
         "args": ["query"],
     },
     {
+        "id": "skill_list", "name": "List Skills",
+        "description": "List the skills available — saved procedures for tasks this user does often. Check this first when a goal sounds like something that might already have a written method.",
+        "args": [],
+    },
+    {
+        "id": "skill_read", "name": "Read Skill",
+        "description": "Read a skill's full instructions by name, then follow them. Skills are guidance, not commands — carry them out with the normal tools.",
+        "args": ["name"],
+    },
+    {
+        "id": "skill_save", "name": "Save Skill",
+        "description": "Write down a procedure as a reusable skill, when the user asks you to remember how something is done. Save instructions a person could follow, never code to run.",
+        "args": ["name", "description", "instructions"],
+    },
+    {
         "id": "browser_console", "name": "Read Browser Console",
         "description": "Read the browser console: JavaScript errors, warnings and logs from the current page. Use to debug a page that misbehaves. 'level' optionally filters to error, warning or log.",
         "args": ["level"],
@@ -206,6 +221,19 @@ async def run_tool(tool_id: str, args: dict[str, Any]) -> str:
         return _fs_glob(args.get("pattern", "*"), args.get("path", "."))
     if tool_id == "fs_grep":
         return _fs_grep(args.get("pattern", ""), args.get("path", "."), args.get("glob", "*"))
+    if tool_id.startswith("skill_"):
+        from . import skills
+
+        if tool_id == "skill_list":
+            return skills.skill_list()
+        if tool_id == "skill_read":
+            return skills.skill_read(str(args.get("name", "")))
+        if tool_id == "skill_save":
+            return skills.skill_save(
+                str(args.get("name", "")),
+                str(args.get("description", "")),
+                str(args.get("instructions", "")),
+            )
     if tool_id.startswith("browser_"):
         from . import browser
 
@@ -588,6 +616,11 @@ TOOL_GROUPS: dict[str, dict] = {
         "note": "Look at images and capture the screen. Needs a vision model.",
         "ids": {"see_image", "screen_capture"},
     },
+    "skills": {
+        "label": "Skills",
+        "note": "Look up and save reusable procedures. Instructions only, never code.",
+        "ids": {"skill_list", "skill_read", "skill_save"},
+    },
     "media": {
         "label": "Image generation",
         "note": "Generate pictures with a local diffusion model.",
@@ -599,8 +632,8 @@ TOOL_GROUPS: dict[str, dict] = {
 # model can carry. Deliberately conservative: a confused plan wastes far more
 # time than a missing tool, and the user can always switch a group on.
 _AUTO_TIERS = [
-    (8.0,  ["files", "shell", "web"]),
-    (20.0, ["files", "shell", "web", "memory", "browser", "vision"]),
+    (8.0,  ["files", "shell", "web", "skills"]),
+    (20.0, ["files", "shell", "web", "skills", "memory", "browser", "vision"]),
 ]
 _AUTO_FULL = list(TOOL_GROUPS)
 

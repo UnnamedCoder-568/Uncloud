@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChevronDown, Send, Square, Mic, Volume2, VolumeX, Loader2 } from 'lucide-react';
-import { getLibrary, startEngine, engineStatus, streamChat, transcribeAudio, speakText } from '../lib/sidecar';
+import { getLibrary, startEngine, engineStatus, streamChat, transcribeAudio, speakText, IMAGE_MARKER, CHAT_IMAGE_SYSTEM_PROMPT, quickImagePreview} from '../lib/sidecar';
 import type { LocalModel, ChatMessage } from '../lib/sidecar';
 
 export default function ChatView() {
@@ -56,6 +56,36 @@ export default function ChatView() {
     }
   }
 
+  // Keyed by message index. A reply can ask for more than one picture, but not
+  // many — each costs a diffusion run and evicts the chat model from memory.
+  const [previews, setPreviews] = useState<
+    Record<number, { prompt: string; url?: string; error?: string }[]>
+  >({});
+
+  async function renderPreviews(index: number, reply: string) {
+    const prompts = [...reply.matchAll(IMAGE_MARKER)]
+      .map((mm) => mm[1].trim())
+      .slice(0, 2);
+    if (!prompts.length) return;
+    setPreviews((p) => ({ ...p, [index]: prompts.map((prompt) => ({ prompt })) }));
+    for (let i = 0; i < prompts.length; i++) {
+      try {
+        const url = await quickImagePreview(prompts[i]);
+        setPreviews((p) => {
+          const row = [...(p[index] || [])];
+          row[i] = { ...row[i], url };
+          return { ...p, [index]: row };
+        });
+      } catch (e) {
+        setPreviews((p) => {
+          const row = [...(p[index] || [])];
+          row[i] = { ...row[i], error: String(e).replace(/^Error:\s*/, '') };
+          return { ...p, [index]: row };
+        });
+      }
+    }
+  }
+
   async function send(text: string, speakReply: boolean) {
     if (!text.trim() || !activeModel || generating) return;
     const next = [...messages, { role: 'user', content: text.trim() } as ChatMessage];
@@ -70,7 +100,12 @@ export default function ChatView() {
       if (!status.running || status.model_path !== activeModel.path) {
         await startEngine(activeModel.path, activeModel.engine);
       }
-      for await (const token of streamChat(next)) {
+      const assistantIndex = next.length;
+      const withSystem: ChatMessage[] = [
+        { role: 'system', content: CHAT_IMAGE_SYSTEM_PROMPT },
+        ...next,
+      ];
+      for await (const token of streamChat(withSystem)) {
         full += token;
         setMessages((m) => {
           const copy = [...m];
@@ -78,6 +113,10 @@ export default function ChatView() {
           return copy;
         });
       }
+      // Fire and forget: the reply is already readable, and a preview
+      // takes seconds during which the user should not be blocked.
+      void renderPreviews(assistantIndex, full);
+
       if (speakReply && full.trim()) {
         setSpeaking(true);
         try {
@@ -191,8 +230,29 @@ export default function ChatView() {
                       : 'text-sm text-[var(--text)] whitespace-pre-wrap leading-relaxed px-1'
                   }
                 >
-                  {m.content || <span className="spinner" />}
+                  {m.content.replace(IMAGE_MARKER, '').trimEnd() || <span className="spinner" />}
                 </div>
+                {(previews[i] || []).map((p, k) => (
+                  <div key={k} className="mt-2 max-w-[280px]">
+                    {p.url ? (
+                      <img
+                        src={p.url}
+                        alt={p.prompt}
+                        className="w-full rounded-lg border border-[var(--border)]"
+                      />
+                    ) : p.error ? (
+                      <div className="text-[11px] text-rose-400 px-1">{p.error}</div>
+                    ) : (
+                      <div className="h-[140px] rounded-lg bg-[var(--bg-inset)] flex items-center justify-center">
+                        <span className="spinner" />
+                      </div>
+                    )}
+                    <p className="mt-1 text-[10px] text-[var(--text-faint)] leading-relaxed px-1">
+                      Quick preview — 6 steps at 512px, for thinking with. Use the Image
+                      tab for anything you intend to keep.
+                    </p>
+                  </div>
+                ))}
               </div>
             ))}
           </div>

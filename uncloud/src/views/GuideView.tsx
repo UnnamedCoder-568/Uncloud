@@ -29,6 +29,7 @@ const SECTIONS: Section[] = [
       { term: 'Pick a model first', body: 'The selector at the top loads it into memory. Large models take a minute on first load.' },
       { term: 'Talk to it', body: 'If a speech-to-text model is installed, the mic button records and transcribes. The speaker icon reads replies aloud.' },
       { term: 'Vision', body: 'Models such as Gemma 4 and Qwen3.8 can look at images as well as read text.' },
+      { term: 'Pictures in the reply', body: 'A model can show a quick sketch alongside its answer when one would help. These are deliberately rough \u2014 six steps at 512px, made to think with. Use the Image tab for anything you intend to keep.' },
     ],
   },
   {
@@ -67,6 +68,9 @@ const SECTIONS: Section[] = [
       { term: 'It remembers', body: 'The plan is written to disk as it runs, so progress survives a restart and you can see exactly which step failed.' },
       { term: 'Scope', body: 'By default it is confined to its own workspace folder. Full device access is a deliberate switch in Settings.' },
       { term: 'Match the model', body: 'Planning quality depends heavily on the model. Small models plan poorly on multi-step work; a 27B handles it far better.' },
+      { term: 'Tool sets', body: 'Every tool it can see costs room in the planner\u2019s prompt, so the set is matched to the model: a small one gets 13 tools, a large one all 34. Settings lets you override that per group.' },
+      { term: 'Its own pointer', body: 'It can click at coordinates and drag inside its browser using a pointer of its own. That pointer is not your mouse \u2014 you can keep working while it does.' },
+      { term: 'Skills', body: 'Written procedures it can look up. Drop a folder in ~/.uncloud/skills with a SKILL.md inside, or just ask the agent to remember how something is done and it writes one. Skills are instructions, never code.' },
     ],
   },
   {
@@ -75,6 +79,8 @@ const SECTIONS: Section[] = [
       { term: 'Models folder', body: 'Change it any time. Uncloud rescans and picks up whatever is there.' },
       { term: 'Hugging Face token', body: 'Optional. Speeds up downloads and unlocks gated models such as FLUX.2.' },
       { term: 'Agent device access', body: 'Off by default. Turning it on lets the agent run shell commands anywhere on your machine.' },
+      { term: 'Agent tools', body: 'Which groups of tools the agent can see. Left automatic it follows the loaded model\u2019s size, which is usually what you want.' },
+      { term: 'Keep this machine awake', body: 'Stops the machine sleeping while a job runs. Worth turning on before a long narration \u2014 otherwise the display times out and the job is suspended half-finished.' },
     ],
   },
 ];
@@ -139,6 +145,7 @@ export default function GuideView() {
               ['Saved characters', '~/.uncloud/characters/'],
               ['Saved voices', '~/.uncloud/voices/'],
               ['Agent workspace', '~/.uncloud/workspace/'],
+              ['Skills', '~/.uncloud/skills/'],
               ['Settings', '~/.uncloud/settings.json'],
             ].map(([k, v]) => (
               <div key={k} className="contents">

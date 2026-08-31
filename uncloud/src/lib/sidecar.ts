@@ -520,3 +520,45 @@ export async function getAgentTools() {
 export async function setAgentToolGroups(groups: string[] | null) {
   return apiPost('/api/agent/tool_groups', { groups });
 }
+
+// ------------------------------------------------------- inline chat images
+
+/**
+ * How a chat model asks for a picture. A plain text marker rather than
+ * function calling, because the small local models this app is built for
+ * support it unevenly, and a marker works with every one of them.
+ */
+export const IMAGE_MARKER = /\[\[image:\s*([^\]\n]{3,400})\]\]/gi;
+
+export const CHAT_IMAGE_SYSTEM_PROMPT =
+  'You can show a picture. When an image would genuinely help the user — a ' +
+  'sketch, a diagram, a visual example — write [[image: a detailed description ' +
+  'of the picture]] on its own line. It is rendered as a small preview beside ' +
+  'your reply. Use it sparingly, and never for something a sentence explains ' +
+  'better. Keep writing normally around it.';
+
+/**
+ * A fast, deliberately low-fidelity render for thinking with, not a finished
+ * picture: few steps at 512px so it arrives in seconds rather than minutes.
+ */
+export async function quickImagePreview(prompt: string): Promise<string> {
+  const models = await getLibrary();
+  const img = models.find((m) => m.category === 'image' && m.ready);
+  if (!img) throw new Error('No image model installed');
+
+  const job = await generateImage(img.path, img.engine, prompt, img.catalog_id, {
+    steps: 6,
+    width: 512,
+    height: 512,
+  });
+
+  for (let i = 0; i < 900; i++) {
+    const j = await getImageJob(job.id);
+    if (j.done) {
+      if (j.status === 'error') throw new Error(j.error || 'Generation failed');
+      return fetchImageBlobUrl(job.id);
+    }
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+  throw new Error('Image generation timed out');
+}
