@@ -31,6 +31,16 @@ TOOL_SPECS = [
         "args": ["query"],
     },
     {
+        "id": "video_info", "name": "Video Info",
+        "description": "Duration, resolution and frame rate of a video file. Check this before pulling frames so you know where to look.",
+        "args": ["path"],
+    },
+    {
+        "id": "video_frames", "name": "Extract Video Frames",
+        "description": "Pull still frames from a video and save them as images, then use see_image to look at them. This is how to watch a video: sample frames across it, or densely around one moment. 'start' and 'duration' are seconds; 'count' is how many frames to take.",
+        "args": ["path", "start", "duration", "count"],
+    },
+    {
         "id": "skill_list", "name": "List Skills",
         "description": "List the skills available — saved procedures for tasks this user does often. Check this first when a goal sounds like something that might already have a written method.",
         "args": [],
@@ -221,6 +231,10 @@ async def run_tool(tool_id: str, args: dict[str, Any]) -> str:
         return _fs_glob(args.get("pattern", "*"), args.get("path", "."))
     if tool_id == "fs_grep":
         return _fs_grep(args.get("pattern", ""), args.get("path", "."), args.get("glob", "*"))
+    if tool_id == "video_info":
+        return await _video_info(args.get("path", ""))
+    if tool_id == "video_frames":
+        return await _video_frames(args)
     if tool_id.startswith("skill_"):
         from . import skills
 
@@ -611,6 +625,11 @@ TOOL_GROUPS: dict[str, dict] = {
         "note": "Move, click, drag and scroll at pixel coordinates.",
         "ids": {"browser_move", "browser_click_at", "browser_drag", "browser_scroll_at"},
     },
+    "video": {
+        "label": "Video",
+        "note": "Probe a video and pull frames out of it. Pair with Vision to watch one.",
+        "ids": {"video_info", "video_frames"},
+    },
     "vision": {
         "label": "Vision",
         "note": "Look at images and capture the screen. Needs a vision model.",
@@ -633,7 +652,7 @@ TOOL_GROUPS: dict[str, dict] = {
 # time than a missing tool, and the user can always switch a group on.
 _AUTO_TIERS = [
     (8.0,  ["files", "shell", "web", "skills"]),
-    (20.0, ["files", "shell", "web", "skills", "memory", "browser", "vision"]),
+    (20.0, ["files", "shell", "web", "skills", "memory", "browser", "vision", "video"]),
 ]
 _AUTO_FULL = list(TOOL_GROUPS)
 
@@ -675,3 +694,80 @@ def group_summary() -> list[dict]:
         {"id": g, "label": v["label"], "note": v["note"], "count": len(v["ids"])}
         for g, v in TOOL_GROUPS.items()
     ]
+
+
+async def _ffprobe(path: str) -> dict:
+    proc = await asyncio.create_subprocess_exec(
+        "ffprobe", "-v", "error", "-show_entries",
+        "format=duration:stream=width,height,r_frame_rate,codec_type",
+        "-of", "json", path,
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+    )
+    out, err = await proc.communicate()
+    if proc.returncode != 0:
+        raise RuntimeError((err or b"").decode()[-500:] or "ffprobe failed")
+    import json as _json
+
+    return _json.loads(out or b"{}")
+
+
+async def _video_info(path: str) -> str:
+    p = _resolve_path(path)
+    if not p.exists():
+        raise FileNotFoundError(f"No such file: {p}")
+    data = await _ffprobe(str(p))
+    dur = float(data.get("format", {}).get("duration", 0) or 0)
+    lines = [f"{p.name} — {dur:.1f}s"]
+    for st in data.get("streams", []):
+        if st.get("codec_type") == "video":
+            rate = st.get("r_frame_rate", "0/1")
+            try:
+                num, den = rate.split("/"); fps = float(num) / float(den or 1)
+            except (ValueError, ZeroDivisionError):
+                fps = 0.0
+            lines.append(f"video: {st.get('width')}x{st.get('height')} @ {fps:.0f} fps")
+    return "\n".join(lines)
+
+
+async def _video_frames(args: dict[str, Any]) -> str:
+    """Sample frames to disk so a vision model can look at them.
+
+    Extracting stills is the only way to read a video here — there is no model
+    that consumes video directly, and a handful of well-chosen frames answers
+    most questions about one anyway.
+    """
+    import uuid
+
+    p = _resolve_path(str(args.get("path", "")))
+    if not p.exists():
+        raise FileNotFoundError(f"No such file: {p}")
+
+    count = max(1, min(24, int(_num_arg(args, "count", 8))))
+    start = max(0.0, _num_arg(args, "start", 0.0))
+    data = await _ffprobe(str(p))
+    total = float(data.get("format", {}).get("duration", 0) or 0)
+    duration = _num_arg(args, "duration", 0.0) or max(0.1, total - start)
+
+    out_dir = Path.home() / ".uncloud" / "outputs" / f"frames-{uuid.uuid4().hex[:8]}"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    fps = count / duration if duration > 0 else 1.0
+
+    proc = await asyncio.create_subprocess_exec(
+        "ffmpeg", "-y", "-v", "error",
+        "-ss", f"{start:.3f}", "-t", f"{duration:.3f}", "-i", str(p),
+        "-vf", f"fps={fps:.4f},scale=768:-1", "-frames:v", str(count),
+        str(out_dir / "f%03d.png"),
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
+    )
+    out, _ = await proc.communicate()
+    if proc.returncode != 0:
+        raise RuntimeError((out or b"").decode()[-600:] or "ffmpeg failed")
+
+    files = sorted(out_dir.glob("f*.png"))
+    if not files:
+        raise RuntimeError("No frames were produced — check the start time and duration.")
+    lines = [f"{len(files)} frame(s) from {start:.1f}s over {duration:.1f}s:"]
+    for i, f in enumerate(files):
+        lines.append(f"  {start + i * duration / len(files):6.2f}s  {f}")
+    lines.append("\nUse see_image on any of these to look at it.")
+    return "\n".join(lines)
