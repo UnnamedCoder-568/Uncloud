@@ -10,6 +10,11 @@ on:
 
 jobs:
   build:
+    # tauri-action creates the draft release and uploads the installers to it.
+    # GitHub defaults the Actions token to read-only, which fails at that step.
+    permissions:
+      contents: write
+
     strategy:
       fail-fast: false
       matrix:
