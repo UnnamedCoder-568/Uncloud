@@ -89,5 +89,5 @@ export default function Wordmark({
 const letter: React.CSSProperties = {
   fontFamily: "var(--display, 'Montserrat', system-ui, sans-serif)",
   fontWeight: 900,
-  letterSpacing: '-0.05em',
+  letterSpacing: '-0.07em',
 };
