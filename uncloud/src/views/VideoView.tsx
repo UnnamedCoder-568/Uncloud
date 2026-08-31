@@ -3,6 +3,7 @@ import { Loader2, Film, Download, ChevronDown, AlertCircle } from 'lucide-react'
 import {
   getLibrary, getVideoOptions, generateVideo, getVideoJob, fetchVideoBlobUrl,
 } from '../lib/sidecar';
+import Dictate from '../components/Dictate';
 import type { LocalModel, VideoJob } from '../lib/sidecar';
 
 /** LTX honours frame counts of the form 8n+1; anything else is padded silently. */
@@ -175,7 +176,10 @@ export default function VideoView() {
         </div>
 
         <div>
-          <label className="text-[10px] uppercase tracking-[0.18em] text-[var(--text-faint)]">Avoid</label>
+          <div className="flex items-center justify-between">
+            <label className="text-[10px] uppercase tracking-[0.18em] text-[var(--text-faint)]">Avoid</label>
+            <Dictate title="Dictate what to avoid" onText={(t) => setNegative((v) => (v ? v.trimEnd() + ' ' + t : t))} />
+          </div>
           <input
             value={negative}
             onChange={(e) => setNegative(e.target.value)}
@@ -196,7 +200,10 @@ export default function VideoView() {
 
       <div className="flex-1 min-w-0 flex flex-col">
         <div className="p-6 pb-3">
-          <label className="text-[10px] uppercase tracking-[0.18em] text-[var(--text-faint)]">Prompt</label>
+          <div className="flex items-center justify-between">
+            <label className="text-[10px] uppercase tracking-[0.18em] text-[var(--text-faint)]">Prompt</label>
+            <Dictate title="Dictate the prompt" onText={(t) => setPrompt((v) => (v ? v.trimEnd() + ' ' + t : t))} />
+          </div>
           <textarea
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}

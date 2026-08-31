@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ChevronDown, Sparkles, Loader2, SlidersHorizontal, Shuffle } from 'lucide-react';
 import { getLibrary, generateImage, getImageJob, fetchImageBlobUrl } from '../lib/sidecar';
+import Dictate from '../components/Dictate';
 import type { LocalModel, ImageJob } from '../lib/sidecar';
 
 function defaultsFor(engine: string | undefined) {
@@ -173,6 +174,11 @@ export default function ImageGenerate() {
                 rows={2}
                 className="flex-1 bg-transparent outline-none resize-none text-sm py-1 placeholder:text-[var(--text-faint)]"
               />
+              <Dictate
+                title="Dictate the prompt"
+                onText={(t) => setPrompt((v) => (v ? v.trimEnd() + ' ' + t : t))}
+                className="mb-0.5"
+              />
               <button
                 onClick={generate}
                 disabled={!model || !prompt.trim() || !!running}
@@ -181,12 +187,18 @@ export default function ImageGenerate() {
                 {running ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
               </button>
             </div>
-            <input
-              value={negativePrompt}
-              onChange={(e) => setNegativePrompt(e.target.value)}
-              placeholder="Negative prompt (optional)"
-              className="bg-transparent outline-none text-xs px-1 text-[var(--text-dim)] placeholder:text-[var(--text-faint)]"
-            />
+            <div className="flex items-center gap-1">
+              <input
+                value={negativePrompt}
+                onChange={(e) => setNegativePrompt(e.target.value)}
+                placeholder="Negative prompt (optional)"
+                className="flex-1 bg-transparent outline-none text-xs px-1 text-[var(--text-dim)] placeholder:text-[var(--text-faint)]"
+              />
+              <Dictate
+                title="Dictate what to avoid"
+                onText={(t) => setNegativePrompt((v) => (v ? v.trimEnd() + ' ' + t : t))}
+              />
+            </div>
           </div>
         </div>
       </div>

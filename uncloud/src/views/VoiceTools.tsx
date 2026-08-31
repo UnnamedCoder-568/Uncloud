@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Mic, Square, Volume2, Loader2, ChevronDown } from 'lucide-react';
 import { getLibrary, transcribeAudio, speakText, listVoices } from '../lib/sidecar';
+import Dictate from '../components/Dictate';
 import type { LocalModel } from '../lib/sidecar';
 
 export default function VoiceTools() {
@@ -130,6 +131,12 @@ export default function VoiceTools() {
             {voices.map((v) => <option key={v} value={v}>{v}</option>)}
           </select>
 
+          <div className="flex justify-end -mb-1">
+            <Dictate
+              title="Dictate what to say"
+              onText={(t) => setSpeakInput((v) => (v ? v.trimEnd() + ' ' + t : t))}
+            />
+          </div>
           <textarea
             value={speakInput}
             onChange={(e) => setSpeakInput(e.target.value)}
