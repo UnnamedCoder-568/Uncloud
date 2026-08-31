@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import Wordmark from './Wordmark';
-import { MessageSquare, Boxes, Workflow, ImageIcon, Clapperboard, Mic, Music, Settings, ChevronLeft, ChevronRight } from 'lucide-react';
+import { MessageSquare, Boxes, Workflow, ImageIcon, Clapperboard, Mic, Music, Settings, HelpCircle, ChevronLeft, ChevronRight } from 'lucide-react';
 
-export type View = 'chat' | 'models' | 'agent' | 'image' | 'video' | 'music' | 'voice' | 'settings';
+export type View = 'chat' | 'models' | 'agent' | 'image' | 'video' | 'music' | 'voice' | 'guide' | 'settings';
 
 const items: { id: View; label: string; icon: React.ComponentType<{ size?: number; strokeWidth?: number; className?: string }> }[] = [
   { id: 'chat', label: 'Chat', icon: MessageSquare },
@@ -61,6 +61,19 @@ export default function Sidebar({ active, onChange }: { active: View; onChange: 
       ))}
 
       <div className="flex-1" />
+
+      <button
+        onClick={() => onChange('guide')}
+        title="Guide"
+        className={`h-11 rounded-xl flex items-center transition ${expanded ? 'px-3 gap-3 w-full' : 'w-11 justify-center'} ${
+          active === 'guide'
+            ? 'bg-[var(--bg-raised)] text-white border border-[var(--border)]'
+            : 'text-[var(--text-faint)] hover:text-[var(--text-dim)] hover:bg-[var(--bg-raised)]/50 border border-transparent'
+        }`}
+      >
+        <HelpCircle size={18} strokeWidth={1.75} className="shrink-0" />
+        {expanded && <span className="text-sm">Guide</span>}
+      </button>
 
       <button
         onClick={() => onChange('settings')}
