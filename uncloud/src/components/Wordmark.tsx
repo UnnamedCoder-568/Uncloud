@@ -78,7 +78,7 @@ export default function Wordmark({
       aria-label="Uncloud"
     >
       <span style={letter}>UNCL</span>
-      <span style={{ display: 'inline-flex', margin: `0 ${size * 0.02}px` }}>
+      <span style={{ display: 'inline-flex', margin: `0 ${size * 0.004}px` }}>
         <Cog px={cog} spinning={spinning} />
       </span>
       <span style={letter}>UD</span>
@@ -89,5 +89,5 @@ export default function Wordmark({
 const letter: React.CSSProperties = {
   fontFamily: "var(--display, 'Montserrat', system-ui, sans-serif)",
   fontWeight: 900,
-  letterSpacing: '-0.005em',
+  letterSpacing: '-0.05em',
 };
