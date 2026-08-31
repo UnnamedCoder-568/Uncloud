@@ -10,6 +10,7 @@ import StudioView from './views/StudioView';
 import ImageView from './views/ImageView';
 import VoiceView from './views/VoiceView';
 import MusicView from './views/MusicView';
+import GuideView from './views/GuideView';
 import { getSettings } from './lib/sidecar';
 import Wordmark from './components/Wordmark';
 
@@ -55,6 +56,7 @@ export default function App() {
         {view === 'chat' && <ChatView />}
         {view === 'models' && <ModelsView />}
         {view === 'agent' && <AgentView />}
+        {view === 'guide' && <GuideView />}
         {view === 'settings' && <SettingsView />}
         {view === 'image' && <ImageView />}
         {view === 'video' && (
