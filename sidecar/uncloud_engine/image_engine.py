@@ -101,19 +101,20 @@ class ImageEngine:
         self, model_path: str, engine: str, prompt: str, *, negative_prompt: str = "",
         steps: int | None = None, guidance: float | None = None,
         width: int = 1024, height: int = 1024, seed: int | None = None,
-        mflux_cli: str = "mflux-generate",
+        mflux_cli: str = "mflux-generate", text_encoder_path: str | None = None,
     ) -> ImageJob:
         job = ImageJob(id=uuid.uuid4().hex[:12], prompt=prompt, total_steps=steps or 0)
         self.jobs[job.id] = job
         asyncio.create_task(self._run(
-            job, model_path, engine, prompt, negative_prompt, steps, guidance, width, height, seed, mflux_cli,
+            job, model_path, engine, prompt, negative_prompt, steps, guidance, width, height,
+            seed, mflux_cli, text_encoder_path,
         ))
         return job
 
     async def _run(
         self, job: ImageJob, model_path: str, engine: str, prompt: str, negative_prompt: str,
         steps: int | None, guidance: float | None, width: int, height: int, seed: int | None,
-        mflux_cli: str,
+        mflux_cli: str, text_encoder_path: str | None = None,
     ) -> None:
         job.status = "running"
         try:
@@ -125,7 +126,7 @@ class ImageEngine:
                 elif engine == "diffusers":
                     out = await asyncio.to_thread(
                         self._run_diffusers, job, model_path, prompt, negative_prompt,
-                        steps, guidance, width, height, seed,
+                        steps, guidance, width, height, seed, text_encoder_path,
                     )
                 else:
                     raise ValueError(
@@ -271,8 +272,42 @@ class ImageEngine:
         await self._stream_mflux(job, cmd, out_path, mflux_cli)
         return str(out_path)
 
-    def _load_pipeline(self, model_path: str):
-        if self._pipe is not None and self._pipe_path == model_path:
+    def _swap_text_encoder(self, pipe, gguf_path: str) -> None:
+        """Replace a pipeline's text encoder with one loaded from a GGUF file.
+
+        FLUX.2 Klein's text encoder is a Qwen3ForCausalLM — an instruction
+        following model — which is where its restraint lives, so replacing it is
+        what actually changes what the pipeline will render. It is also the
+        cheaper half: 4.7GB quantised against 15GB.
+
+        Only meaningful for pipelines whose encoder is a causal LM. Krea 2's
+        restraint is trained into the transformer and no swap will move it.
+        """
+        import torch
+        from transformers import AutoModelForCausalLM
+
+        encoder = getattr(pipe, "text_encoder", None)
+        if encoder is None:
+            raise RuntimeError("This pipeline has no text encoder to replace.")
+        if type(encoder).__name__ not in ("Qwen3ForCausalLM", "Qwen2ForCausalLM"):
+            raise RuntimeError(
+                f"{type(encoder).__name__} is not a causal language model, so an "
+                "uncensored encoder would not change its behaviour. This only "
+                "applies to FLUX.2 Klein."
+            )
+
+        gguf = Path(gguf_path)
+        if not gguf.is_file():
+            raise FileNotFoundError(f"Text encoder not found: {gguf}")
+
+        replacement = AutoModelForCausalLM.from_pretrained(
+            str(gguf.parent), gguf_file=gguf.name, torch_dtype=torch.bfloat16,
+        )
+        pipe.text_encoder = replacement
+
+    def _load_pipeline(self, model_path: str, text_encoder_path: str | None = None):
+        key = (model_path, text_encoder_path)
+        if self._pipe is not None and self._pipe_path == key:
             return self._pipe
 
         import torch
@@ -287,6 +322,9 @@ class ImageEngine:
         else:
             pipe = AutoPipelineForText2Image.from_pretrained(model_path, torch_dtype=dtype)
 
+        if text_encoder_path:
+            self._swap_text_encoder(pipe, text_encoder_path)
+
         if torch.backends.mps.is_available():
             device = "mps"
         elif torch.cuda.is_available():
@@ -295,16 +333,17 @@ class ImageEngine:
             device = "cpu"
         pipe = pipe.to(device)
 
-        self._pipe, self._pipe_path = pipe, model_path
+        self._pipe, self._pipe_path = pipe, key
         return pipe
 
     def _run_diffusers(
         self, job: ImageJob, model_path: str, prompt: str, negative_prompt: str,
-        steps: int | None, guidance: float | None, width: int, height: int, seed: int | None,
+        steps: int | None, guidance: float | None, width: int, height: int,
+        seed: int | None, text_encoder_path: str | None = None,
     ) -> str:
         import torch
 
-        pipe = self._load_pipeline(model_path)
+        pipe = self._load_pipeline(model_path, text_encoder_path)
         steps = steps or 25
         job.total_steps = steps
         generator = torch.Generator(device="cpu").manual_seed(seed if seed is not None else int(time.time()))

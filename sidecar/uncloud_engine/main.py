@@ -84,6 +84,47 @@ def _install_signal_handlers() -> None:
 _install_signal_handlers()
 
 
+# ----------------------------------------------------------------- outputs
+@app.get("/api/outputs", dependencies=[Depends(require_token)])
+def outputs_list(limit: int = 300, kind: str = "") -> dict:
+    from .outputs import list_outputs
+
+    return {"root": str(settings.output_dir), "files": list_outputs(limit, kind)}
+
+
+@app.get("/api/outputs/file", dependencies=[Depends(require_token)])
+def outputs_file(path: str) -> FileResponse:
+    from pathlib import Path as _P
+
+    root = settings.output_dir.resolve()
+    target = _P(path).resolve()
+    # Serving is scoped to the output folder; the path arrives over HTTP.
+    if root not in target.parents or not target.is_file():
+        raise HTTPException(status_code=404, detail="Not an output file")
+    return FileResponse(str(target))
+
+
+class OutputPathBody(BaseModel):
+    path: str
+
+
+@app.post("/api/outputs/reveal", dependencies=[Depends(require_token)])
+def outputs_reveal(body: OutputPathBody) -> dict:
+    from .outputs import reveal
+
+    return {"ok": reveal(body.path)}
+
+
+@app.post("/api/outputs/delete", dependencies=[Depends(require_token)])
+def outputs_delete(body: OutputPathBody) -> dict:
+    from .outputs import delete
+
+    try:
+        return {"ok": delete(body.path)}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 # ------------------------------------------------------------------ system
 @app.get("/api/system/resident", dependencies=[Depends(require_token)])
 def system_resident() -> dict:
@@ -300,6 +341,9 @@ async def chat(body: ChatBody) -> StreamingResponse:
 class ImageGenerateBody(BaseModel):
     model_path: str
     engine: str
+    # Optional uncensored text encoder, for pipelines whose encoder is a
+    # causal LM (FLUX.2 Klein). Ignored elsewhere.
+    text_encoder_path: str | None = None
     prompt: str
     catalog_id: str | None = None
     negative_prompt: str = ""
@@ -317,6 +361,7 @@ async def generate_image(body: ImageGenerateBody) -> dict:
         body.model_path, body.engine, body.prompt, negative_prompt=body.negative_prompt,
         steps=body.steps, guidance=body.guidance, width=body.width, height=body.height, seed=body.seed,
         mflux_cli=entry.mflux_cli if entry else "mflux-generate",
+        text_encoder_path=body.text_encoder_path,
     )
     return job.to_dict()
 

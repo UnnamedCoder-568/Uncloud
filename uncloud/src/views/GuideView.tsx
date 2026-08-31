@@ -39,6 +39,7 @@ const SECTIONS: Section[] = [
       { term: 'Generate', body: 'Text to image. Options on the right control steps, guidance, size and seed — reuse a seed to get the same picture twice.' },
       { term: 'Product', body: 'Give it one clean photo of a real product and it re-photographs it: on a model, as a flat lay, as a detail shot. Output quality tracks the input photo closely, so use the sharpest one you have.' },
       { term: 'Edit', body: 'Describe a change to an existing image — swap the background, add text, recolour a garment. Say what should stay the same as well as what should change.' },
+      { term: 'Outputs', body: 'Everything generated appears in the Outputs tab, wherever you pointed the output folder in Settings. Reveal opens it in Finder.' },
       { term: 'Characters', body: 'Save a person once and reuse them. Traits carry everywhere; a reference image carries identity far more strongly, but only in Generate and Edit, since Product needs that slot for your product.' },
     ],
   },

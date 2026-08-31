@@ -192,6 +192,8 @@ export interface ImageJob {
 
 export interface ImageGenerateOptions {
   negative_prompt?: string;
+  /** Uncensored text encoder, for pipelines whose encoder is a causal LM. */
+  text_encoder_path?: string;
   steps?: number;
   guidance?: number;
   width?: number;
@@ -640,4 +642,39 @@ export async function getResident() {
 
 export async function stopAllModels() {
   return apiPost<Record<string, boolean>>('/api/system/stop_all');
+}
+
+// ------------------------------------------------------------------ outputs
+
+export interface OutputFile {
+  path: string;
+  name: string;
+  relative: string;
+  kind: 'image' | 'video' | 'audio' | 'other';
+  group: string;
+  size_bytes: number;
+  modified: number;
+  age_seconds: number;
+}
+
+export async function listOutputs(kind = '', limit = 300) {
+  const q = new URLSearchParams({ limit: String(limit), ...(kind ? { kind } : {}) });
+  return api<{ root: string; files: OutputFile[] }>(`/api/outputs?${q}`);
+}
+
+/** Blob URL for an output file — the engine requires a bearer token, so an
+ *  <img src> pointing at the endpoint directly would 401. */
+export async function outputBlobUrl(path: string): Promise<string> {
+  const url = `${await baseUrl()}/api/outputs/file?path=${encodeURIComponent(path)}`;
+  const resp = await fetch(url, { headers: await authHeaders() });
+  if (!resp.ok) throw new Error(`Could not load ${path}`);
+  return URL.createObjectURL(await resp.blob());
+}
+
+export async function revealOutput(path: string) {
+  return apiPost<{ ok: boolean }>('/api/outputs/reveal', { path });
+}
+
+export async function deleteOutput(path: string) {
+  return apiPost<{ ok: boolean }>('/api/outputs/delete', { path });
 }

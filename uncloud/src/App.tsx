@@ -11,6 +11,7 @@ import VoiceView from './views/VoiceView';
 import MusicView from './views/MusicView';
 import VideoView from './views/VideoView';
 import GuideView from './views/GuideView';
+import OutputsView from './views/OutputsView';
 import SetupView from './views/SetupView';
 import { getSettings, runtimeStatus } from './lib/sidecar';
 import Wordmark from './components/Wordmark';
@@ -25,6 +26,7 @@ const PANES: { id: View; render: () => React.ReactElement }[] = [
   { id: 'video', render: () => <VideoView /> },
   { id: 'music', render: () => <MusicView /> },
   { id: 'voice', render: () => <VoiceView /> },
+  { id: 'outputs', render: () => <OutputsView /> },
   { id: 'guide', render: () => <GuideView /> },
   { id: 'settings', render: () => <SettingsView /> },
 ];
