@@ -2,10 +2,12 @@
 
 Uncloud runs entirely on your own machine. Nothing is sent to a server.
 
-> **Before you start — read this.** The desktop builds ship the *interface*, not the
-> AI engine. The engine is Python and is not yet bundled, so you also need the steps
-> under [Engine setup](#engine-setup). Until that is done the app will open and then
-> report that the engine failed to start. This is the known gap, not a broken download.
+> **First launch sets itself up.** The download is small because the AI engine is
+> assembled on your machine rather than shipped prebuilt. Uncloud opens to a setup
+> screen, installs what it needs — roughly 1.6 GB, once — and starts. Nothing else
+> is required: Python and `uv` both come from the app.
+>
+> Model weights are separate again, and are downloaded from the Models tab.
 
 ---
 
@@ -70,7 +72,12 @@ Windows 11 already includes WebView2. On Windows 10 you may need
 
 ## Engine setup
 
-The AI engine needs Python 3.12 and [`uv`](https://docs.astral.sh/uv/).
+**The desktop app does this for you on first launch** — skip this section unless
+you are running headless, on ARM, or the setup screen failed and you want to do
+it by hand.
+
+The engine needs Python 3.12 and [`uv`](https://docs.astral.sh/uv/); `uv` will
+fetch a suitable Python itself.
 
 ```bash
 # 1. install uv
@@ -78,13 +85,16 @@ curl -LsSf https://astral.sh/uv/install.sh | sh        # macOS / Linux
 # Windows (PowerShell):
 #   powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
 
-# 2. clone this repository next to wherever you installed the app
+# 2. clone this repository
 git clone https://github.com/aswinajith96-gif/Uncloud.git
 cd Uncloud/sidecar
 
 # 3. install the engine
 uv sync
 ```
+
+The app looks for an engine at `~/.uncloud/engine`, and uses a repository
+checkout instead when it finds one.
 
 ### Optional extras
 
@@ -154,4 +164,5 @@ GPU those are typically faster than the Apple ones.
 | Saved characters | `~/.uncloud/characters/` |
 | Saved voices | `~/.uncloud/voices/` |
 | Agent workspace | `~/.uncloud/workspace/` |
+| AI engine | `~/.uncloud/engine/` |
 | Models | wherever you chose during setup |

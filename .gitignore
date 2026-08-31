@@ -43,6 +43,11 @@ docs/
 TestPrint.py
 Option 1*
 
+# --------------------------------------------------- fetched at build time
+# uv is downloaded per-platform by CI; ~50 MB, never committed.
+uncloud/src-tauri/binaries/uv
+uncloud/src-tauri/binaries/uv.exe
+
 # ------------------------------------------------------------------- local
 .DS_Store
 .env
