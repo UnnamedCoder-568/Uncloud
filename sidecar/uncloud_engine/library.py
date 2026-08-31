@@ -46,11 +46,67 @@ def _dir_size_gb(path: Path) -> float:
     return total / (1024 ** 3)
 
 
+# Architectures a GGUF header can declare. Diffusion transformers and language
+# models share the container format, so the name tells you nothing reliable.
+_DIFFUSION_ARCHS = {"flux", "sd3", "sdxl", "stable-diffusion", "sd1", "unet"}
+_LM_ARCHS = {"qwen2", "qwen3", "llama", "mistral", "gemma", "gemma2", "gemma3", "phi3"}
+
+
+def _gguf_architecture(path: Path) -> tuple[str | None, str | None]:
+    """Read `general.architecture` and `general.name` from a GGUF header.
+
+    Filenames lie. One of these files is called flux2-klein-9b-uncensored and
+    is a Qwen3 text encoder, which classified by name lands in the image picker
+    and fails the moment it is selected. The header is authoritative, and only
+    the first few KB have to be read to get it.
+    """
+    try:
+        import gguf
+    except ImportError:
+        return None, None
+    try:
+        reader = gguf.GGUFReader(str(path))
+        arch = name = None
+        for field in reader.fields.values():
+            if field.name not in ("general.architecture", "general.name"):
+                continue
+            try:
+                val = field.parts[field.data[0]]
+                text = val.tobytes().decode("utf-8", "replace") if hasattr(val, "tobytes") else str(val)
+            except Exception:  # noqa: BLE001
+                continue
+            if field.name == "general.architecture":
+                arch = text.strip().lower()
+            else:
+                name = text.strip()
+        return arch, name
+    except Exception:  # noqa: BLE001 - an unreadable header just falls back
+        return None, None
+
+
 def _classify_gguf(path: Path) -> tuple[str, str, str | None]:
-    """Returns (category, engine, note) for a .gguf file based on its name."""
-    lowered = path.name.lower()
-    if any(h in lowered for h in DIFFUSION_HINTS):
-        return "image", "stable-diffusion-cpp", "GGUF diffusion checkpoint — needs the stable-diffusion.cpp backend (not yet wired up)."
+    """Returns (category, engine, note) for a .gguf file, from its header."""
+    arch, name = _gguf_architecture(path)
+    lowered_name = (name or "").lower()
+
+    # A language-model architecture whose own name says encoder is a pipeline
+    # component, not something to load on its own.
+    if "text encoder" in lowered_name or "text_encoder" in lowered_name:
+        return ("component", "text-encoder",
+                "Text encoder for a diffusion pipeline — pair it with a model, "
+                "not selectable on its own.")
+    if arch in _DIFFUSION_ARCHS:
+        return ("image", "gguf-diffusion",
+                "Quantised diffusion transformer. Needs the matching VAE, tokenizer "
+                "and text encoder from a full pipeline alongside it.")
+    if arch in _LM_ARCHS:
+        return "text", "gguf", None
+
+    # Header unreadable or unfamiliar: fall back to the old filename guess, but
+    # say so rather than presenting it as a confident classification.
+    if any(h in path.name.lower() for h in DIFFUSION_HINTS):
+        return ("image", "gguf-diffusion",
+                "Guessed from the filename — the GGUF header could not be read.")
     return "text", "gguf", None
 
 
@@ -156,6 +212,13 @@ def scan_library(models_dir: Path) -> list[LocalModel]:
                 category, engine = "voice-tts", "kokoro"
             elif any(h in lowered for h in DIFFUSION_HINTS):
                 category, engine = "image", "mflux"
+            elif "vibevoice" in lowered:
+                # Narration models, not chat models. Left as text they appear in
+                # the Chat picker and fail on load, which reads as the app being
+                # broken rather than the choice being wrong.
+                category, engine = "voice-tts", "vibevoice"
+            elif "ace-step" in lowered or "acestep" in lowered:
+                category, engine = "music", "acestep"
             else:
                 category, engine = "text", "mlx"
             entry = None
