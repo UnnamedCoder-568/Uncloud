@@ -1,4 +1,4 @@
-import { useId } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 
 /**
  * The Uncloud wordmark: Montserrat Black with the O replaced by a cog carrying
@@ -71,6 +71,25 @@ export function Cog({ px, spinning = false, traces }: {
   );
 }
 
+/**
+ * Loading state: the word assembles itself. Characters land left to right while
+ * the whole mark stays centred, so it grows outward from the middle, and the
+ * extra tracking on an unsettled glyph collapses to normal as it arrives.
+ *
+ * Laid out in a frame loop rather than CSS keyframes because the centred growth
+ * needs real widths — a glyph that has not landed yet must occupy no space, and
+ * CSS cannot interpolate to a text run's intrinsic width.
+ */
+const GLYPHS = ['U', 'N', 'C', 'L', null, 'U', 'D'] as const;  // null is the cog
+const STAGGER = 0.085;
+const EXTRA = 0.52;      // additional tracking while a glyph settles, in em
+const CYCLE = 2600;      // ms for one full assemble, hold and reset
+
+function smooth(t: number) {
+  const x = Math.max(0, Math.min(1, t));
+  return x * x * (3 - 2 * x);
+}
+
 export default function Wordmark({
   size = 28,
   spinning = false,
@@ -80,7 +99,40 @@ export default function Wordmark({
   spinning?: boolean;
   className?: string;
 }) {
-  const cog = size * 1.16;   // the cog carries a little past cap height, as an O would
+  const cog = size * 1.16;
+  const refs = useRef<(HTMLSpanElement | null)[]>([]);
+  const [widths, setWidths] = useState<number[] | null>(null);
+  const [p, setP] = useState(1);
+
+  // Measure once at rest; the animation needs each glyph's natural width.
+  useEffect(() => {
+    const w = refs.current.map((el, i) =>
+      i === 4 ? cog : (el?.getBoundingClientRect().width ?? 0),
+    );
+    if (w.every((n) => n > 0)) setWidths(w);
+  }, [size, cog]);
+
+  useEffect(() => {
+    if (!spinning || !widths) { setP(1); return; }
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+    let raf = 0;
+    const t0 = performance.now();
+    const tick = (now: number) => {
+      const phase = ((now - t0) % CYCLE) / CYCLE;
+      // Assemble over the first 70%, hold, then reset for the next pass.
+      setP(phase < 0.7 ? phase / 0.7 : 1);
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [spinning, widths]);
+
+  const n = GLYPHS.length;
+  const win = 1 - STAGGER * (n - 1);
+  const gp = GLYPHS.map((_, i) =>
+    widths && spinning ? smooth((p - STAGGER * i) / win) : 1,
+  );
+
   return (
     <span
       className={`inline-flex items-center select-none ${className}`}
@@ -88,11 +140,29 @@ export default function Wordmark({
       role="img"
       aria-label="Uncloud"
     >
-      <span style={letter}>UNCL</span>
-      <span style={{ display: 'inline-flex', margin: `0 ${size * 0.004}px` }}>
-        <Cog px={cog} spinning={spinning} />
-      </span>
-      <span style={letter}>UD</span>
+      {GLYPHS.map((ch, i) => {
+        const natural = widths ? widths[i] : undefined;
+        const advance =
+          natural === undefined
+            ? undefined
+            : (natural + EXTRA * size * (1 - gp[i])) * gp[i];
+        return (
+          <span
+            key={i}
+            ref={(el) => { refs.current[i] = el; }}
+            style={{
+              display: 'inline-flex',
+              justifyContent: 'center',
+              overflow: 'visible',
+              opacity: gp[i],
+              width: advance,
+              ...(ch === null ? {} : letter),
+            }}
+          >
+            {ch === null ? <Cog px={cog} /> : ch}
+          </span>
+        );
+      })}
     </span>
   );
 }
