@@ -69,8 +69,8 @@ curl -LsSf https://astral.sh/uv/install.sh | sh        # macOS / Linux
 #   powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
 
 # 2. clone this repository next to wherever you installed the app
-git clone https://github.com/YOUR-USERNAME/uncloud-studio.git
-cd uncloud-studio/sidecar
+git clone https://github.com/aswinajith96-gif/Uncloud.git
+cd Uncloud/sidecar
 
 # 3. install the engine
 uv sync
