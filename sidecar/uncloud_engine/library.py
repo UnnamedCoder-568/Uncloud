@@ -151,6 +151,41 @@ def _classify_gguf(path: Path) -> tuple[str, str, str | None]:
     return "text", "gguf", None
 
 
+def _mlx_dir_engine(child: Path) -> tuple[str, str, str | None] | None:
+    """Distinguish an mflux-loadable model from a self-contained MLX port.
+
+    Some MLX repos ship their own inference code and expect to be run with it —
+    config.json says library_name: mlx and the weights are a single transformer
+    file beside a package of Python. mflux cannot load those, and handing one to
+    it produces a stack trace about missing safetensors rather than anything a
+    person can act on.
+    """
+    cfg = child / "config.json"
+    if not cfg.is_file():
+        return None
+    try:
+        import json
+
+        data = json.loads(cfg.read_text())
+    except (OSError, ValueError):
+        return None
+
+    if data.get("library_name") != "mlx":
+        return None
+    # Bundled inference code is the tell: a directory of Python beside the weights.
+    bundled = [
+        d for d in child.iterdir()
+        if d.is_dir() and (d / "__init__.py").is_file()
+    ]
+    entry = any((child / f).is_file() for f in ("generate.py", "app.py"))
+    if bundled or entry:
+        base = data.get("base_model") or "its base model"
+        return ("image", "mlx-port",
+                f"Self-contained MLX port of {base} — ships its own inference code "
+                "and cannot be run by mflux. Not supported yet.")
+    return None
+
+
 def scan_library(models_dir: Path) -> list[LocalModel]:
     if not models_dir.exists():
         return []
@@ -246,6 +281,7 @@ def scan_library(models_dir: Path) -> list[LocalModel]:
             if child.parent.name == "snapshots" and child.parent.parent.name.startswith("models--"):
                 display_name = child.parent.parent.name.removeprefix("models--").replace("--", "/")
             lowered = display_name.lower()
+            port_note: str | None = None
             if is_diffusers_pipeline:
                 if any(h in lowered for h in STT_HINTS):
                     category, engine = "voice-stt", "faster-whisper"
@@ -260,7 +296,11 @@ def scan_library(models_dir: Path) -> list[LocalModel]:
             elif any(h in lowered for h in TTS_HINTS):
                 category, engine = "voice-tts", "kokoro"
             elif any(h in lowered for h in DIFFUSION_HINTS):
-                category, engine = "image", "mflux"
+                port = _mlx_dir_engine(child)
+                if port:
+                    category, engine, port_note = port
+                else:
+                    category, engine, port_note = "image", "mflux", None
             elif "vibevoice" in lowered:
                 # Narration models, not chat models. Left as text they appear in
                 # the Chat picker and fail on load, which reads as the app being
@@ -286,6 +326,7 @@ def scan_library(models_dir: Path) -> list[LocalModel]:
                 catalog_id=entry.id if entry else None,
                 tags=entry.tags if entry else None,
                 capabilities=entry.capabilities if entry else None,
+                note=entry.note if entry else port_note,
             ))
 
     return sorted(found, key=lambda m: m.name.lower())

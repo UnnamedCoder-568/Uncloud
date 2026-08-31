@@ -105,3 +105,27 @@ def verify_video(path: str | Path, min_frames: int = 4) -> dict:
             f"The video has only {frames} frame(s) — generation did not complete."
         )
     return {"frames": frames, "size": (st.get("width"), st.get("height"))}
+
+
+def summarise_traceback(text: str, *, limit: int = 400) -> str:
+    """Pull the part of a Python traceback a person can act on.
+
+    A subprocess that dies prints twenty frames of library internals and then,
+    on the last line, the thing that actually went wrong. Showing the whole wall
+    buries the sentence that matters — so lead with it, and keep a little
+    context behind it.
+    """
+    lines = [ln.rstrip() for ln in (text or "").splitlines() if ln.strip()]
+    if not lines:
+        return "The process failed without printing anything."
+
+    # The final `SomeError: message` line is the useful one.
+    for ln in reversed(lines):
+        stripped = ln.strip()
+        if stripped.startswith(("File \"", "^", "Traceback", "During handling", "The above")):
+            continue
+        if ":" in stripped and stripped.split(":", 1)[0].replace(".", "").isidentifier():
+            return stripped[:limit]
+        if stripped and not stripped.startswith(("  ", "\t")):
+            return stripped[:limit]
+    return lines[-1][:limit]
