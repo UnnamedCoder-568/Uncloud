@@ -19,6 +19,9 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 MAX_EDIT_PIXELS = 1024 * 1024
 
 
+from .power import keep_awake
+
+
 def _fit_within_budget(reference_path: str) -> tuple[int, int] | None:
     """Scale the source's aspect ratio down to the pixel budget, snapped to /16."""
     try:
@@ -109,18 +112,20 @@ class ImageEngine:
     ) -> None:
         job.status = "running"
         try:
-            self._free_memory_for(engine)
-            if engine == "mflux":
-                out = await self._run_mflux(job, model_path, prompt, steps, guidance, width, height, seed, mflux_cli)
-            elif engine == "diffusers":
-                out = await asyncio.to_thread(
-                    self._run_diffusers, job, model_path, prompt, negative_prompt,
-                    steps, guidance, width, height, seed,
-                )
-            else:
-                raise ValueError(f"No image pipeline for engine: {engine}")
-            job.output_path = out
-            job.status = "done"
+            # Diffusion can run for minutes on a laptop; hold sleep off.
+            with keep_awake("image"):
+                self._free_memory_for(engine)
+                if engine == "mflux":
+                    out = await self._run_mflux(job, model_path, prompt, steps, guidance, width, height, seed, mflux_cli)
+                elif engine == "diffusers":
+                    out = await asyncio.to_thread(
+                        self._run_diffusers, job, model_path, prompt, negative_prompt,
+                        steps, guidance, width, height, seed,
+                    )
+                else:
+                    raise ValueError(f"No image pipeline for engine: {engine}")
+                job.output_path = out
+                job.status = "done"
         except Exception as exc:  # noqa: BLE001 - surface any generation failure to the UI
             job.status = "error"
             job.error = str(exc)

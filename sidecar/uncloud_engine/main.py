@@ -66,6 +66,7 @@ def get_settings() -> dict:
         "models_dir": str(settings.models_dir),
         "onboarded": settings.onboarded,
         "agent_device_access": settings.agent_device_access,
+        "keep_awake": settings.keep_awake,
         "hf_token_set": settings.hf_token_set,
     }
 
@@ -93,6 +94,12 @@ class DeviceAccessBody(BaseModel):
 @app.post("/api/settings/agent_device_access", dependencies=[Depends(require_token)])
 def set_device_access(body: DeviceAccessBody) -> dict:
     settings.set_agent_device_access(body.enabled)
+    return {"ok": True}
+
+
+@app.post("/api/settings/keep_awake", dependencies=[Depends(require_token)])
+def set_keep_awake(body: DeviceAccessBody) -> dict:
+    settings.set_keep_awake(body.enabled)
     return {"ok": True}
 
 

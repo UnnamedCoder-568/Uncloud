@@ -47,6 +47,9 @@ ENGINES = {
 VIBEVOICE_VENV = ENGINES["realtime"]["python"].parent.parent
 
 
+from .power import keep_awake
+
+
 def engine_available(name: str) -> bool:
     e = ENGINES.get(name)
     return bool(e and Path(e["python"]).is_file() and Path(e["runner"]).is_file())
@@ -237,18 +240,21 @@ class NarrationEngine:
         job.status = "running"
         job.stage = "loading model"
         try:
-            from .engines import engine_manager
+            # Long reads outlast the display timeout; without this the machine
+            # suspends mid-generation and the job is still sitting there later.
+            with keep_awake("narration"):
+                from .engines import engine_manager
 
-            if engine_manager.active:
-                engine_manager.stop()
+                if engine_manager.active:
+                    engine_manager.stop()
 
-            out = await asyncio.to_thread(
-                self._synthesise, job, model_dir, text, voice_slug,
-                sample_rate, bit_depth, cfg_scale, ddpm_steps, audio_format, engine,
-            )
-            job.output_path = out
-            job.status = "done"
-            job.stage = ""
+                out = await asyncio.to_thread(
+                    self._synthesise, job, model_dir, text, voice_slug,
+                    sample_rate, bit_depth, cfg_scale, ddpm_steps, audio_format, engine,
+                )
+                job.output_path = out
+                job.status = "done"
+                job.stage = ""
         except Exception as exc:  # noqa: BLE001 - surface any failure to the UI
             job.status = "error"
             job.error = str(exc)
