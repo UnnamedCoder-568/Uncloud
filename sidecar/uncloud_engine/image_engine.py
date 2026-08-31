@@ -9,8 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-OUTPUT_DIR = Path.home() / ".uncloud" / "outputs"
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
 
 # Kontext renders at the source image's dimensions unless told otherwise. A 1792x2390
 # phone-camera or catalogue photo is ~4.3MP, which pushes peak memory past 16GB on a
@@ -19,7 +18,9 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 MAX_EDIT_PIXELS = 1024 * 1024
 
 
+from .mflux_runtime import can_run_in_process, mflux_runtime
 from .output_check import summarise_traceback, verify_image
+from .config import output_dir_for
 from .power import keep_awake
 
 
@@ -92,6 +93,9 @@ class ImageEngine:
         if engine == "mflux" and self._pipe is not None:
             self._pipe = None
             self._pipe_path = None
+        if engine != "mflux":
+            # A diffusers pipeline and a resident mflux model will not both fit.
+            mflux_runtime.unload()
 
     def start(
         self, model_path: str, engine: str, prompt: str, *, negative_prompt: str = "",
@@ -170,7 +174,7 @@ class ImageEngine:
             if not mflux_bin:
                 raise RuntimeError(f"{mflux_cli} not found on PATH — is the `mflux` package installed?")
 
-            out_path = OUTPUT_DIR / f"{job.id}.png"
+            out_path = output_dir_for() / f"{job.id}.png"
             steps = steps or 28
             job.total_steps = steps
             seed = seed if seed is not None else int(time.time())
@@ -233,13 +237,29 @@ class ImageEngine:
         self, job: ImageJob, model_path: str, prompt: str, steps: int | None,
         guidance: float | None, width: int, height: int, seed: int | None, mflux_cli: str,
     ) -> str:
-        mflux_bin = _mflux_bin(mflux_cli)
-        if not mflux_bin:
-            raise RuntimeError(f"{mflux_cli} not found on PATH — is the `mflux` package installed?")
-        out_path = OUTPUT_DIR / f"{job.id}.png"
+        out_path = output_dir_for() / f"{job.id}.png"
         steps = steps or 8
         job.total_steps = steps
         seed = seed if seed is not None else int(time.time())
+
+        # Preferred path: the model stays in memory between generations. The
+        # subprocess below reloaded every weight for every image, which on a
+        # 22 GB model is minutes of work repeated for no reason.
+        if can_run_in_process(mflux_cli):
+            def on_step(n: int) -> None:
+                job.step = n
+
+            return await asyncio.to_thread(
+                mflux_runtime.generate,
+                cli=mflux_cli, model_path=model_path, prompt=prompt, seed=seed,
+                steps=steps, width=width, height=height,
+                guidance=guidance if guidance is not None else 1.0,
+                on_step=on_step, out_path=out_path,
+            )
+
+        mflux_bin = _mflux_bin(mflux_cli)
+        if not mflux_bin:
+            raise RuntimeError(f"{mflux_cli} not found on PATH — is the `mflux` package installed?")
         cmd = [
             mflux_bin, "--model", model_path, "--prompt", prompt,
             "--steps", str(steps), "--seed", str(seed),
@@ -304,7 +324,7 @@ class ImageEngine:
 
         result = pipe(**kwargs)
         image = result.images[0]
-        out_path = OUTPUT_DIR / f"{job.id}.png"
+        out_path = output_dir_for() / f"{job.id}.png"
         image.save(out_path)
         return str(out_path)
 

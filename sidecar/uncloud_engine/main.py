@@ -67,6 +67,8 @@ def get_settings() -> dict:
         "onboarded": settings.onboarded,
         "agent_device_access": settings.agent_device_access,
         "keep_awake": settings.keep_awake,
+        "output_dir": str(settings.output_dir),
+        "output_dir_is_default": settings.output_dir_is_default,
         "hf_token_set": settings.hf_token_set,
     }
 
@@ -96,6 +98,16 @@ class DeviceAccessBody(BaseModel):
 def set_device_access(body: DeviceAccessBody) -> dict:
     settings.set_agent_device_access(body.enabled)
     return {"ok": True}
+
+
+class OutputDirBody(BaseModel):
+    path: str
+
+
+@app.post("/api/settings/output_dir", dependencies=[Depends(require_token)])
+def set_output_dir(body: OutputDirBody) -> dict:
+    settings.set_output_dir(body.path)
+    return {"ok": True, "output_dir": str(settings.output_dir)}
 
 
 @app.post("/api/settings/keep_awake", dependencies=[Depends(require_token)])

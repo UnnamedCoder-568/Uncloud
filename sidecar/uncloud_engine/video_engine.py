@@ -17,10 +17,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .output_check import verify_video
+from .config import output_dir_for
 from .power import keep_awake
 
-OUTPUT_DIR = Path.home() / ".uncloud" / "outputs" / "video"
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
 
 # LTX accepts frame counts of the form 8n+1; anything else is silently padded.
 DEFAULT_FRAMES = 49          # ~2s at 24fps
@@ -178,7 +178,7 @@ class VideoEngine:
             callback_on_step_end=progress,
         )
         job.stage = "encoding"
-        dest = OUTPUT_DIR / f"{job.id}.mp4"
+        dest = output_dir_for("video") / f"{job.id}.mp4"
         export_to_video(result.frames[0], str(dest), fps=int(fps))
         return str(dest)
 

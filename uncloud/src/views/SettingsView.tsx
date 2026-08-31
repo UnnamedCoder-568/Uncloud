@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
-import { setModelsDir, setDeviceAccess, setHfToken, getSettings, setKeepAwake, getAgentTools, setAgentToolGroups} from '../lib/sidecar';
+import { setModelsDir, setDeviceAccess, setHfToken, getSettings, setKeepAwake, getAgentTools, setAgentToolGroups, setOutputDir} from '../lib/sidecar';
 import type { Settings, AgentTools } from '../lib/sidecar';
 
 export default function SettingsView() {
@@ -26,6 +26,14 @@ export default function SettingsView() {
     if (typeof selected === 'string') {
       await setModelsDir(selected);
       setSettings((s) => (s ? { ...s, models_dir: selected } : s));
+    }
+  }
+
+  async function changeOutputFolder() {
+    const selected = await open({ directory: true, multiple: false, defaultPath: settings?.output_dir });
+    if (typeof selected === 'string') {
+      await setOutputDir(selected);
+      setSettings((s) => (s ? { ...s, output_dir: selected, output_dir_is_default: false } : s));
     }
   }
 
@@ -82,6 +90,25 @@ export default function SettingsView() {
           >
             {settings.models_dir}
           </button>
+        </section>
+
+        <section className="card p-4">
+          <h2 className="text-sm mb-1">Where generated work is saved</h2>
+          <p className="text-[11px] text-[var(--text-faint)] mb-3">
+            Images, video, music and narration are written here. Pick somewhere you
+            actually open — a folder in Documents or on a drive, not a hidden one.
+          </p>
+          <button
+            onClick={changeOutputFolder}
+            className="w-full bg-[var(--bg-inset)] px-3 py-2.5 rounded-lg text-xs text-left hover:bg-[var(--bg-inset)]/70 transition font-mono"
+          >
+            {settings.output_dir}
+          </button>
+          {settings.output_dir_is_default && (
+            <p className="mt-2 text-[11px] text-amber-400/80">
+              Still the default hidden folder. Choose somewhere of your own.
+            </p>
+          )}
         </section>
 
         <section className="card p-4">

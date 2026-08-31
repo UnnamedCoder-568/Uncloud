@@ -4,8 +4,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-OUTPUT_DIR = Path.home() / ".uncloud" / "outputs"
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
 
 _whisper: dict[str, Any] = {}
 _kokoro: dict[str, Any] = {}
@@ -50,6 +49,6 @@ def speak(text: str, voice: str = "af_heart", speed: float = 1.0) -> str:
         raise RuntimeError("Kokoro produced no audio for this text")
     full = np.concatenate([c if isinstance(c, np.ndarray) else c.numpy() for c in chunks])
 
-    out_path = OUTPUT_DIR / f"{uuid.uuid4().hex[:12]}.wav"
+    out_path = output_dir_for() / f"{uuid.uuid4().hex[:12]}.wav"
     sf.write(str(out_path), full, 24000)
     return str(out_path)

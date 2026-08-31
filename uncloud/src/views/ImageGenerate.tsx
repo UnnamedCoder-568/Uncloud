@@ -148,7 +148,11 @@ export default function ImageGenerate() {
                 {job.total_steps ? `Generating — step ${job.step}/${job.total_steps}` : 'Generating…'}
               </span>
               {model?.engine === 'mflux' && (
-                <span className="text-[11px] text-[var(--text-faint)]">First run loads ~22GB into memory — this can take a few minutes.</span>
+                <span className="text-[11px] text-[var(--text-faint)]">
+                  {job && job.step > 0
+                    ? 'Model is loaded — rendering.'
+                    : 'Loading the model into memory. It stays loaded, so the next generation with this model skips this.'}
+                </span>
               )}
             </div>
           ) : job?.status === 'error' ? (
