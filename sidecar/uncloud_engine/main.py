@@ -454,6 +454,65 @@ def get_image_output(job_id: str) -> FileResponse:
     return FileResponse(job.output_path, media_type="image/png")
 
 
+# ------------------------------------------------------------------- video
+class VideoGenerateBody(BaseModel):
+    model_path: str
+    prompt: str
+    negative_prompt: str = ""
+    frames: int = 49
+    fps: int = 24
+    width: int = 512
+    height: int = 320
+    steps: int = 30
+    guidance: float = 3.0
+    seed: int | None = None
+
+
+@app.get("/api/video/options", dependencies=[Depends(require_token)])
+def video_options() -> dict:
+    from . import video_engine as ve
+
+    return {
+        "default_frames": ve.DEFAULT_FRAMES,
+        "default_fps": ve.DEFAULT_FPS,
+        "default_width": ve.DEFAULT_W,
+        "default_height": ve.DEFAULT_H,
+        "max_pixels": ve.MAX_PIXELS,
+    }
+
+
+@app.post("/api/video/generate", dependencies=[Depends(require_token)])
+async def video_generate(body: VideoGenerateBody) -> dict:
+    from .video_engine import video_engine
+
+    job = video_engine.start(
+        body.model_path, body.prompt, negative_prompt=body.negative_prompt,
+        frames=body.frames, fps=body.fps, width=body.width, height=body.height,
+        steps=body.steps, guidance=body.guidance, seed=body.seed,
+    )
+    return job.to_dict()
+
+
+@app.get("/api/video/jobs/{job_id}", dependencies=[Depends(require_token)])
+def video_job(job_id: str) -> dict:
+    from .video_engine import video_engine
+
+    job = video_engine.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="No such video job")
+    return job.to_dict()
+
+
+@app.get("/api/video/output/{job_id}", dependencies=[Depends(require_token)])
+def video_output(job_id: str) -> FileResponse:
+    from .video_engine import video_engine
+
+    job = video_engine.get(job_id)
+    if not job or not job.output_path:
+        raise HTTPException(status_code=404, detail="Video not ready")
+    return FileResponse(job.output_path, media_type="video/mp4")
+
+
 # ------------------------------------------------------------------- music
 @app.get("/api/music/options", dependencies=[Depends(require_token)])
 def music_options() -> dict:

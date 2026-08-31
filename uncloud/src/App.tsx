@@ -6,10 +6,10 @@ import ChatView from './views/ChatView';
 import ModelsView from './views/ModelsView';
 import AgentView from './views/AgentView';
 import SettingsView from './views/SettingsView';
-import StudioView from './views/StudioView';
 import ImageView from './views/ImageView';
 import VoiceView from './views/VoiceView';
 import MusicView from './views/MusicView';
+import VideoView from './views/VideoView';
 import GuideView from './views/GuideView';
 import SetupView from './views/SetupView';
 import { getSettings, runtimeStatus } from './lib/sidecar';
@@ -74,14 +74,7 @@ export default function App() {
         {view === 'guide' && <GuideView />}
         {view === 'settings' && <SettingsView />}
         {view === 'image' && <ImageView />}
-        {view === 'video' && (
-          <StudioView
-            title="Video"
-            subtitle="Text-to-video and image-to-video generation."
-            categories={['video']}
-            placeholder="A slow drone shot over a foggy forest…"
-          />
-        )}
+        {view === 'video' && <VideoView />}
         {view === 'music' && <MusicView />}
         {view === 'voice' && <VoiceView />}
       </main>
