@@ -103,6 +103,35 @@ def set_keep_awake(body: DeviceAccessBody) -> dict:
     return {"ok": True}
 
 
+@app.get("/api/agent/tools", dependencies=[Depends(require_token)])
+def agent_tools() -> dict:
+    from .agent.orchestrator import _active_tool_specs
+    from .agent.tools import auto_groups, group_summary
+    from .engines import engine_manager
+
+    active = engine_manager.active
+    configured = settings.agent_tool_groups
+    resolved = configured if configured is not None else auto_groups(
+        active.model_path if active else None
+    )
+    return {
+        "groups": group_summary(),
+        "configured": configured,      # None means automatic
+        "resolved": resolved,
+        "active_count": len(_active_tool_specs()),
+    }
+
+
+class ToolGroupsBody(BaseModel):
+    groups: list[str] | None = None
+
+
+@app.post("/api/agent/tool_groups", dependencies=[Depends(require_token)])
+def set_agent_tool_groups(body: ToolGroupsBody) -> dict:
+    settings.set_agent_tool_groups(body.groups)
+    return {"ok": True}
+
+
 class HfTokenBody(BaseModel):
     token: str
 

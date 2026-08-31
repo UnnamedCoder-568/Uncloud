@@ -66,6 +66,23 @@ class Settings:
         self._save()
 
     @property
+    def agent_tool_groups(self) -> list[str] | None:
+        """Which tool groups the agent's planner may see.
+
+        None means choose automatically from the loaded model's size — a small
+        model plans better against ten tools than thirty-one.
+        """
+        v = self._data.get("agent_tool_groups")
+        return list(v) if isinstance(v, list) else None
+
+    def set_agent_tool_groups(self, groups: list[str] | None) -> None:
+        if groups is None:
+            self._data.pop("agent_tool_groups", None)
+        else:
+            self._data["agent_tool_groups"] = list(groups)
+        self._save()
+
+    @property
     def keep_awake(self) -> bool:
         """Whether to stop the machine sleeping while a job runs.
 

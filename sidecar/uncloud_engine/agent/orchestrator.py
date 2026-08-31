@@ -43,8 +43,27 @@ Guidance:
 - see_image only works when a vision-capable model is loaded; pair it with screen_capture or browser_screenshot."""
 
 
-def _tools_description() -> str:
-    return "\n".join(f"- {t['id']}: {t['description']} (args: {', '.join(t['args'])})" for t in TOOL_SPECS)
+def _tools_description(specs: list[dict] | None = None) -> str:
+    return "\n".join(
+        f"- {t['id']}: {t['description']} (args: {', '.join(t['args'])})"
+        for t in (specs if specs is not None else TOOL_SPECS)
+    )
+
+
+def _active_tool_specs() -> list[dict]:
+    """The tools this planner sees, narrowed to the configured groups.
+
+    Left to itself the list only grows, and every entry costs prompt budget on
+    a machine that may not have much to spare.
+    """
+    from ..config import settings
+    from .tools import auto_groups, tools_for
+
+    groups = settings.agent_tool_groups
+    if groups is None:
+        active = engine_manager.active
+        groups = auto_groups(active.model_path if active else None)
+    return tools_for(groups)
 
 
 def _extract_json(text: str) -> dict:
@@ -103,7 +122,7 @@ class Orchestrator:
         if not engine_manager.active:
             raise RuntimeError("No text model is loaded. Start one from the Chat tab first.")
 
-        system = PLANNING_SYSTEM_PROMPT.format(tools=_tools_description())
+        system = PLANNING_SYSTEM_PROMPT.format(tools=_tools_description(_active_tool_specs()))
         # Planning happens once per run and has a long system prompt to chew through;
         # a large model on a busy machine can legitimately take minutes.
         try:
