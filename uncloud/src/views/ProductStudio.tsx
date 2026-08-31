@@ -305,7 +305,7 @@ export default function ProductStudio() {
         <button
           onClick={run}
           disabled={!canRun}
-          className="h-10 rounded-xl bg-white text-black text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-30 disabled:bg-[var(--border)] disabled:text-[var(--text-faint)] transition shrink-0"
+          className="h-10 rounded-xl btn-accent text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-30 transition shrink-0"
         >
           {running ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
           {running ? 'Generating…' : `Generate ${selectedShots.length || ''} shot${selectedShots.length === 1 ? '' : 's'}`}

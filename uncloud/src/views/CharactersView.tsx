@@ -79,7 +79,7 @@ export default function CharactersView() {
         {!editing && (
           <button
             onClick={() => setEditing(true)}
-            className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg bg-white text-black hover:bg-white/90 transition"
+            className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg btn-accent transition"
           >
             <Plus size={13} /> New character
           </button>
@@ -155,7 +155,7 @@ export default function CharactersView() {
           <button
             onClick={save}
             disabled={!name.trim() || saving}
-            className="h-9 rounded-lg bg-white text-black text-xs font-medium disabled:opacity-30 disabled:bg-[var(--border)] disabled:text-[var(--text-faint)] transition"
+            className="h-9 rounded-lg btn-accent text-xs font-medium disabled:opacity-30 transition"
           >
             {saving ? 'Saving…' : 'Save character'}
           </button>

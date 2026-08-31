@@ -141,12 +141,20 @@ export default function ModelsView() {
                     ) : (
                       <button
                         onClick={() => download(entry)}
-                        className="flex items-center gap-1.5 text-[11px] bg-white text-black px-3 py-1.5 rounded-full hover:bg-white/90 transition"
+                        className="flex items-center gap-1.5 text-[11px] btn-accent px-3 py-1.5 rounded-full transition"
                       >
                         <Download size={12} /> Download
                       </button>
                     )}
                   </div>
+                  {active && (
+                    <div className="mt-2 h-1 rounded-full bg-[var(--bg-inset)] overflow-hidden">
+                      <div
+                        className="h-full accent-bar transition-[width] duration-300"
+                        style={{ width: `${Math.max(2, active.percent)}%` }}
+                      />
+                    </div>
+                  )}
                   {downloads.find((d) => d.catalog_id === entry.id && d.status === 'error') && (
                     <div className="flex items-center gap-1 text-[11px] text-rose-400 mt-2">
                       <XCircle size={12} /> {downloads.find((d) => d.catalog_id === entry.id)?.error}

@@ -1,12 +1,14 @@
+import { useId } from 'react';
+
 /**
- * The Uncloud wordmark: Montserrat Black with the O replaced by a green cog.
+ * The Uncloud wordmark: Montserrat Black with the O replaced by a cog carrying
+ * the brand's amber-to-red gradient.
  *
  * The cog is the app icon too, so the two marks are literally the same drawing.
  * Its circuit traces are dropped below `TRACE_MIN` — at wordmark sizes they
  * collapse into noise and muddy the green rather than reading as detail.
  */
 
-const GREEN = '#22c55e';
 
 /** Twelve trapezoidal teeth: wider at the root (r=32) than the tip (r=46).
  *  The taper is what makes it read as a gear instead of a flower. */
@@ -35,13 +37,22 @@ export function Cog({ px, spinning = false, traces }: {
   px: number; spinning?: boolean; traces?: boolean;
 }) {
   const detail = traces ?? px >= TRACE_MIN;
+  // Unique per instance: several cogs can be on screen at once and duplicate
+  // gradient ids would make them all resolve to whichever mounted first.
+  const gid = useId();
   return (
     <svg viewBox="-52 -52 104 104" width={px} height={px} aria-hidden="true"
          style={{ display: 'block', flex: 'none' }}>
+      <defs>
+        <linearGradient id={gid} x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="var(--accent, #f59e0b)" />
+          <stop offset="100%" stopColor="var(--accent-2, #dc2626)" />
+        </linearGradient>
+      </defs>
       <g style={spinning
         ? { animation: 'uncloud-cog 2.4s linear infinite', transformOrigin: '0 0' }
         : undefined}>
-        <g fill={GREEN}>
+        <g fill={`url(#${gid})`}>
           <path d={TEETH} />
           <circle r={36} />
         </g>

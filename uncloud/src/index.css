@@ -66,7 +66,12 @@
   --mono: 'JetBrains Mono', ui-monospace, Menlo, monospace;
   --display: 'Montserrat', 'Inter', system-ui, sans-serif;
 
-  --grad: linear-gradient(90deg, #ff5f6d, #ffc371, #6ee7b7, #60a5fa, #c084fc);
+  /* Brand accent. Warm on a cool monochrome UI, and clear of the colours the
+     interface already uses semantically: rose for errors, emerald for success. */
+  --accent: #f59e0b;
+  --accent-2: #dc2626;
+  --accent-grad: linear-gradient(135deg, var(--accent), var(--accent-2));
+  --grad: linear-gradient(90deg, var(--accent), var(--accent-2));
 }
 
 * { box-sizing: border-box; }
@@ -170,4 +175,38 @@ body {
 }
 @media (prefers-reduced-motion: reduce) {
   [style*="uncloud-cog"] { animation: none !important; }
+}
+
+/* ---------------------------------------------------------------- accents */
+
+.accent-bar { background: var(--accent-grad); }
+
+.accent-text {
+  background: var(--accent-grad);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Primary action, where the brand should carry rather than plain white. */
+.btn-accent {
+  background: var(--accent-grad);
+  color: #fff;
+  border: none;
+}
+.btn-accent:hover:not(:disabled) { filter: brightness(1.08); }
+.btn-accent:disabled {
+  background: var(--border);
+  color: var(--text-faint);
+  filter: none;
+}
+
+/* Vertical rail marking the active sidebar item. */
+.nav-active-rail {
+  position: absolute;
+  left: 0; top: 50%;
+  transform: translateY(-50%);
+  width: 3px; height: 20px;
+  border-radius: 999px;
+  background: var(--accent-grad);
 }

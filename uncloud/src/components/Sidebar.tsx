@@ -49,12 +49,13 @@ export default function Sidebar({ active, onChange }: { active: View; onChange: 
           key={id}
           onClick={() => onChange(id)}
           title={label}
-          className={`h-11 rounded-xl flex items-center transition ${expanded ? 'px-3 gap-3 w-full' : 'w-11 justify-center'} ${
+          className={`relative h-11 rounded-xl flex items-center transition ${expanded ? 'px-3 gap-3 w-full' : 'w-11 justify-center'} ${
             active === id
               ? 'bg-[var(--bg-raised)] text-white border border-[var(--border)]'
               : 'text-[var(--text-faint)] hover:text-[var(--text-dim)] hover:bg-[var(--bg-raised)]/50 border border-transparent'
           }`}
         >
+          {active === id && <span className="nav-active-rail" />}
           <Icon size={18} strokeWidth={1.75} className="shrink-0" />
           {expanded && <span className="text-sm">{label}</span>}
         </button>
@@ -65,12 +66,13 @@ export default function Sidebar({ active, onChange }: { active: View; onChange: 
       <button
         onClick={() => onChange('guide')}
         title="Guide"
-        className={`h-11 rounded-xl flex items-center transition ${expanded ? 'px-3 gap-3 w-full' : 'w-11 justify-center'} ${
+        className={`relative h-11 rounded-xl flex items-center transition ${expanded ? 'px-3 gap-3 w-full' : 'w-11 justify-center'} ${
           active === 'guide'
             ? 'bg-[var(--bg-raised)] text-white border border-[var(--border)]'
             : 'text-[var(--text-faint)] hover:text-[var(--text-dim)] hover:bg-[var(--bg-raised)]/50 border border-transparent'
         }`}
       >
+        {active === 'guide' && <span className="nav-active-rail" />}
         <HelpCircle size={18} strokeWidth={1.75} className="shrink-0" />
         {expanded && <span className="text-sm">Guide</span>}
       </button>
@@ -78,12 +80,13 @@ export default function Sidebar({ active, onChange }: { active: View; onChange: 
       <button
         onClick={() => onChange('settings')}
         title="Settings"
-        className={`h-11 rounded-xl flex items-center transition ${expanded ? 'px-3 gap-3 w-full' : 'w-11 justify-center'} ${
+        className={`relative h-11 rounded-xl flex items-center transition ${expanded ? 'px-3 gap-3 w-full' : 'w-11 justify-center'} ${
           active === 'settings'
             ? 'bg-[var(--bg-raised)] text-white border border-[var(--border)]'
             : 'text-[var(--text-faint)] hover:text-[var(--text-dim)] hover:bg-[var(--bg-raised)]/50 border border-transparent'
         }`}
       >
+        {active === 'settings' && <span className="nav-active-rail" />}
         <Settings size={18} strokeWidth={1.75} className="shrink-0" />
         {expanded && <span className="text-sm">Settings</span>}
       </button>
