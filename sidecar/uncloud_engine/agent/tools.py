@@ -31,6 +31,41 @@ TOOL_SPECS = [
         "args": ["query"],
     },
     {
+        "id": "browser_console", "name": "Read Browser Console",
+        "description": "Read the browser console: JavaScript errors, warnings and logs from the current page. Use to debug a page that misbehaves. 'level' optionally filters to error, warning or log.",
+        "args": ["level"],
+    },
+    {
+        "id": "browser_network", "name": "Read Network Requests",
+        "description": "List the network requests the page made, with status codes and failures. 'contains' optionally filters by URL substring.",
+        "args": ["contains"],
+    },
+    {
+        "id": "browser_eval", "name": "Run JavaScript",
+        "description": "Run JavaScript in the current page and return the result, e.g. 'document.title' or 'document.querySelectorAll(\'a\').length'. Use for things the page does not show as text.",
+        "args": ["code"],
+    },
+    {
+        "id": "browser_move", "name": "Move Pointer",
+        "description": "Move the browser's pointer to pixel coordinates. This is the agent's own pointer inside the page, not the machine's mouse, so it never fights the user for control. Pair with screenshot_page and see_image to work visually.",
+        "args": ["x", "y"],
+    },
+    {
+        "id": "browser_click_at", "name": "Click At Coordinates",
+        "description": "Click at pixel coordinates in the page. Use when an element has no usable text or selector — read a screenshot first to find the position. Prefer browser_click when the target has a visible label.",
+        "args": ["x", "y", "button", "clicks"],
+    },
+    {
+        "id": "browser_drag", "name": "Drag Pointer",
+        "description": "Press at one point, drag to another and release. For sliders, canvases and drag-and-drop.",
+        "args": ["x1", "y1", "x2", "y2"],
+    },
+    {
+        "id": "browser_scroll_at", "name": "Scroll At",
+        "description": "Scroll the page by a pixel amount at a position. Positive dy scrolls down. Use for panes that scroll independently.",
+        "args": ["x", "y", "dy"],
+    },
+    {
         "id": "fs_edit", "name": "Edit File",
         "description": "Replace an exact string in a file. Use to change part of a file without rewriting all of it.",
         "args": ["path", "old", "new"],
@@ -180,6 +215,29 @@ async def run_tool(tool_id: str, args: dict[str, Any]) -> str:
             return await browser.read_page()
         if tool_id == "browser_links":
             return await browser.links()
+        if tool_id == "browser_console":
+            return await browser.console_log(str(args.get("level", "")))
+        if tool_id == "browser_network":
+            return await browser.network_log(str(args.get("contains", "")))
+        if tool_id == "browser_eval":
+            return await browser.evaluate_js(str(args.get("code", "")))
+        if tool_id == "browser_move":
+            return await browser.mouse_move(_num_arg(args, "x"), _num_arg(args, "y"))
+        if tool_id == "browser_click_at":
+            return await browser.mouse_click(
+                _num_arg(args, "x"), _num_arg(args, "y"),
+                str(args.get("button", "left") or "left"),
+                int(_num_arg(args, "clicks", 1)),
+            )
+        if tool_id == "browser_drag":
+            return await browser.mouse_drag(
+                _num_arg(args, "x1"), _num_arg(args, "y1"),
+                _num_arg(args, "x2"), _num_arg(args, "y2"),
+            )
+        if tool_id == "browser_scroll_at":
+            return await browser.scroll_at(
+                _num_arg(args, "x"), _num_arg(args, "y"), _num_arg(args, "dy", 600),
+            )
         if tool_id == "browser_click":
             return await browser.click(args.get("target", ""))
         if tool_id == "browser_type":
@@ -273,6 +331,15 @@ async def _see_image(path: str, question: str) -> str:
         )
         resp.raise_for_status()
         return resp.json()["choices"][0]["message"]["content"]
+
+
+def _num_arg(args: dict, key: str, default: float = 0.0) -> float:
+    """Models hand back coordinates as ints, floats or strings; take any of them."""
+    raw = args.get(key, default)
+    try:
+        return float(str(raw).strip())
+    except (TypeError, ValueError):
+        return float(default)
 
 
 def _truthy(value: Any) -> bool:

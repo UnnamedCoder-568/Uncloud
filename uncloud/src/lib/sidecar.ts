@@ -49,6 +49,7 @@ export interface Settings {
   models_dir: string;
   onboarded: boolean;
   agent_device_access: boolean;
+  keep_awake: boolean;
   hf_token_set: boolean;
 }
 
@@ -491,4 +492,8 @@ export async function startRuntime(): Promise<SidecarInfo> {
   const info = await invoke<SidecarInfo>('start_runtime');
   cached = info; // so the first api() call after setup doesn't re-poll
   return info;
+}
+
+export async function setKeepAwake(enabled: boolean) {
+  return apiPost('/api/settings/keep_awake', { enabled });
 }

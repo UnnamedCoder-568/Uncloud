@@ -23,6 +23,9 @@ QUALITY_PRESETS = {"draft": 4, "standard": 8, "high": 16, "max": 32}
 STEM_NAMES = ("drums", "bass", "vocals", "other")
 
 
+from .power import keep_awake
+
+
 @dataclass
 class MusicJob:
     id: str
@@ -109,26 +112,28 @@ class MusicEngine:
         job.status = "running"
         job.stage = "loading model"
         try:
-            # Diffusion models are multi-GB; free the chat model first, same as images.
-            from .engines import engine_manager
+            # Generation runs for minutes; don't let the machine nap through it.
+            with keep_awake("music"):
+                # Diffusion models are multi-GB; free the chat model first, same as images.
+                from .engines import engine_manager
 
-            if engine_manager.active:
-                engine_manager.stop()
+                if engine_manager.active:
+                    engine_manager.stop()
 
-            out = await asyncio.to_thread(
-                self._generate, job, model_dir, prompt, lyrics, instrumental, duration,
-                bpm, keyscale, steps, guidance, seed, sample_rate, bit_depth, audio_format,
-            )
-            job.output_path = out
+                out = await asyncio.to_thread(
+                    self._generate, job, model_dir, prompt, lyrics, instrumental, duration,
+                    bpm, keyscale, steps, guidance, seed, sample_rate, bit_depth, audio_format,
+                )
+                job.output_path = out
 
-            if separate_stems:
-                job.status = "separating"
-                job.stage = "splitting stems"
-                job.stems = await asyncio.to_thread(
-                    self._separate, out, sample_rate, bit_depth, audio_format)
+                if separate_stems:
+                    job.status = "separating"
+                    job.stage = "splitting stems"
+                    job.stems = await asyncio.to_thread(
+                        self._separate, out, sample_rate, bit_depth, audio_format)
 
-            job.status = "done"
-            job.stage = ""
+                job.status = "done"
+                job.stage = ""
         except Exception as exc:  # noqa: BLE001 - surface any failure to the UI
             job.status = "error"
             job.error = str(exc)

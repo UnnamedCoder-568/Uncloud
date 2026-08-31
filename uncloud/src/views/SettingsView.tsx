@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
-import { setModelsDir, setDeviceAccess, setHfToken, getSettings } from '../lib/sidecar';
+import { setModelsDir, setDeviceAccess, setHfToken, getSettings, setKeepAwake} from '../lib/sidecar';
 import type { Settings } from '../lib/sidecar';
 
 export default function SettingsView() {
@@ -39,6 +39,13 @@ export default function SettingsView() {
     setSettings({ ...settings, agent_device_access: next });
   }
 
+  async function toggleKeepAwake() {
+    if (!settings) return;
+    const next = !settings.keep_awake;
+    await setKeepAwake(next);
+    setSettings({ ...settings, keep_awake: next });
+  }
+
   if (!settings) return null;
 
   return (
@@ -74,6 +81,26 @@ export default function SettingsView() {
               className={`w-11 h-6 rounded-full shrink-0 transition relative ${settings.agent_device_access ? 'bg-emerald-500' : 'bg-[var(--border)]'}`}
             >
               <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition ${settings.agent_device_access ? 'left-5' : 'left-0.5'}`} />
+            </button>
+          </div>
+        </section>
+
+        <section className="card p-4">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h2 className="text-sm mb-1">Keep this machine awake</h2>
+              <p className="text-[11px] text-[var(--text-faint)] max-w-sm">
+                Stops the machine sleeping while an image, music, narration or agent
+                job is running. Without it a long job is suspended when the display
+                times out, and you come back to it unfinished. Released as soon as
+                the last job ends.
+              </p>
+            </div>
+            <button
+              onClick={toggleKeepAwake}
+              className={`w-11 h-6 rounded-full shrink-0 transition relative ${settings.keep_awake ? 'accent-bar' : 'bg-[var(--border)]'}`}
+            >
+              <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition ${settings.keep_awake ? 'left-5' : 'left-0.5'}`} />
             </button>
           </div>
         </section>

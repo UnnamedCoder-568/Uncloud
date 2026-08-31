@@ -66,6 +66,19 @@ class Settings:
         self._save()
 
     @property
+    def keep_awake(self) -> bool:
+        """Whether to stop the machine sleeping while a job runs.
+
+        Off by default: holding a wake lock is the kind of thing an app should
+        ask for rather than assume, and short jobs do not need it.
+        """
+        return bool(self._data.get("keep_awake", False))
+
+    def set_keep_awake(self, enabled: bool) -> None:
+        self._data["keep_awake"] = enabled
+        self._save()
+
+    @property
     def hf_token_set(self) -> bool:
         return bool(self._data.get("hf_token"))
 
