@@ -121,7 +121,7 @@ export default function SetupView({ onReady }: { onReady: () => void }) {
         <button
           onClick={run}
           disabled={busy || phase === 'checking'}
-          className="mt-5 w-full h-11 rounded-xl bg-white text-black text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-30 disabled:bg-[var(--border)] disabled:text-[var(--text-faint)] transition"
+          className="mt-5 w-full h-11 rounded-xl btn-accent text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-30 transition"
         >
           {busy ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}
           {phase === 'installing' ? 'Installing…'

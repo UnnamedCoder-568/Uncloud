@@ -96,7 +96,7 @@ export default function SettingsView() {
             <button
               onClick={saveToken}
               disabled={!tokenInput.trim()}
-              className="text-xs px-4 rounded-lg bg-white text-black disabled:opacity-30 disabled:bg-[var(--border)] disabled:text-[var(--text-faint)] transition"
+              className="text-xs px-4 rounded-lg btn-accent disabled:opacity-30 transition"
             >
               {tokenSaved ? 'Saved' : 'Save'}
             </button>

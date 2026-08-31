@@ -233,7 +233,7 @@ export default function MusicView() {
         <button
           onClick={run}
           disabled={!model || !prompt.trim() || busy}
-          className="h-10 rounded-xl bg-white text-black text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-30 disabled:bg-[var(--border)] disabled:text-[var(--text-faint)] transition"
+          className="h-10 rounded-xl btn-accent text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-30 transition"
         >
           {busy ? <Loader2 size={14} className="animate-spin" /> : <Music size={14} />}
           {busy ? (job?.stage || 'Working…') : 'Generate'}

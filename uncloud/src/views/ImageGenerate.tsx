@@ -153,7 +153,7 @@ export default function ImageGenerate() {
               <button
                 onClick={generate}
                 disabled={!model || !prompt.trim() || !!running}
-                className="w-8 h-8 rounded-full bg-white text-black flex items-center justify-center disabled:opacity-30 disabled:bg-[var(--border)] disabled:text-[var(--text-faint)] transition shrink-0"
+                className="w-8 h-8 rounded-full btn-accent flex items-center justify-center disabled:opacity-30 transition shrink-0"
               >
                 {running ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
               </button>

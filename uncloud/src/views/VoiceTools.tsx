@@ -141,7 +141,7 @@ export default function VoiceTools() {
           <button
             onClick={synthesize}
             disabled={!speakInput.trim() || synthesizing}
-            className="h-10 rounded-xl bg-white text-black text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-30 disabled:bg-[var(--border)] disabled:text-[var(--text-faint)] transition"
+            className="h-10 rounded-xl btn-accent text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-30 transition"
           >
             {synthesizing ? <Loader2 size={14} className="animate-spin" /> : <Volume2 size={14} />}
             {synthesizing ? 'Synthesizing…' : 'Speak'}

@@ -134,7 +134,7 @@ export default function AgentView() {
           <button
             onClick={run}
             disabled={!goal.trim() || phase === 'planning' || phase === 'running'}
-            className="w-8 h-8 rounded-full bg-white text-black flex items-center justify-center disabled:opacity-30 disabled:bg-[var(--border)] disabled:text-[var(--text-faint)] transition shrink-0"
+            className="w-8 h-8 rounded-full btn-accent flex items-center justify-center disabled:opacity-30 transition shrink-0"
           >
             <Send size={14} />
           </button>
