@@ -105,7 +105,7 @@ pub fn run() {
                 let state = app_handle.state::<SidecarState>();
                 let taken = state.child.lock().unwrap().take();
                 if let Some(mut child) = taken {
-                    let _ = child.kill();
+                    sidecar::terminate(&mut child);
                 }
             }
         });

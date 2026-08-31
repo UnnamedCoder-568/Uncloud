@@ -53,10 +53,50 @@ def health() -> dict:
 
 @app.on_event("shutdown")
 async def _shutdown() -> None:
-    """Chromium runs as a child process — close it so it doesn't outlive the engine."""
-    from .agent import browser
+    """Release every model and child process.
 
-    await browser.shutdown()
+    A chat server can be holding twenty gigabytes and is a child process, so
+    nothing reclaims it just because the window closed.
+    """
+    from .lifecycle import stop_all
+
+    await stop_all()
+
+
+def _install_signal_handlers() -> None:
+    """Tauri sends SIGTERM on quit; without a handler the process dies before
+    FastAPI's shutdown event runs and every loaded model is left orphaned."""
+    import signal
+
+    def _handle(signum, _frame):  # noqa: ANN001
+        from .lifecycle import stop_all_blocking
+
+        stop_all_blocking()
+        raise SystemExit(0)
+
+    for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+        try:
+            signal.signal(sig, _handle)
+        except (ValueError, OSError):
+            pass
+
+
+_install_signal_handlers()
+
+
+# ------------------------------------------------------------------ system
+@app.get("/api/system/resident", dependencies=[Depends(require_token)])
+def system_resident() -> dict:
+    from .lifecycle import resident
+
+    return resident()
+
+
+@app.post("/api/system/stop_all", dependencies=[Depends(require_token)])
+async def system_stop_all() -> dict:
+    from .lifecycle import stop_all
+
+    return (await stop_all()).to_dict()
 
 
 # ---------------------------------------------------------------- settings

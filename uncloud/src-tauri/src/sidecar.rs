@@ -257,13 +257,24 @@ pub fn spawn_sidecar(app: &AppHandle) -> Result<(Child, SidecarInfo), String> {
             .to_string()
     })?;
 
-    let mut child = Command::new(&uv)
+    let mut command = Command::new(&uv);
+    command
         .args(["run", "python", "-m", "uncloud_engine.main"])
         .current_dir(&dir)
         .env("PATH", child_path_env())
         .env("UV_PYTHON_DOWNLOADS", "automatic")
         .stdout(Stdio::piped())
-        .stderr(Stdio::inherit())
+        .stderr(Stdio::inherit());
+
+    // Own process group: the engine spawns model servers of its own, and
+    // killing only the engine would leave those holding their memory.
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        command.process_group(0);
+    }
+
+    let mut child = command
         .spawn()
         .map_err(|e| format!("Failed to launch the engine via `{}`: {e}", uv.display()))?;
 
@@ -306,4 +317,33 @@ pub async fn wait_healthy(port: u16, timeout_secs: u64) -> Result<(), String> {
         tokio::time::sleep(std::time::Duration::from_millis(300)).await;
     }
     Err("Timed out waiting for the engine to report healthy".into())
+}
+
+
+/// Ask the engine and everything it started to stop, then insist.
+///
+/// SIGTERM first, because the engine unloads its models and closes its own
+/// children on that signal; a straight kill would leave a chat server holding
+/// twenty gigabytes with nothing left to reap it.
+pub fn terminate(child: &mut Child) {
+    #[cfg(unix)]
+    {
+        let pid = child.id() as i32;
+        unsafe {
+            // Negative pid targets the whole group.
+            libc::killpg(pid, libc::SIGTERM);
+        }
+        for _ in 0..30 {
+            match child.try_wait() {
+                Ok(Some(_)) => return,
+                Ok(None) => std::thread::sleep(std::time::Duration::from_millis(100)),
+                Err(_) => break,
+            }
+        }
+        unsafe {
+            libc::killpg(pid, libc::SIGKILL);
+        }
+    }
+    let _ = child.kill();
+    let _ = child.wait();
 }
