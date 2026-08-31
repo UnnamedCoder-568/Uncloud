@@ -562,3 +562,58 @@ export async function quickImagePreview(prompt: string): Promise<string> {
   }
   throw new Error('Image generation timed out');
 }
+
+// -------------------------------------------------------------------- video
+
+export interface VideoJob {
+  id: string;
+  prompt: string;
+  status: 'pending' | 'running' | 'done' | 'error';
+  stage: string;
+  step: number;
+  total_steps: number;
+  output_path: string | null;
+  error: string | null;
+  done: boolean;
+}
+
+export interface VideoOptions {
+  default_frames: number;
+  default_fps: number;
+  default_width: number;
+  default_height: number;
+  max_pixels: number;
+}
+
+export interface VideoGenerateOptions {
+  negative_prompt?: string;
+  frames?: number;
+  fps?: number;
+  width?: number;
+  height?: number;
+  steps?: number;
+  guidance?: number;
+  seed?: number;
+}
+
+export async function getVideoOptions() {
+  return api<VideoOptions>('/api/video/options');
+}
+
+export async function generateVideo(
+  model_path: string, prompt: string, opts: VideoGenerateOptions = {},
+) {
+  return apiPost<VideoJob>('/api/video/generate', { model_path, prompt, ...opts });
+}
+
+export async function getVideoJob(id: string) {
+  return api<VideoJob>(`/api/video/jobs/${id}`);
+}
+
+export async function fetchVideoBlobUrl(id: string): Promise<string> {
+  const resp = await fetch(`${await baseUrl()}/api/video/output/${id}`, {
+    headers: await authHeaders(),
+  });
+  if (!resp.ok) throw new Error(`Failed to fetch video: ${resp.status}`);
+  return URL.createObjectURL(await resp.blob());
+}

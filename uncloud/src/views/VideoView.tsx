@@ -1,0 +1,257 @@
+import { useEffect, useRef, useState } from 'react';
+import { Loader2, Film, Download, ChevronDown, AlertCircle } from 'lucide-react';
+import {
+  getLibrary, getVideoOptions, generateVideo, getVideoJob, fetchVideoBlobUrl,
+} from '../lib/sidecar';
+import type { LocalModel, VideoJob } from '../lib/sidecar';
+
+/** LTX honours frame counts of the form 8n+1; anything else is padded silently. */
+const FRAME_CHOICES = [
+  { n: 25, label: '1s' },
+  { n: 49, label: '2s' },
+  { n: 73, label: '3s' },
+  { n: 97, label: '4s' },
+];
+
+const SIZES = [
+  { w: 448, h: 256, label: '448×256' },
+  { w: 512, h: 320, label: '512×320' },
+  { w: 640, h: 384, label: '640×384' },
+  { w: 704, h: 480, label: '704×480' },
+];
+
+export default function VideoView() {
+  const [models, setModels] = useState<LocalModel[]>([]);
+  const [model, setModel] = useState<LocalModel | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+
+  const [prompt, setPrompt] = useState('');
+  const [negative, setNegative] = useState('');
+  const [frames, setFrames] = useState(49);
+  const [size, setSize] = useState(SIZES[1]);
+  const [steps, setSteps] = useState(30);
+  const [guidance, setGuidance] = useState(3.0);
+
+  const [job, setJob] = useState<VideoJob | null>(null);
+  const [url, setUrl] = useState<string | null>(null);
+  const lastUrl = useRef<string | null>(null);
+
+  useEffect(() => {
+    getLibrary().then((list) => {
+      const v = list.filter((m) => m.category === 'video');
+      setModels(v);
+      setModel((p) => p ?? v[0] ?? null);
+    });
+    // Take the engine's defaults rather than duplicating them here.
+    getVideoOptions()
+      .then((o) => {
+        setFrames(o.default_frames);
+        const match = SIZES.find((s) => s.w === o.default_width && s.h === o.default_height);
+        if (match) setSize(match);
+      })
+      .catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    if (!job || job.done) return;
+    const t = window.setInterval(async () => {
+      const next = await getVideoJob(job.id).catch(() => null);
+      if (!next) return;
+      setJob(next);
+      if (next.done && next.status === 'done') {
+        if (lastUrl.current) URL.revokeObjectURL(lastUrl.current);
+        const u = await fetchVideoBlobUrl(next.id).catch(() => null);
+        lastUrl.current = u;
+        setUrl(u);
+      }
+    }, 2000);
+    return () => window.clearInterval(t);
+  }, [job]);
+
+  async function run() {
+    if (!model || !prompt.trim() || (job && !job.done)) return;
+    setUrl(null);
+    setJob(await generateVideo(model.path, prompt.trim(), {
+      negative_prompt: negative.trim(),
+      frames, width: size.w, height: size.h, steps, guidance,
+    }));
+  }
+
+  const busy = !!job && !job.done;
+  const pct = job && job.total_steps ? (job.step / job.total_steps) * 100 : 0;
+
+  return (
+    <div className="h-full flex">
+      <div className="w-[320px] shrink-0 border-r border-[var(--border-soft)] overflow-y-auto p-4 flex flex-col gap-5">
+        <div className="relative">
+          <label className="text-[10px] uppercase tracking-[0.18em] text-[var(--text-faint)]">Model</label>
+          <button
+            onClick={() => setPickerOpen((v) => !v)}
+            className="mt-1.5 w-full flex items-center justify-between text-xs px-3 py-2 rounded-lg bg-[var(--bg-inset)] hover:bg-[var(--bg-inset)]/70 transition"
+          >
+            <span className={model ? '' : 'text-[var(--text-faint)]'}>
+              {model ? model.name : 'No video model installed'}
+            </span>
+            <ChevronDown size={13} className="text-[var(--text-faint)]" />
+          </button>
+          {pickerOpen && (
+            <div className="absolute top-full left-0 right-0 mt-1 card p-1.5 z-20 shadow-2xl">
+              {models.length === 0 && (
+                <div className="text-[11px] text-[var(--text-faint)] px-2 py-3 text-center">
+                  Install a video model from the Models tab.
+                </div>
+              )}
+              {models.map((m) => (
+                <button
+                  key={m.id}
+                  onClick={() => { setModel(m); setPickerOpen(false); }}
+                  className="w-full text-left px-2.5 py-2 rounded-lg hover:bg-[var(--bg-inset)] transition text-xs"
+                >
+                  {m.name}
+                  <span className="block text-[10px] text-[var(--text-faint)]">
+                    {m.size_gb.toFixed(1)} GB
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div>
+          <label className="text-[10px] uppercase tracking-[0.18em] text-[var(--text-faint)]">Length</label>
+          <div className="mt-1.5 flex gap-1 bg-[var(--bg-inset)] p-1 rounded-lg">
+            {FRAME_CHOICES.map((f) => (
+              <button
+                key={f.n}
+                onClick={() => setFrames(f.n)}
+                className={`flex-1 text-[11px] py-1.5 rounded-md transition ${
+                  frames === f.n ? 'bg-[var(--bg-raised)] text-white' : 'text-[var(--text-faint)] hover:text-[var(--text-dim)]'
+                }`}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <label className="text-[10px] uppercase tracking-[0.18em] text-[var(--text-faint)]">Size</label>
+          <div className="mt-1.5 grid grid-cols-2 gap-1">
+            {SIZES.map((s) => (
+              <button
+                key={s.label}
+                onClick={() => setSize(s)}
+                className={`text-[11px] py-1.5 rounded-md transition ${
+                  size.label === s.label ? 'bg-[var(--bg-raised)] text-white' : 'bg-[var(--bg-inset)] text-[var(--text-faint)] hover:text-[var(--text-dim)]'
+                }`}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+          <p className="mt-1.5 text-[10px] text-[var(--text-faint)] leading-relaxed">
+            Video is far heavier than images. Start small — a longer or larger clip
+            on 24 GB will swap rather than fail, which is slower than it sounds.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[10px] uppercase tracking-[0.18em] text-[var(--text-faint)]">Steps</span>
+            <input
+              type="number" min={10} max={60} value={steps}
+              onChange={(e) => setSteps(Number(e.target.value))}
+              className="bg-[var(--bg-inset)] rounded-lg px-2.5 py-2 text-xs outline-none"
+            />
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[10px] uppercase tracking-[0.18em] text-[var(--text-faint)]">Guidance</span>
+            <input
+              type="number" min={1} max={10} step={0.5} value={guidance}
+              onChange={(e) => setGuidance(Number(e.target.value))}
+              className="bg-[var(--bg-inset)] rounded-lg px-2.5 py-2 text-xs outline-none"
+            />
+          </label>
+        </div>
+
+        <div>
+          <label className="text-[10px] uppercase tracking-[0.18em] text-[var(--text-faint)]">Avoid</label>
+          <input
+            value={negative}
+            onChange={(e) => setNegative(e.target.value)}
+            placeholder="blurry, distorted, watermark"
+            className="mt-1.5 w-full bg-[var(--bg-inset)] rounded-lg px-2.5 py-2 text-xs outline-none placeholder:text-[var(--text-faint)]"
+          />
+        </div>
+
+        <button
+          onClick={run}
+          disabled={!model || !prompt.trim() || busy}
+          className="h-10 rounded-xl btn-accent text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-30 transition"
+        >
+          {busy ? <Loader2 size={14} className="animate-spin" /> : <Film size={14} />}
+          {busy ? (job?.stage || 'Generating…') : 'Generate'}
+        </button>
+      </div>
+
+      <div className="flex-1 min-w-0 flex flex-col">
+        <div className="p-6 pb-3">
+          <label className="text-[10px] uppercase tracking-[0.18em] text-[var(--text-faint)]">Prompt</label>
+          <textarea
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            placeholder="A slow drone shot over a foggy pine forest at dawn, mist moving between the trees…"
+            className="mt-1.5 w-full h-24 bg-[var(--bg-inset)] rounded-lg px-3 py-3 text-sm outline-none resize-none leading-relaxed placeholder:text-[var(--text-faint)]"
+          />
+        </div>
+
+        <div className="flex-1 min-h-0 px-6 pb-6 flex items-center justify-center">
+          {url ? (
+            <div className="card p-4 max-w-full">
+              <video src={url} controls loop autoPlay muted className="rounded-lg max-h-[52vh]" />
+              <div className="flex items-center justify-between mt-3">
+                <span className="text-[10px] text-[var(--text-faint)]">
+                  {size.label} · {frames} frames
+                </span>
+                <button
+                  onClick={() => {
+                    const a = document.createElement('a');
+                    a.href = url; a.download = `uncloud-video-${job?.id}.mp4`; a.click();
+                  }}
+                  className="flex items-center gap-1.5 text-[11px] px-2.5 py-1.5 rounded-lg bg-[var(--bg-inset)] text-[var(--text-dim)] hover:text-white transition"
+                >
+                  <Download size={12} /> Save
+                </button>
+              </div>
+            </div>
+          ) : job?.status === 'error' ? (
+            <div className="card p-4 max-w-md border-rose-500/30">
+              <div className="flex items-center gap-2 text-rose-400">
+                <AlertCircle size={14} />
+                <span className="text-xs font-medium">Generation failed</span>
+              </div>
+              <p className="mt-2 text-[11px] text-[var(--text-dim)] whitespace-pre-wrap leading-relaxed">
+                {job.error}
+              </p>
+            </div>
+          ) : busy ? (
+            <div className="w-full max-w-sm">
+              <div className="flex items-center gap-2 text-sm text-[var(--text-dim)] mb-3">
+                <Loader2 size={14} className="animate-spin" />
+                {job?.stage || 'Working'}
+                {job && job.total_steps > 0 && ` — step ${job.step} of ${job.total_steps}`}
+              </div>
+              <div className="h-1 rounded-full bg-[var(--bg-inset)] overflow-hidden">
+                <div className="h-full accent-bar transition-[width] duration-500" style={{ width: `${Math.max(2, pct)}%` }} />
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-[var(--text-faint)]">
+              {models.length ? 'Describe a shot and generate.' : 'No video model installed.'}
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
