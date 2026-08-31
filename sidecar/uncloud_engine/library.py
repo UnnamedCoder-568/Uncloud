@@ -49,7 +49,11 @@ def _dir_size_gb(path: Path) -> float:
 # Architectures a GGUF header can declare. Diffusion transformers and language
 # models share the container format, so the name tells you nothing reliable.
 _DIFFUSION_ARCHS = {"flux", "sd3", "sdxl", "stable-diffusion", "sd1", "unet"}
-_LM_ARCHS = {"qwen2", "qwen3", "llama", "mistral", "gemma", "gemma2", "gemma3", "phi3"}
+# Prefixes, not exact names: quantisers ship variants like qwen35 and gemma4
+# that would otherwise fall through to guessing from the filename.
+_LM_ARCH_PREFIXES = ("qwen", "llama", "mistral", "gemma", "phi", "granite",
+                     "starcoder", "stablelm", "falcon", "bloom", "deci",
+                     "nemotron", "minimax", "lfm", "mamba", "gpt")
 
 
 def _gguf_architecture(path: Path) -> tuple[str | None, str | None]:
@@ -57,29 +61,66 @@ def _gguf_architecture(path: Path) -> tuple[str | None, str | None]:
 
     Filenames lie. One of these files is called flux2-klein-9b-uncensored and
     is a Qwen3 text encoder, which classified by name lands in the image picker
-    and fails the moment it is selected. The header is authoritative, and only
-    the first few KB have to be read to get it.
+    and fails the moment it is selected.
+
+    This parses the key-value block by hand and stops as soon as both fields are
+    found, which is within the first few entries. Using gguf.GGUFReader here
+    instead cost twenty-four seconds across six files, because it materialises
+    every value including the tokenizer vocabulary — hundreds of thousands of
+    strings nobody asked for.
     """
+    import struct
+
+    # GGUF value type ids -> fixed byte width. Strings and arrays are variable.
+    FIXED = {0: 1, 1: 1, 2: 2, 3: 2, 4: 4, 5: 4, 6: 4, 7: 1, 10: 8, 11: 8, 12: 8}
+    STRING, ARRAY = 8, 9
+
     try:
-        import gguf
-    except ImportError:
-        return None, None
-    try:
-        reader = gguf.GGUFReader(str(path))
-        arch = name = None
-        for field in reader.fields.values():
-            if field.name not in ("general.architecture", "general.name"):
-                continue
-            try:
-                val = field.parts[field.data[0]]
-                text = val.tobytes().decode("utf-8", "replace") if hasattr(val, "tobytes") else str(val)
-            except Exception:  # noqa: BLE001
-                continue
-            if field.name == "general.architecture":
-                arch = text.strip().lower()
-            else:
-                name = text.strip()
-        return arch, name
+        with path.open("rb") as f:
+            if f.read(4) != b"GGUF":
+                return None, None
+            struct.unpack("<I", f.read(4))[0]           # version
+            f.read(8)                                    # tensor count
+            n_kv = struct.unpack("<Q", f.read(8))[0]
+
+            def read_str() -> str:
+                n = struct.unpack("<Q", f.read(8))[0]
+                if n > 1 << 20:                          # implausible: bail out
+                    raise ValueError("oversized key")
+                return f.read(n).decode("utf-8", "replace")
+
+            def skip(vtype: int) -> None:
+                if vtype in FIXED:
+                    f.seek(FIXED[vtype], 1)
+                elif vtype == STRING:
+                    n = struct.unpack("<Q", f.read(8))[0]
+                    f.seek(n, 1)
+                elif vtype == ARRAY:
+                    elem = struct.unpack("<I", f.read(4))[0]
+                    count = struct.unpack("<Q", f.read(8))[0]
+                    if elem in FIXED:
+                        f.seek(FIXED[elem] * count, 1)   # one seek, not count reads
+                    else:
+                        for _ in range(count):
+                            skip(elem)
+                else:
+                    raise ValueError(f"unknown GGUF value type {vtype}")
+
+            arch = name = None
+            # The fields we want sit at the front; scanning the whole table would
+            # walk the vocabulary, which is the thing being avoided.
+            for _ in range(min(n_kv, 64)):
+                key = read_str()
+                vtype = struct.unpack("<I", f.read(4))[0]
+                if key == "general.architecture" and vtype == STRING:
+                    arch = read_str().strip().lower()
+                elif key == "general.name" and vtype == STRING:
+                    name = read_str().strip()
+                else:
+                    skip(vtype)
+                if arch and name:
+                    break
+            return arch, name
     except Exception:  # noqa: BLE001 - an unreadable header just falls back
         return None, None
 
@@ -99,7 +140,7 @@ def _classify_gguf(path: Path) -> tuple[str, str, str | None]:
         return ("image", "gguf-diffusion",
                 "Quantised diffusion transformer. Needs the matching VAE, tokenizer "
                 "and text encoder from a full pipeline alongside it.")
-    if arch in _LM_ARCHS:
+    if arch and arch.startswith(_LM_ARCH_PREFIXES):
         return "text", "gguf", None
 
     # Header unreadable or unfamiliar: fall back to the old filename guess, but
@@ -175,7 +216,15 @@ def scan_library(models_dir: Path) -> list[LocalModel]:
 
             config_json = child / "config.json"
             model_index_json = child / "model_index.json"
-            has_safetensors = any(child.glob("*.safetensors")) or any(child.glob("**/*.safetensors"))
+            # A recursive glob here is what made scanning a large models folder
+            # take twelve seconds: it walks the entire subtree of every
+            # directory visited, on a drive holding hundreds of gigabytes. A
+            # model root keeps its weights at the top level or one level down
+            # inside a component folder, so two levels is all that is needed.
+            has_safetensors = (
+                any(child.glob("*.safetensors"))
+                or any(child.glob("*/*.safetensors"))
+            )
             is_diffusers_pipeline = model_index_json.exists() and has_safetensors
             is_mlx_model = config_json.exists() and has_safetensors and not is_diffusers_pipeline
 
@@ -289,3 +338,29 @@ def scan_components(models_dir: Path) -> list[Component]:
             arch=_guess_arch(lowered), size_gb=f.stat().st_size / (1024 ** 3),
         ))
     return sorted(found, key=lambda c: (c.role, c.name.lower()))
+
+
+# Scanning walks the whole models folder, which on an external drive holding a
+# few hundred gigabytes is slow enough that doing it per request makes the app
+# look broken. Results are cached and invalidated on a timer or on demand —
+# models do not appear on disk without the user knowing.
+_CACHE_TTL = 45.0
+_cache: dict[str, tuple[float, list]] = {}
+
+
+def scan_library_cached(models_dir: Path, *, refresh: bool = False) -> list[LocalModel]:
+    import time
+
+    key = str(models_dir)
+    now = time.monotonic()
+    hit = _cache.get(key)
+    if not refresh and hit and (now - hit[0]) < _CACHE_TTL:
+        return hit[1]
+    found = scan_library(models_dir)
+    _cache[key] = (now, found)
+    return found
+
+
+def invalidate_library_cache() -> None:
+    """Called after a download finishes or the models folder changes."""
+    _cache.clear()

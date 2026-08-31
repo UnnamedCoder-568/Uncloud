@@ -22,7 +22,7 @@ from .config import settings
 from .downloader import download_manager
 from .engines import engine_manager
 from .image_engine import image_engine
-from .library import scan_library, scan_components
+from .library import invalidate_library_cache, scan_library_cached, scan_components
 from . import characters, product_studio, voice_engine
 from . import music_engine as music_engine_mod
 from .music_engine import music_engine
@@ -78,6 +78,7 @@ class ModelsDirBody(BaseModel):
 @app.post("/api/settings/models_dir", dependencies=[Depends(require_token)])
 def set_models_dir(body: ModelsDirBody) -> dict:
     settings.set_models_dir(body.path)
+    invalidate_library_cache()
     return {"ok": True}
 
 
@@ -145,7 +146,7 @@ def set_hf_token(body: HfTokenBody) -> dict:
 # ----------------------------------------------------------------- catalog
 @app.get("/api/catalog", dependencies=[Depends(require_token)])
 def catalog() -> list[dict]:
-    installed = {m.catalog_id for m in scan_library(settings.models_dir) if m.catalog_id}
+    installed = {m.catalog_id for m in scan_library_cached(settings.models_dir) if m.catalog_id}
     out = []
     for entry in get_catalog():
         d = entry.__dict__.copy()
@@ -156,7 +157,7 @@ def catalog() -> list[dict]:
 
 @app.get("/api/library", dependencies=[Depends(require_token)])
 def library() -> list[dict]:
-    return [m.to_dict() for m in scan_library(settings.models_dir)]
+    return [m.to_dict() for m in scan_library_cached(settings.models_dir)]
 
 
 @app.get("/api/image/components", dependencies=[Depends(require_token)])

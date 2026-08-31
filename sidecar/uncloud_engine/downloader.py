@@ -96,6 +96,11 @@ class DownloadManager:
             if entry.fixup:
                 _apply_fixup(entry.fixup, dest_dir)
             state.status = "done"
+            # A finished download changes what is on disk; without this the
+            # new model would not appear until the cache expired.
+            from .library import invalidate_library_cache
+
+            invalidate_library_cache()
             state.percent = 100.0
         except asyncio.CancelledError:
             state.status = "cancelled"
