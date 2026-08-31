@@ -1,0 +1,76 @@
+name: Build
+
+# Tauri cannot cross-compile: a Windows .exe needs the MSVC toolchain and a Linux
+# build needs GTK/webkit2gtk, so each artifact is built on its own runner. Pushing
+# a tag (v0.1.0) produces a draft release with all three.
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            label: macOS (Apple Silicon)
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            label: macOS (Intel)
+          - os: ubuntu-22.04
+            target: ''
+            label: Linux
+          - os: windows-latest
+            target: ''
+            label: Windows
+
+    runs-on: ${{ matrix.os }}
+    name: ${{ matrix.label }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # webkit2gtk 4.1 is the Tauri v2 dependency; 4.0 is for v1 and will not link.
+      - name: Install Linux system dependencies
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            build-essential \
+            curl wget file libssl-dev libxdo-dev libgtk-3-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: uncloud/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: uncloud
+        run: npm ci
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: uncloud/src-tauri
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: uncloud
+          tagName: ${{ github.ref_name }}
+          releaseName: 'Uncloud ${{ github.ref_name }}'
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.target && format('--target {0}', matrix.target) || '' }}

@@ -1,0 +1,52 @@
+# ---------------------------------------------------------------- weights
+# Model files are enormous and belong on disk, not in git.
+models/
+New Models/
+*.gguf
+*.safetensors
+*.bin
+*.pt
+*.ckpt
+
+# ------------------------------------------------------------ dependencies
+node_modules/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.uv-cache/
+
+# ----------------------------------------------------------------- builds
+dist/
+build/
+target/
+*.dmg
+*.app/
+*.AppImage
+*.deb
+*.msi
+*.exe
+
+# ------------------------------------------------------- legacy prototypes
+# Superseded by uncloud/ + sidecar/; kept on disk, out of the repo.
+app/
+frontend/
+web/
+workspace/
+Astro Mark 1/
+src-tauri/
+server.py
+docs/
+.aider*
+.continue/
+1ls
+TestPrint.py
+Option 1*
+
+# ------------------------------------------------------------------- local
+.DS_Store
+.env
+.env.*
+*.log
+.idea/
+.vscode/
