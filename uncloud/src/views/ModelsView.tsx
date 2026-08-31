@@ -19,16 +19,37 @@ export default function ModelsView() {
   const [downloads, setDownloads] = useState<DownloadState[]>([]);
   const [onlyUncensored, setOnlyUncensored] = useState(false);
 
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  /**
+   * Each source is fetched independently. Previously all three went through a
+   * single Promise.all with no catch, so one failing call left every list empty
+   * and the page rendered as a blank grid with nothing explaining why.
+   */
   async function refresh() {
-    const [c, l, d] = await Promise.all([getCatalog(), getLibrary(), listDownloads()]);
-    setCatalog(c);
-    setLibrary(l);
-    setDownloads(d);
+    setLoading(true);
+    const problems: string[] = [];
+
+    const [c, l, d] = await Promise.all([
+      getCatalog().catch((e) => { problems.push(`catalog: ${e}`); return null; }),
+      getLibrary().catch((e) => { problems.push(`installed models: ${e}`); return null; }),
+      listDownloads().catch((e) => { problems.push(`downloads: ${e}`); return null; }),
+    ]);
+
+    if (c) setCatalog(c);
+    if (l) setLibrary(l);
+    if (d) setDownloads(d);
+    setError(problems.length ? problems.join('\n') : null);
+    setLoading(false);
   }
 
   useEffect(() => {
     refresh();
-    const t = setInterval(async () => setDownloads(await listDownloads()), 1200);
+    const t = setInterval(async () => {
+      const d = await listDownloads().catch(() => null);
+      if (d) setDownloads(d);
+    }, 1200);
     return () => clearInterval(t);
   }, []);
 
@@ -97,8 +118,41 @@ export default function ModelsView() {
           </section>
         )}
 
+        {error && (
+          <div className="card p-4 mb-6 border-rose-500/30">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 text-rose-400">
+                  <XCircle size={14} />
+                  <span className="text-xs font-medium">Could not load everything</span>
+                </div>
+                <p className="mt-1.5 text-[11px] text-[var(--text-dim)] whitespace-pre-wrap leading-relaxed">
+                  {error}
+                </p>
+              </div>
+              <button
+                onClick={refresh}
+                className="text-[11px] px-3 py-1.5 rounded-lg bg-[var(--bg-inset)] text-[var(--text-dim)] hover:text-white transition shrink-0"
+              >
+                Retry
+              </button>
+            </div>
+          </div>
+        )}
+
         <section>
           <h2 className="text-[10px] uppercase tracking-[0.18em] text-[var(--text-faint)] mb-3">Download</h2>
+          {filteredCatalog.length === 0 && (
+            <p className="text-[11px] text-[var(--text-faint)] py-6 text-center">
+              {loading
+                ? 'Loading…'
+                : catalog.length === 0
+                  ? 'The catalog could not be loaded.'
+                  : onlyUncensored
+                    ? 'No uncensored models in this category.'
+                    : 'Nothing to download in this category.'}
+            </p>
+          )}
           <div className="grid grid-cols-2 gap-3">
             {filteredCatalog.map((entry) => {
               const active = activeDownloadFor(entry.id);
