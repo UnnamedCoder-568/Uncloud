@@ -19,7 +19,7 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 MAX_EDIT_PIXELS = 1024 * 1024
 
 
-from .output_check import verify_image
+from .output_check import summarise_traceback, verify_image
 from .power import keep_awake
 
 
@@ -124,7 +124,11 @@ class ImageEngine:
                         steps, guidance, width, height, seed,
                     )
                 else:
-                    raise ValueError(f"No image pipeline for engine: {engine}")
+                    raise ValueError(
+                        f"'{engine}' models cannot be generated with yet. "
+                        "Pick a model listed as mflux or diffusers — the Models "
+                        "tab shows which is which."
+                    )
                 # Check before claiming success: a flat grey rectangle is a
                 # failure, not a picture, and must not be handed over as one.
                 verify_image(out)
@@ -220,7 +224,10 @@ class ImageEngine:
                 job.step, job.total_steps = int(m.group(1)), int(m.group(2))
         code = await proc.wait()
         if code != 0 or not out_path.exists():
-            raise RuntimeError(f"{cli_name} exited {code}:\n{''.join(tail)[-2000:]}")
+            detail = "".join(tail)
+            raise RuntimeError(
+                f"{cli_name} failed: {summarise_traceback(detail)}"
+            )
 
     async def _run_mflux(
         self, job: ImageJob, model_path: str, prompt: str, steps: int | None,

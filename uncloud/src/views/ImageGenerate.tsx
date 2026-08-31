@@ -95,16 +95,35 @@ export default function ImageGenerate() {
                   No image models found yet. Download one from the Models tab.
                 </div>
               )}
-              {models.map((m) => (
-                <button
-                  key={m.id}
-                  onClick={() => selectModel(m)}
-                  className="w-full text-left px-3 py-2 rounded-lg hover:bg-[var(--bg-inset)] transition flex items-center justify-between"
-                >
-                  <span className="text-sm">{m.name}</span>
-                  <span className="text-[10px] font-mono text-[var(--text-faint)] uppercase">{m.engine}</span>
-                </button>
-              ))}
+              {models.map((m) => {
+                // Only these two have generation pipelines behind them. The rest
+                // are listed so it's clear they were found, not hidden as though
+                // they were never there.
+                const usable = m.engine === 'mflux' || m.engine === 'diffusers';
+                return (
+                  <button
+                    key={m.id}
+                    onClick={() => usable && selectModel(m)}
+                    disabled={!usable}
+                    title={m.note || undefined}
+                    className={`w-full text-left px-3 py-2 rounded-lg transition ${
+                      usable ? 'hover:bg-[var(--bg-inset)]' : 'opacity-45 cursor-not-allowed'
+                    }`}
+                  >
+                    <span className="flex items-center justify-between gap-2">
+                      <span className="text-sm truncate">{m.name}</span>
+                      <span className="text-[10px] font-mono text-[var(--text-faint)] uppercase shrink-0">
+                        {usable ? m.engine : 'unsupported'}
+                      </span>
+                    </span>
+                    {!usable && m.note && (
+                      <span className="block text-[10px] text-amber-400/70 mt-0.5 leading-snug">
+                        {m.note}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
             </div>
           )}
 
