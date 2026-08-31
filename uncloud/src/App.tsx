@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Sidebar from './components/Sidebar';
 import type { View } from './components/Sidebar';
 import Onboarding from './views/Onboarding';
@@ -11,23 +11,44 @@ import ImageView from './views/ImageView';
 import VoiceView from './views/VoiceView';
 import MusicView from './views/MusicView';
 import GuideView from './views/GuideView';
-import { getSettings } from './lib/sidecar';
+import SetupView from './views/SetupView';
+import { getSettings, runtimeStatus } from './lib/sidecar';
 import Wordmark from './components/Wordmark';
 
 export default function App() {
+  // null while we're still asking; false sends the user to setup.
+  const [engineUp, setEngineUp] = useState<boolean | null>(null);
   const [ready, setReady] = useState(false);
   const [onboarded, setOnboarded] = useState(false);
   const [view, setView] = useState<View>('chat');
   const [engineError, setEngineError] = useState<string | null>(null);
 
   useEffect(() => {
+    runtimeStatus()
+      .then((s) => setEngineUp(s.running))
+      .catch(() => setEngineUp(false));
+  }, []);
+
+  useEffect(() => {
+    if (!engineUp) return;
     getSettings()
       .then((s) => {
         setOnboarded(s.onboarded);
         setReady(true);
       })
       .catch((e) => setEngineError(String(e)));
-  }, []);
+  }, [engineUp]);
+
+  const handleEngineReady = useCallback(() => setEngineUp(true), []);
+
+  const splash = (
+    <div className="h-screen w-screen flex items-center justify-center">
+      <Wordmark size={40} spinning />
+    </div>
+  );
+
+  if (engineUp === null) return splash;
+  if (!engineUp) return <SetupView onReady={handleEngineReady} />;
 
   if (engineError) {
     return (
@@ -37,13 +58,7 @@ export default function App() {
     );
   }
 
-  if (!ready) {
-    return (
-      <div className="h-screen w-screen flex items-center justify-center">
-        <Wordmark size={40} spinning />
-      </div>
-    );
-  }
+  if (!ready) return splash;
 
   if (!onboarded) {
     return <Onboarding onDone={() => setOnboarded(true)} />;

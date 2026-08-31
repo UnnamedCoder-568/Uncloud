@@ -1,11 +1,55 @@
 mod sidecar;
 
-use sidecar::{SidecarInfo, SidecarState};
-use tauri::Manager;
+use sidecar::{RuntimeStatus, SidecarInfo, SidecarState};
+use tauri::{AppHandle, Manager};
 
 #[tauri::command]
 fn get_sidecar_info(state: tauri::State<SidecarState>) -> Option<SidecarInfo> {
     state.info.lock().unwrap().clone()
+}
+
+#[tauri::command]
+fn runtime_status(app: AppHandle, state: tauri::State<SidecarState>) -> RuntimeStatus {
+    sidecar::status(&app, &state)
+}
+
+/// Create the engine environment. Long-running; progress arrives separately as
+/// `runtime-install-log` events.
+#[tauri::command]
+async fn install_runtime(app: AppHandle) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || sidecar::install_engine(&app))
+        .await
+        .map_err(|e| format!("Install task failed: {e}"))?
+}
+
+/// Start the engine and wait for it to report healthy. Safe to call repeatedly:
+/// if it is already up, the existing handshake is returned.
+#[tauri::command]
+async fn start_runtime(
+    app: AppHandle,
+    state: tauri::State<'_, SidecarState>,
+) -> Result<SidecarInfo, String> {
+    let existing = state.info.lock().unwrap().clone();
+    if let Some(info) = existing {
+        return Ok(info);
+    }
+
+    let spawn_app = app.clone();
+    let (child, info) = tauri::async_runtime::spawn_blocking(move || {
+        sidecar::spawn_sidecar(&spawn_app)
+    })
+    .await
+    .map_err(|e| format!("Start task failed: {e}"))??;
+
+    if let Err(e) = sidecar::wait_healthy(info.port, 120).await {
+        *state.error.lock().unwrap() = Some(e.clone());
+        return Err(e);
+    }
+
+    *state.info.lock().unwrap() = Some(info.clone());
+    *state.child.lock().unwrap() = Some(child);
+    *state.error.lock().unwrap() = None;
+    Ok(info)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -21,23 +65,39 @@ pub fn run() {
                 )?;
             }
 
-            let (child, info) = sidecar::spawn_sidecar().map_err(|e| {
-                log::error!("Failed to start Uncloud engine: {e}");
-                e
-            })?;
-
-            let port = info.port;
-            tauri::async_runtime::block_on(sidecar::wait_healthy(port, 90))
-                .map_err(|e| format!("Uncloud engine did not become healthy: {e}"))?;
-
+            // Starting the engine must never prevent the window from opening:
+            // when it is missing the front end shows a setup screen, and it
+            // cannot do that if this closure returns Err.
             let state = SidecarState::new();
-            *state.info.lock().unwrap() = Some(info);
-            *state.child.lock().unwrap() = Some(child);
+            match sidecar::spawn_sidecar(app.handle()) {
+                Ok((child, info)) => {
+                    let port = info.port;
+                    match tauri::async_runtime::block_on(sidecar::wait_healthy(port, 90)) {
+                        Ok(()) => {
+                            *state.info.lock().unwrap() = Some(info);
+                            *state.child.lock().unwrap() = Some(child);
+                        }
+                        Err(e) => {
+                            log::warn!("Engine did not become healthy: {e}");
+                            *state.error.lock().unwrap() = Some(e);
+                        }
+                    }
+                }
+                Err(e) => {
+                    log::warn!("Engine not started: {e}");
+                    *state.error.lock().unwrap() = Some(e);
+                }
+            }
             app.manage(state);
 
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![get_sidecar_info])
+        .invoke_handler(tauri::generate_handler![
+            get_sidecar_info,
+            runtime_status,
+            install_runtime,
+            start_runtime
+        ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| {
