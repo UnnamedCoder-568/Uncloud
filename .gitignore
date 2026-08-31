@@ -34,7 +34,7 @@ frontend/
 web/
 workspace/
 Astro Mark 1/
-src-tauri/
+/src-tauri/
 server.py
 docs/
 .aider*
