@@ -623,3 +623,21 @@ export async function fetchVideoBlobUrl(id: string): Promise<string> {
 export async function setOutputDir(path: string) {
   return apiPost<{ ok: boolean; output_dir: string }>('/api/settings/output_dir', { path });
 }
+
+// ------------------------------------------------------------ model memory
+
+export interface ResidentModels {
+  text_model: string | null;
+  image_pipeline: string | null;
+  mflux_model: string | null;
+  video_pipeline: string | null;
+  anything: boolean;
+}
+
+export async function getResident() {
+  return api<ResidentModels>('/api/system/resident');
+}
+
+export async function stopAllModels() {
+  return apiPost<Record<string, boolean>>('/api/system/stop_all');
+}

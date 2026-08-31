@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
-import { setModelsDir, setDeviceAccess, setHfToken, getSettings, setKeepAwake, getAgentTools, setAgentToolGroups, setOutputDir} from '../lib/sidecar';
-import type { Settings, AgentTools } from '../lib/sidecar';
+import { setModelsDir, setDeviceAccess, setHfToken, getSettings, setKeepAwake, getAgentTools, setAgentToolGroups, setOutputDir, getResident, stopAllModels} from '../lib/sidecar';
+import type { Settings, AgentTools, ResidentModels } from '../lib/sidecar';
 
 export default function SettingsView() {
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -26,6 +26,27 @@ export default function SettingsView() {
     if (typeof selected === 'string') {
       await setModelsDir(selected);
       setSettings((s) => (s ? { ...s, models_dir: selected } : s));
+    }
+  }
+
+  const [resident, setResident] = useState<ResidentModels | null>(null);
+  const [stopping, setStopping] = useState(false);
+
+  // Polled, because a model can be loaded by any tab at any time.
+  useEffect(() => {
+    const read = () => getResident().then(setResident).catch(() => undefined);
+    read();
+    const t = setInterval(read, 4000);
+    return () => clearInterval(t);
+  }, []);
+
+  async function stopModels() {
+    setStopping(true);
+    try {
+      await stopAllModels();
+      setResident(await getResident().catch(() => null));
+    } finally {
+      setStopping(false);
     }
   }
 
@@ -91,6 +112,45 @@ export default function SettingsView() {
             {settings.models_dir}
           </button>
         </section>
+
+        {resident && (
+          <section className="card p-4">
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <h2 className="text-sm mb-1">Models in memory</h2>
+                {resident.anything ? (
+                  <ul className="text-[11px] text-[var(--text-dim)] font-mono leading-relaxed">
+                    {([
+                      ['Chat', resident.text_model],
+                      ['Image', resident.image_pipeline],
+                      ['Image (MLX)', resident.mflux_model],
+                      ['Video', resident.video_pipeline],
+                    ] as [string, string | null][])
+                      .filter(([, v]) => v)
+                      .map(([k, v]) => (
+                        <li key={k} className="truncate">
+                          <span className="text-[var(--text-faint)]">{k}: </span>
+                          {v!.split('/').pop()}
+                        </li>
+                      ))}
+                  </ul>
+                ) : (
+                  <p className="text-[11px] text-[var(--text-faint)] max-w-sm">
+                    Nothing loaded. Models are freed when you quit, but they stay
+                    resident between generations so repeat runs are fast.
+                  </p>
+                )}
+              </div>
+              <button
+                onClick={stopModels}
+                disabled={!resident.anything || stopping}
+                className="text-[11px] px-3 py-1.5 rounded-lg bg-[var(--bg-inset)] text-[var(--text-dim)] hover:text-white disabled:opacity-30 transition shrink-0"
+              >
+                {stopping ? 'Stopping…' : 'Unload all'}
+              </button>
+            </div>
+          </section>
+        )}
 
         <section className="card p-4">
           <h2 className="text-sm mb-1">Where generated work is saved</h2>
