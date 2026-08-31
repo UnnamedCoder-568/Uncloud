@@ -460,3 +460,35 @@ export async function agentSocket(): Promise<WebSocket> {
   const { port, token } = await getSidecarInfo();
   return new WebSocket(`ws://127.0.0.1:${port}/ws/agent?token=${token}`);
 }
+
+// ------------------------------------------------------------ runtime setup
+
+/**
+ * Observable state of the Python engine. The window opens whether or not the
+ * engine is running, so the setup screen can explain which piece is missing
+ * rather than the app failing to start.
+ */
+export interface RuntimeStatus {
+  running: boolean;
+  source_ready: boolean;
+  uv_found: boolean;
+  deps_ready: boolean;
+  engine_dir: string;
+  error: string | null;
+}
+
+export async function runtimeStatus(): Promise<RuntimeStatus> {
+  return invoke<RuntimeStatus>('runtime_status');
+}
+
+/** Creates the environment and installs dependencies. Progress arrives as
+ *  `engine-install-log` events rather than in the return value. */
+export async function installRuntime(): Promise<void> {
+  await invoke('install_runtime');
+}
+
+export async function startRuntime(): Promise<SidecarInfo> {
+  const info = await invoke<SidecarInfo>('start_runtime');
+  cached = info; // so the first api() call after setup doesn't re-poll
+  return info;
+}
