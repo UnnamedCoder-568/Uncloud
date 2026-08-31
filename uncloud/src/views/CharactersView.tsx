@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ImagePlus, Loader2, Plus, Trash2, UserRound, X } from 'lucide-react';
 import { listCharacters, saveCharacter, deleteCharacter, uploadImage, characterReferenceUrl } from '../lib/sidecar';
+import Dictate from '../components/Dictate';
 import type { Character } from '../lib/sidecar';
 
 export default function CharactersView() {
@@ -100,7 +101,10 @@ export default function CharactersView() {
           </div>
 
           <div>
+            <div className="flex items-center justify-between">
             <label className="text-[10px] uppercase tracking-[0.18em] text-[var(--text-faint)]">Name</label>
+            <Dictate title="Dictate the name" onText={(t) => setName((v) => (v ? v.trimEnd() + ' ' + t : t))} />
+          </div>
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -110,7 +114,10 @@ export default function CharactersView() {
           </div>
 
           <div>
+            <div className="flex items-center justify-between">
             <label className="text-[10px] uppercase tracking-[0.18em] text-[var(--text-faint)]">Traits</label>
+            <Dictate title="Dictate the traits" onText={(t) => setDescription((v) => (v ? v.trimEnd() + ' ' + t : t))} />
+          </div>
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}

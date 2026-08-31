@@ -3,6 +3,7 @@ import { Loader2, Music, Download, Layers, ChevronDown } from 'lucide-react';
 import {
   getMusicOptions, generateMusic, getMusicJob, musicAudioUrl, getLibrary,
 } from '../lib/sidecar';
+import Dictate from '../components/Dictate';
 import type { MusicOptions, MusicJob, LocalModel } from '../lib/sidecar';
 
 type Mode = 'song' | 'instrumental';
@@ -145,7 +146,10 @@ export default function MusicView() {
         </div>
 
         <div>
-          <label className="text-[10px] uppercase tracking-[0.18em] text-[var(--text-faint)]">Style</label>
+          <div className="flex items-center justify-between">
+            <label className="text-[10px] uppercase tracking-[0.18em] text-[var(--text-faint)]">Style</label>
+            <Dictate title="Dictate the style" onText={(t) => setPrompt((v) => (v ? v.trimEnd() + ' ' + t : t))} />
+          </div>
           <textarea
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
@@ -157,7 +161,10 @@ export default function MusicView() {
 
         {mode === 'song' && (
           <div>
+            <div className="flex items-center justify-between">
             <label className="text-[10px] uppercase tracking-[0.18em] text-[var(--text-faint)]">Lyrics</label>
+            <Dictate title="Dictate the lyrics" onText={(t) => setLyrics((v) => (v ? v.trimEnd() + ' ' + t : t))} />
+          </div>
             <textarea
               value={lyrics}
               onChange={(e) => setLyrics(e.target.value)}

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { CheckCircle2, XCircle, Loader2, Circle, Send, ShieldAlert } from 'lucide-react';
 import { agentSocket, getSettings } from '../lib/sidecar';
+import Dictate from '../components/Dictate';
 
 interface AgentTask {
   id: string;
@@ -130,6 +131,11 @@ export default function AgentView() {
             placeholder="e.g. Summarize every .txt file in the workspace into notes.md"
             rows={1}
             className="flex-1 bg-transparent outline-none resize-none text-sm py-1.5 placeholder:text-[var(--text-faint)] max-h-40"
+          />
+          <Dictate
+            title="Dictate the goal"
+            onText={(t) => setGoal((v) => (v ? v.trimEnd() + ' ' + t : t))}
+            className="mb-0.5"
           />
           <button
             onClick={run}

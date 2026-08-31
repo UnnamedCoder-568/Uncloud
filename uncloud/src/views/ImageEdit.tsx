@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChevronDown, ImagePlus, Loader2, Wand2, X, ArrowRight } from 'lucide-react';
 import { getLibrary, uploadImage, editImage, getImageJob, fetchImageBlobUrl } from '../lib/sidecar';
+import Dictate from '../components/Dictate';
 import type { LocalModel, ImageJob } from '../lib/sidecar';
 
 const PRESETS = [
@@ -154,7 +155,10 @@ export default function ImageEdit() {
         </div>
 
         <div>
-          <label className="text-[10px] uppercase tracking-[0.18em] text-[var(--text-faint)]">Describe the edit</label>
+          <div className="flex items-center justify-between">
+            <label className="text-[10px] uppercase tracking-[0.18em] text-[var(--text-faint)]">Describe the edit</label>
+            <Dictate title="Dictate the edit" onText={(t) => setInstruction((v) => (v ? v.trimEnd() + ' ' + t : t))} />
+          </div>
           <textarea
             value={instruction}
             onChange={(e) => setInstruction(e.target.value)}

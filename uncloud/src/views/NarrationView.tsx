@@ -3,6 +3,7 @@ import { Loader2, Mic2, Download, ChevronDown } from 'lucide-react';
 import {
   getNarrationOptions, generateNarration, getNarrationJob, narrationAudioUrl, getLibrary,
 } from '../lib/sidecar';
+import Dictate from '../components/Dictate';
 import type { NarrationOptions, NarrationJob, LocalModel } from '../lib/sidecar';
 
 /** Rough reading pace, for estimating output length before generating. */
@@ -214,9 +215,12 @@ export default function NarrationView() {
         <div className="flex-1 p-6 flex flex-col min-h-0">
           <div className="flex items-center justify-between mb-2">
             <label className="text-[10px] uppercase tracking-[0.18em] text-[var(--text-faint)]">Script</label>
-            <span className="text-[10px] text-[var(--text-faint)] tabular-nums">
-              {words.toLocaleString()} words · ≈{estMin < 1 ? '<1' : estMin.toFixed(0)} min
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] text-[var(--text-faint)] tabular-nums">
+                {words.toLocaleString()} words · ≈{estMin < 1 ? '<1' : estMin.toFixed(0)} min
+              </span>
+              <Dictate title="Dictate the script" onText={(t) => setText((v) => (v ? v.trimEnd() + ' ' + t : t))} />
+            </div>
           </div>
           <textarea
             value={text}

@@ -5,6 +5,7 @@ import {
   getLibrary, getProductCategories, uploadImage, generateProductShots,
   getImageJob, fetchImageBlobUrl, listCharacters, exportImages,
 } from '../lib/sidecar';
+import Dictate from '../components/Dictate';
 import type { LocalModel, ProductCategory, ImageJob, Character } from '../lib/sidecar';
 
 interface Result {
@@ -271,6 +272,12 @@ export default function ProductStudio() {
                 {characters.map((c) => <option key={c.slug} value={c.slug}>{c.name}</option>)}
               </select>
             )}
+            <div className="flex justify-end -mb-1">
+              <Dictate
+                title="Dictate the model description"
+                onText={(t) => setModelDescription((v) => (v ? v.trimEnd() + ' ' + t : t))}
+              />
+            </div>
             <textarea
               value={modelDescription}
               onChange={(e) => setModelDescription(e.target.value)}
@@ -282,7 +289,10 @@ export default function ProductStudio() {
         )}
 
         <div>
-          <label className="text-[10px] uppercase tracking-[0.18em] text-[var(--text-faint)]">Background</label>
+          <div className="flex items-center justify-between">
+            <label className="text-[10px] uppercase tracking-[0.18em] text-[var(--text-faint)]">Background</label>
+            <Dictate title="Dictate the background" onText={(t) => setBackground((v) => (v ? v.trimEnd() + ' ' + t : t))} />
+          </div>
           <input
             value={background}
             onChange={(e) => setBackground(e.target.value)}
@@ -292,7 +302,10 @@ export default function ProductStudio() {
         </div>
 
         <div>
-          <label className="text-[10px] uppercase tracking-[0.18em] text-[var(--text-faint)]">Extra direction</label>
+          <div className="flex items-center justify-between">
+            <label className="text-[10px] uppercase tracking-[0.18em] text-[var(--text-faint)]">Extra direction</label>
+            <Dictate title="Dictate the direction" onText={(t) => setExtra((v) => (v ? v.trimEnd() + ' ' + t : t))} />
+          </div>
           <textarea
             value={extra}
             onChange={(e) => setExtra(e.target.value)}
