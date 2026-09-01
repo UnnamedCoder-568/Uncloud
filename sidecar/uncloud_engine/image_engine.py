@@ -124,12 +124,13 @@ class ImageEngine:
         width: int = 1024, height: int = 1024, seed: int | None = None,
         mflux_cli: str = "mflux-generate", mflux_base: str | None = None,
         text_encoder_path: str | None = None,
+        lora_paths: list[str] | None = None, lora_scales: list[float] | None = None,
     ) -> ImageJob:
         job = ImageJob(id=uuid.uuid4().hex[:12], prompt=prompt, total_steps=steps or 0)
         self.jobs[job.id] = job
         asyncio.create_task(self._run(
             job, model_path, engine, prompt, negative_prompt, steps, guidance, width, height,
-            seed, mflux_cli, mflux_base, text_encoder_path,
+            seed, mflux_cli, mflux_base, text_encoder_path, lora_paths, lora_scales,
         ))
         return job
 
@@ -138,6 +139,7 @@ class ImageEngine:
         steps: int | None, guidance: float | None, width: int, height: int, seed: int | None,
         mflux_cli: str, mflux_base: str | None = None,
         text_encoder_path: str | None = None,
+        lora_paths: list[str] | None = None, lora_scales: list[float] | None = None,
     ) -> None:
         job.status = "running"
         try:
@@ -146,7 +148,8 @@ class ImageEngine:
                 self._free_memory_for(engine)
                 if engine == "mflux":
                     out = await self._run_mflux(job, model_path, prompt, steps, guidance,
-                                                width, height, seed, mflux_cli, mflux_base)
+                                                width, height, seed, mflux_cli, mflux_base,
+                                                lora_paths, lora_scales)
                 elif engine == "flux2-profile":
                     out = await asyncio.to_thread(
                         self._run_flux2_profile, job, model_path, prompt, steps,
@@ -267,6 +270,7 @@ class ImageEngine:
         self, job: ImageJob, model_path: str, prompt: str, steps: int | None,
         guidance: float | None, width: int, height: int, seed: int | None, mflux_cli: str,
         mflux_base: str | None = None,
+        lora_paths: list[str] | None = None, lora_scales: list[float] | None = None,
     ) -> str:
         out_path = output_dir_for() / f"{job.id}.png"
         steps = steps or 8
@@ -284,6 +288,7 @@ class ImageEngine:
                 mflux_runtime.generate,
                 cli=mflux_cli, model_path=model_path, prompt=prompt, seed=seed,
                 base=mflux_base, steps=steps, width=width, height=height,
+                lora_paths=lora_paths, lora_scales=lora_scales,
                 guidance=guidance if guidance is not None else 1.0,
                 on_step=on_step, out_path=out_path,
             )

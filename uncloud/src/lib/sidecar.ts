@@ -88,6 +88,9 @@ export interface LocalModel {
    *  entry point runs it, and which base model to configure it as. */
   mflux_cli?: string | null;
   mflux_base?: string | null;
+  /** Adapters applied on load — a fine-tune without a second copy of the weights. */
+  lora_paths?: string[];
+  lora_scales?: number[];
 }
 
 export interface DownloadState {
@@ -205,6 +208,8 @@ export interface ImageGenerateOptions {
   text_encoder_path?: string;
   mflux_cli?: string;
   mflux_base?: string;
+  lora_paths?: string[];
+  lora_scales?: number[];
   steps?: number;
   guidance?: number;
   width?: number;

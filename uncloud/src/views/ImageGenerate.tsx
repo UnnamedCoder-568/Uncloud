@@ -102,6 +102,8 @@ export default function ImageGenerate() {
       // unset and the engine falls back to the catalog's own entry point.
       mflux_cli: model.mflux_cli ?? undefined,
       mflux_base: model.mflux_base ?? undefined,
+      lora_paths: model.lora_paths?.length ? model.lora_paths : undefined,
+      lora_scales: model.lora_scales?.length ? model.lora_scales : undefined,
     });
     setJob(newJob);
   }

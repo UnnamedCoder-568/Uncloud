@@ -70,7 +70,8 @@ class MfluxRuntime:
             pass
 
     def _build(self, cli: str, model_path: str, quantize: int | None,
-               base: str | None = None):
+               base: str | None = None,
+               lora_paths: tuple[str, ...] = (), lora_scales: tuple[float, ...] = ()):
         module_name, class_name, factory = _VARIANTS[cli]
         module = __import__(module_name, fromlist=[class_name])
         cls = getattr(module, class_name)
@@ -93,6 +94,11 @@ class MfluxRuntime:
         # the model from Hugging Face, which defeats running offline.
         if model_path:
             kwargs["model_path"] = model_path
+        if lora_paths:
+            # mflux applies adapters after the weights are in place, so this
+            # works on a checkpoint that is already quantised — no second copy.
+            kwargs["lora_paths"] = list(lora_paths)
+            kwargs["lora_scales"] = list(lora_scales) or [1.0] * len(lora_paths)
         return cls(**kwargs)
 
     def generate(
@@ -100,16 +106,22 @@ class MfluxRuntime:
         steps: int, width: int, height: int, guidance: float,
         negative_prompt: str = "", quantize: int | None = None,
         base: str | None = None,
+        lora_paths: list[str] | None = None,
+        lora_scales: list[float] | None = None,
         on_step: Callable[[int], None] | None = None,
         out_path: str | Path,
     ) -> str:
         if cli not in _VARIANTS:
             raise ValueError(f"{cli} has no in-process path")
 
-        key = (cli, model_path, quantize, base)
+        loras = tuple(lora_paths or ())
+        scales = tuple(lora_scales or ())
+        # Adapters are part of the identity: the same checkpoint with different
+        # adapters is a different model and must not be served from the cache.
+        key = (cli, model_path, quantize, base, loras, scales)
         if self._key != key:
             self.unload()
-            self._model = self._build(cli, model_path, quantize, base)
+            self._model = self._build(cli, model_path, quantize, base, loras, scales)
             self._key = key
 
         if on_step is not None:
