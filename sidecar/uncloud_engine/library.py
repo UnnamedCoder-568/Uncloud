@@ -33,6 +33,10 @@ class LocalModel:
     # base model to configure it as. Catalog models carry this in the catalog.
     mflux_cli: str | None = None
     mflux_base: str | None = None
+    # Adapters applied at load time. Baking them into a copy of the weights
+    # would mean another 8-20GB on disk per variation.
+    lora_paths: list[str] | None = None
+    lora_scales: list[float] | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -42,6 +46,7 @@ class LocalModel:
             "note": self.note, "capabilities": self.capabilities or ["text2img"],
             "defaults": self.defaults or {},
             "mflux_cli": self.mflux_cli, "mflux_base": self.mflux_base,
+            "lora_paths": self.lora_paths or [], "lora_scales": self.lora_scales or [],
         }
 
 
@@ -203,11 +208,18 @@ _MLX_BASE_CLI = {
 
 @dataclass
 class MlxCheckpoint:
-    path: Path
+    path: Path                       # folder that identifies this entry
     base: str | None
     quantize: int | None
     name: str
     defaults: dict | None = None
+    weights: Path | None = None      # where the shards actually live
+    lora_paths: list[str] | None = None
+    lora_scales: list[float] | None = None
+
+    @property
+    def checkpoint(self) -> Path:
+        return self.weights or self.path
 
     @property
     def cli(self) -> str | None:
@@ -228,9 +240,38 @@ class MlxCheckpoint:
 
 
 def read_mlx_checkpoint(child: Path) -> MlxCheckpoint | None:
-    """Recognise a checkpoint written by mflux-save."""
-    index = child / "transformer" / "model.safetensors.index.json"
-    if not index.is_file() or not (child / "vae").is_dir():
+    """Recognise an MLX checkpoint, in any of the three shapes they arrive in.
+
+    mflux-save writes the transformer into its own folder, but some published
+    checkpoints leave its shards at the root beside vae/ and text_encoder/ —
+    both are valid and both load.
+
+    The third shape is a recipe: a folder holding nothing but a marker, naming
+    a checkpoint elsewhere plus the adapters to apply on top. That is how a
+    fine-tune gets its own entry in the picker without a second copy of the
+    weights, which for these models is tens of gigabytes.
+    """
+    marker = child / MLX_MARKER
+    marker_data: dict = {}
+    if marker.is_file():
+        try:
+            marker_data = json.loads(marker.read_text())
+        except (OSError, ValueError):
+            marker_data = {}
+
+    weights = child
+    declared = marker_data.get("checkpoint")
+    if declared:
+        candidate = (child / declared).resolve()
+        if not candidate.is_dir():
+            return None
+        weights = candidate
+
+    index = weights / "transformer" / "model.safetensors.index.json"
+    if not index.is_file():
+        # Shards at the root rather than under transformer/.
+        index = weights / "model.safetensors.index.json"
+    if not index.is_file() or not (weights / "vae").is_dir():
         return None
 
     quantize = None
@@ -241,20 +282,17 @@ def read_mlx_checkpoint(child: Path) -> MlxCheckpoint | None:
     except (OSError, ValueError, TypeError):
         pass
 
-    base = None
-    name = child.name
-    defaults = None
-    marker = child / MLX_MARKER
-    if marker.is_file():
-        try:
-            data = json.loads(marker.read_text())
-            base = data.get("base_model")
-            name = data.get("name") or name
-            defaults = data.get("defaults")
-        except (OSError, ValueError):
-            pass
-    return MlxCheckpoint(path=child, base=base, quantize=quantize, name=name,
-                         defaults=defaults)
+    loras = [str((child / p).resolve() if not Path(p).is_absolute() else Path(p))
+             for p in marker_data.get("lora_paths", [])]
+    scales = marker_data.get("lora_scales") or [1.0] * len(loras)
+    return MlxCheckpoint(
+        path=child, base=marker_data.get("base_model"), quantize=quantize,
+        name=marker_data.get("name") or child.name,
+        defaults=marker_data.get("defaults"),
+        weights=weights if weights != child else None,
+        lora_paths=loras or None,
+        lora_scales=list(scales)[:len(loras)] or None,
+    )
 
 
 def _mlx_dir_engine(child: Path) -> tuple[str, str, str | None] | None:
@@ -368,9 +406,13 @@ def scan_library(models_dir: Path) -> list[LocalModel]:
                 seen_dirs.add(path_str)
                 found.append(LocalModel(
                     id=f"local:{child}", name=mlx.name, category="image",
-                    engine="mflux", path=path_str, size_gb=_dir_size_gb(child),
+                    engine="mflux", path=str(mlx.checkpoint),
+                    # A recipe is a kilobyte of JSON; report the weights it
+                    # points at, so the picker shows what loading it costs.
+                    size_gb=_dir_size_gb(mlx.checkpoint),
                     ready=mlx.ready, note=mlx.note(), defaults=mlx.defaults,
                     mflux_cli=mlx.cli, mflux_base=mlx.base,
+                    lora_paths=mlx.lora_paths, lora_scales=mlx.lora_scales,
                 ))
                 continue
 

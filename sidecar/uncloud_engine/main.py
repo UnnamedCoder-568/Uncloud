@@ -443,6 +443,10 @@ class ImageGenerateBody(BaseModel):
     # which mflux entry point runs them and which base to configure them as.
     mflux_cli: str | None = None
     mflux_base: str | None = None
+    # Adapters applied on top of an mflux checkpoint at load time — a fine-tune
+    # without a second copy of the weights.
+    lora_paths: list[str] = []
+    lora_scales: list[float] = []
     prompt: str
     catalog_id: str | None = None
     negative_prompt: str = ""
@@ -460,7 +464,8 @@ async def generate_image(body: ImageGenerateBody) -> dict:
         body.model_path, body.engine, body.prompt, negative_prompt=body.negative_prompt,
         steps=body.steps, guidance=body.guidance, width=body.width, height=body.height, seed=body.seed,
         mflux_cli=body.mflux_cli or (entry.mflux_cli if entry else "mflux-generate"),
-        mflux_base=body.mflux_base,
+        mflux_base=body.mflux_base or (entry.mflux_base if entry else None),
+        lora_paths=body.lora_paths, lora_scales=body.lora_scales,
         text_encoder_path=body.text_encoder_path,
     )
     return job.to_dict()
