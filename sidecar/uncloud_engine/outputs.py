@@ -83,6 +83,50 @@ def reveal(path: str) -> bool:
         return False
 
 
+def _unique(target: Path) -> Path:
+    """A free filename beside `target`, so saving twice never clobbers."""
+    if not target.exists():
+        return target
+    stem, suffix = target.stem, target.suffix
+    for n in range(1, 1000):
+        candidate = target.with_name(f"{stem}-{n}{suffix}")
+        if not candidate.exists():
+            return candidate
+    raise FileExistsError(f"Too many files named like {target.name}")
+
+
+def save_copy(src: str, dest: str, *, into_folder: bool) -> str:
+    """Copy a generated file somewhere the user picked, and say where it landed.
+
+    Generated work is written to the output folder as it is made, so this is
+    always a copy rather than a move — the original stays where the Outputs
+    gallery can find it. `into_folder` distinguishes the two buttons: Save picks
+    a folder and keeps the existing name (uniquified rather than overwritten),
+    Save As names the file itself, where the system dialog has already asked
+    about replacing anything in the way.
+    """
+    import shutil
+
+    from .config import settings
+
+    root = settings.output_dir.resolve()
+    source = Path(src).resolve()
+    # Reachable over HTTP: only files this app generated may be copied out.
+    if root != source.parent and root not in source.parents:
+        raise ValueError("Refusing to copy a file outside the output folder")
+    if not source.is_file():
+        raise FileNotFoundError(f"No such file: {source}")
+
+    target = Path(dest).expanduser()
+    if into_folder:
+        target.mkdir(parents=True, exist_ok=True)
+        target = _unique(target / source.name)
+    else:
+        target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source, target)
+    return str(target)
+
+
 def delete(path: str) -> bool:
     """Remove one generated file, confined to the output folder.
 

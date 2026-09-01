@@ -83,6 +83,12 @@ def _install_signal_handlers() -> None:
 
 _install_signal_handlers()
 
+# A quit the app cannot signal — force quit, crash — would otherwise leave this
+# process and its models running with nothing left to stop them.
+from .lifecycle import watch_parent  # noqa: E402
+
+watch_parent()
+
 
 # ----------------------------------------------------------------- outputs
 @app.get("/api/outputs", dependencies=[Depends(require_token)])
@@ -113,6 +119,26 @@ def outputs_reveal(body: OutputPathBody) -> dict:
     from .outputs import reveal
 
     return {"ok": reveal(body.path)}
+
+
+class SaveCopyBody(BaseModel):
+    path: str
+    dest: str
+    # True when `dest` is a folder to drop the file into keeping its name;
+    # False when it is the full filename a Save-as dialog returned.
+    into_folder: bool = True
+
+
+@app.post("/api/outputs/save_copy", dependencies=[Depends(require_token)])
+def outputs_save_copy(body: SaveCopyBody) -> dict:
+    from .outputs import save_copy
+
+    try:
+        return {"path": save_copy(body.path, body.dest, into_folder=body.into_folder)}
+    except (ValueError, FileNotFoundError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except OSError as exc:
+        raise HTTPException(status_code=400, detail=f"Could not save there: {exc}") from exc
 
 
 @app.post("/api/outputs/delete", dependencies=[Depends(require_token)])

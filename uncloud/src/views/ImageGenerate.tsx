@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { ChevronDown, Sparkles, Loader2, SlidersHorizontal, Shuffle } from 'lucide-react';
 import { getLibrary, generateImage, getImageJob, fetchImageBlobUrl } from '../lib/sidecar';
 import Dictate from '../components/Dictate';
+import SaveActions from '../components/SaveActions';
 import type { LocalModel, ImageJob } from '../lib/sidecar';
 
 // Models that carry their own settings win: a distilled checkpoint run at the
@@ -171,7 +172,21 @@ export default function ImageGenerate() {
 
         <div className="flex-1 flex items-center justify-center p-6 overflow-hidden">
           {imageUrl ? (
-            <img src={imageUrl} alt={prompt} className="max-h-full max-w-full rounded-xl border border-[var(--border)]" />
+            <div className="flex flex-col items-center gap-2 max-h-full min-h-0">
+              <img
+                src={imageUrl}
+                alt={prompt}
+                className="min-h-0 max-h-full max-w-full object-contain rounded-xl border border-[var(--border)]"
+              />
+              <SaveActions
+                path={job?.output_path ?? null}
+                onDiscarded={() => {
+                  URL.revokeObjectURL(imageUrl);
+                  setImageUrl(null);
+                  setJob(null);
+                }}
+              />
+            </div>
           ) : running ? (
             <div className="flex flex-col items-center gap-3 text-[var(--text-dim)]">
               <Loader2 size={22} className="animate-spin" />
