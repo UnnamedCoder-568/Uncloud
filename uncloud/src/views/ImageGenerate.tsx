@@ -193,11 +193,24 @@ export default function ImageGenerate() {
               <span className="text-sm">
                 {job.total_steps ? `Generating — step ${job.step}/${job.total_steps}` : 'Generating…'}
               </span>
-              {(model?.engine === 'mflux' || model?.engine === 'flux2-profile') && (
+              {model?.engine === 'mflux' && (
                 <span className="text-[11px] text-[var(--text-faint)]">
                   {job && job.step > 0
                     ? 'Model is loaded — rendering.'
                     : 'Loading the model into memory. It stays loaded, so the next generation with this model skips this.'}
+                </span>
+              )}
+              {/* An assembled pipeline has two halves that do not fit in memory
+                  together, so a new prompt means loading the encoder, then
+                  swapping it for the image model. Saying "it stays loaded"
+                  here would be a lie the timer immediately exposes. */}
+              {model?.engine === 'flux2-profile' && (
+                <span className="text-[11px] text-[var(--text-faint)] max-w-sm text-center leading-relaxed">
+                  {job && job.step > 0
+                    ? 'Rendering.'
+                    : 'Reading your prompt, then loading the image model — this pipeline is '
+                      + 'too big to hold both at once, so a new prompt costs one swap. '
+                      + 'Same prompt on a new seed skips straight to rendering.'}
                 </span>
               )}
             </div>

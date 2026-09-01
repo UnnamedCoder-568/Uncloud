@@ -159,6 +159,20 @@ def system_resident() -> dict:
     return resident()
 
 
+@app.get("/api/system/weight_cache", dependencies=[Depends(require_token)])
+def weight_cache() -> dict:
+    from .flux2_profile import CACHE_ROOT, cache_size_bytes
+
+    return {"bytes": cache_size_bytes(), "path": str(CACHE_ROOT)}
+
+
+@app.post("/api/system/weight_cache/clear", dependencies=[Depends(require_token)])
+def weight_cache_clear() -> dict:
+    from .flux2_profile import clear_cache
+
+    return {"freed_bytes": clear_cache()}
+
+
 @app.post("/api/system/stop_all", dependencies=[Depends(require_token)])
 async def system_stop_all() -> dict:
     from .lifecycle import stop_all

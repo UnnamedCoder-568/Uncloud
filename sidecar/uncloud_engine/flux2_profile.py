@@ -26,7 +26,10 @@ the encoder entirely.
 from __future__ import annotations
 
 import gc
+import hashlib
 import json
+import os
+import shutil
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -41,6 +44,18 @@ _MANIFEST_SUFFIX = ".astro-image.json"
 # hidden layers x 4096), so this is megabytes against the minute of work it
 # saves when the same prompt is rendered again at a different seed.
 _EMBED_CACHE = 8
+
+# Converted weights are cached here, on the internal disk, because that is the
+# whole point — see _cached_load.
+CACHE_ROOT = Path.home() / ".uncloud" / "cache" / "flux2"
+
+# Which of the encoder's hidden layers FLUX.2 Klein actually reads. Everything
+# above the last one is dead weight — see _truncate_encoder.
+ENCODER_LAYERS = (9, 18, 27)
+
+# Bumped whenever what gets written changes shape, so a stale cache from an
+# older build is rebuilt rather than loaded into the wrong architecture.
+_CACHE_VERSION = 2
 
 
 @dataclass
@@ -257,6 +272,74 @@ def _dequantise_scaled_fp8(state: dict) -> dict:
     return state
 
 
+def _fingerprint(path: Path) -> str:
+    """Identify a source file cheaply, so a replaced checkpoint invalidates."""
+    st = path.stat()
+    raw = f"{path.resolve()}|{st.st_size}|{int(st.st_mtime)}"
+    return hashlib.sha1(raw.encode()).hexdigest()[:16]
+
+
+def _free_bytes(path: Path) -> int:
+    try:
+        return shutil.disk_usage(path).free
+    except OSError:
+        return 0
+
+
+def _cached_load(kind: str, source: Path, build, load):
+    """Load converted weights from a local cache, building it on first use.
+
+    Neither of these models is stored in a form torch can use directly. The
+    transformer is fp8 in the original BFL key layout and has to be converted;
+    the text encoder is a GGUF that gets dequantised tensor by tensor. That work
+    was being redone on every generation with a new prompt — measured at 61s and
+    64s — because the two do not fit in memory together, so loading one means
+    dropping the other.
+
+    Converting once and writing the result to the internal disk turns both into
+    a plain safetensors read. It also loads better: safetensors is mmapped, so
+    the weights are clean file-backed pages the system can drop and re-read at
+    disk speed, rather than anonymous memory that has to go to swap.
+
+    Failing to cache is never fatal — it just means the slow path, every time.
+    """
+    target = CACHE_ROOT / f"{kind}-v{_CACHE_VERSION}-{_fingerprint(source)}"
+    if (target / "config.json").is_file():
+        try:
+            return load(target)
+        except Exception:  # noqa: BLE001 - a corrupt cache must not be fatal
+            shutil.rmtree(target, ignore_errors=True)
+
+    model = build()
+
+    try:
+        CACHE_ROOT.mkdir(parents=True, exist_ok=True)
+        needed = sum(p.numel() * p.element_size() for p in model.parameters())
+        # Leave real headroom: filling the boot disk to save a minute is a bad
+        # trade, and the user did not ask for this file.
+        if _free_bytes(CACHE_ROOT) > needed * 2:
+            staging = CACHE_ROOT / f".{kind}-{os.getpid()}"
+            shutil.rmtree(staging, ignore_errors=True)
+            model.save_pretrained(staging)
+            os.replace(staging, target)
+    except Exception:  # noqa: BLE001 - the model is loaded; caching is a bonus
+        shutil.rmtree(CACHE_ROOT / f".{kind}-{os.getpid()}", ignore_errors=True)
+    return model
+
+
+def cache_size_bytes() -> int:
+    if not CACHE_ROOT.is_dir():
+        return 0
+    return sum(f.stat().st_size for f in CACHE_ROOT.rglob("*") if f.is_file())
+
+
+def clear_cache() -> int:
+    """Drop the converted-weight cache. Costs the conversion time again."""
+    size = cache_size_bytes()
+    shutil.rmtree(CACHE_ROOT, ignore_errors=True)
+    return size
+
+
 def _is_scaled_fp8(path: Path) -> bool:
     from safetensors import safe_open
 
@@ -268,37 +351,86 @@ def _load_transformer(profile: Flux2Profile):
     import torch
     from diffusers import Flux2Transformer2DModel
 
-    # from_single_file reads the file itself, so hand it the path unless the
-    # weights need unpacking first — reading 9GB twice costs half a minute.
-    if _is_scaled_fp8(profile.transformer):
-        from safetensors.torch import load_file
+    def build():
+        # from_single_file reads the file itself, so hand it the path unless the
+        # weights need unpacking first — reading 9GB twice costs half a minute.
+        if _is_scaled_fp8(profile.transformer):
+            from safetensors.torch import load_file
 
-        source: Any = _dequantise_scaled_fp8(load_file(str(profile.transformer)))
-    else:
-        source = str(profile.transformer)
+            source: Any = _dequantise_scaled_fp8(load_file(str(profile.transformer)))
+        else:
+            source = str(profile.transformer)
 
-    model = Flux2Transformer2DModel.from_single_file(
-        source, config=str(profile.base), subfolder="transformer",
-        torch_dtype=torch.bfloat16, local_files_only=True,
+        model = Flux2Transformer2DModel.from_single_file(
+            source, config=str(profile.base), subfolder="transformer",
+            torch_dtype=torch.bfloat16, local_files_only=True,
+        )
+        del source
+        gc.collect()
+        return model
+
+    return _cached_load(
+        "transformer", profile.transformer, build,
+        lambda d: Flux2Transformer2DModel.from_pretrained(
+            str(d), torch_dtype=torch.bfloat16, local_files_only=True),
     )
-    del source
-    gc.collect()
-    return model
+
+
+def _truncate_encoder(model):
+    """Throw away the part of the text encoder the pipeline never reads.
+
+    Klein takes hidden states from layers 9, 18 and 27 of a 36-layer Qwen3, so
+    layers 28 upward cannot affect the result, and the language-model head — a
+    151936 x 4096 matrix, 1.2GB on its own — is never consulted at all. Loading
+    them costs 4.5GB of memory on a machine that is already having to drop the
+    image model to make room, and a 318 GFLOP matmul per prompt for an answer
+    nobody looks at.
+
+    Cutting them is exact, not an approximation: a transformer layer cannot
+    influence the output of a layer beneath it.
+    """
+    keep = max(ENCODER_LAYERS) + 1
+    base = getattr(model, "model", model)
+    layers = getattr(base, "layers", None)
+    if layers is None or len(layers) <= keep:
+        return model
+    base.layers = layers[:keep]
+    base.config.num_hidden_layers = keep
+    if hasattr(base.config, "layer_types"):
+        base.config.layer_types = base.config.layer_types[:keep]
+    # Return the bare model: the CausalLM wrapper exists only to run the head.
+    return base
 
 
 def _load_text_encoder(profile: Flux2Profile, override: str | None):
     import torch
     from transformers import AutoModelForCausalLM
 
+    from transformers import AutoModel
+
+    def read(path: Path):
+        # The cache holds the truncated base model, so it reloads as one.
+        return AutoModel.from_pretrained(
+            str(path), dtype=torch.bfloat16, local_files_only=True)
+
     source = Path(override) if override else profile.text_encoder
     if source is not None and source.is_file() and source.suffix == ".gguf":
-        return AutoModelForCausalLM.from_pretrained(
-            str(source.parent), gguf_file=source.name,
-            dtype=torch.bfloat16, local_files_only=True,
+        return _cached_load(
+            "text_encoder", source,
+            lambda: _truncate_encoder(AutoModelForCausalLM.from_pretrained(
+                str(source.parent), gguf_file=source.name,
+                dtype=torch.bfloat16, local_files_only=True)),
+            read,
         )
+
     folder = source if (source and source.is_dir()) else (profile.base / "text_encoder")
-    return AutoModelForCausalLM.from_pretrained(
-        str(folder), dtype=torch.bfloat16, local_files_only=True,
+    # Already plain safetensors, but still worth trimming and caching: the
+    # layers being dropped are a third of it.
+    return _cached_load(
+        "text_encoder", folder / "config.json",
+        lambda: _truncate_encoder(AutoModelForCausalLM.from_pretrained(
+            str(folder), dtype=torch.bfloat16, local_files_only=True)),
+        read,
     )
 
 

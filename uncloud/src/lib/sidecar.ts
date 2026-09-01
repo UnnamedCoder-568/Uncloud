@@ -633,6 +633,13 @@ export async function setOutputDir(path: string) {
 
 // ------------------------------------------------------------ model memory
 
+export async function getWeightCache() {
+  return api<{ bytes: number; path: string }>('/api/system/weight_cache');
+}
+export async function clearWeightCache() {
+  return apiPost<{ freed_bytes: number }>('/api/system/weight_cache/clear');
+}
+
 export interface ResidentModels {
   text_model: string | null;
   image_pipeline: string | null;
