@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .catalog import get_catalog
+from .flux2_profile import read_profile
 
 DIFFUSION_HINTS = ("qwen-image", "hidream", "flux", "sdxl", "sd3", "stable-diffusion", "video", "wan2", "cogvideo", "ltx", "krea", "klein", "pony")
 STT_HINTS = ("whisper",)
@@ -25,6 +26,9 @@ class LocalModel:
     ready: bool = True
     note: str | None = None
     capabilities: list[str] | None = None
+    # Generation settings the model itself asks for — a distilled checkpoint at
+    # 25 steps is a minute of wasted work, so the picker follows this.
+    defaults: dict | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -32,6 +36,7 @@ class LocalModel:
             "engine": self.engine, "path": self.path, "size_gb": round(self.size_gb, 2),
             "catalog_id": self.catalog_id, "tags": self.tags or [], "ready": self.ready,
             "note": self.note, "capabilities": self.capabilities or ["text2img"],
+            "defaults": self.defaults or {},
         }
 
 
@@ -247,6 +252,27 @@ def scan_library(models_dir: Path) -> list[LocalModel]:
             if not child.is_dir() or child.name.startswith("."):
                 continue
             if child.name in SKIP_DIRS or str(child) in seen_dirs:
+                continue
+
+            # Folders that name their parts rather than shipping a loadable
+            # pipeline. Checked first: one of these carries a model_index.json
+            # copied from the release it was cut from, which would otherwise
+            # read as a complete pipeline and fail on load.
+            profile = read_profile(child, models_dir)
+            if profile is not None:
+                path_str = str(child)
+                if path_str in seen_paths:
+                    continue
+                seen_paths.add(path_str)
+                seen_dirs.add(path_str)
+                found.append(LocalModel(
+                    id=f"local:{child}", name=profile.name, category="image",
+                    engine="flux2-profile", path=path_str, size_gb=profile.size_gb,
+                    ready=profile.ready, note=profile.note(),
+                    defaults={k: v for k, v in
+                              (("steps", profile.steps), ("guidance", profile.guidance))
+                              if v is not None},
+                ))
                 continue
 
             config_json = child / "config.json"

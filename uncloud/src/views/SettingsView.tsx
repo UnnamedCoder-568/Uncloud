@@ -124,6 +124,7 @@ export default function SettingsView() {
                       ['Chat', resident.text_model],
                       ['Image', resident.image_pipeline],
                       ['Image (MLX)', resident.mflux_model],
+                      ['Image (assembled)', resident.flux2_profile],
                       ['Video', resident.video_pipeline],
                     ] as [string, string | null][])
                       .filter(([, v]) => v)

@@ -18,6 +18,7 @@ from typing import Any
 MAX_EDIT_PIXELS = 1024 * 1024
 
 
+from .flux2_profile import flux2_profile_runtime, profile_for
 from .mflux_runtime import can_run_in_process, mflux_runtime
 from .output_check import summarise_traceback, verify_image
 from .config import output_dir_for
@@ -82,6 +83,23 @@ class ImageEngine:
     def list_jobs(self) -> list[dict]:
         return [j.to_dict() for j in self.jobs.values()]
 
+    def unload(self) -> None:
+        """Drop the resident pipeline. Called by the stop button and on exit."""
+        import gc
+
+        self._pipe = None
+        self._pipe_path = None
+        gc.collect()
+        try:
+            import torch
+
+            if torch.backends.mps.is_available():
+                torch.mps.empty_cache()
+            elif torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except Exception:  # noqa: BLE001 - torch may not be importable here
+            pass
+
     def _free_memory_for(self, engine: str) -> None:
         """Diffusion models are multi-GB; on a 16-24GB Mac they can't comfortably
         coexist with a loaded chat model. Free the text engine before generating,
@@ -90,12 +108,13 @@ class ImageEngine:
 
         if engine_manager.active:
             engine_manager.stop()
-        if engine == "mflux" and self._pipe is not None:
-            self._pipe = None
-            self._pipe_path = None
+        if engine != "diffusers" and self._pipe is not None:
+            self.unload()
         if engine != "mflux":
             # A diffusers pipeline and a resident mflux model will not both fit.
             mflux_runtime.unload()
+        if engine != "flux2-profile":
+            flux2_profile_runtime.unload()
 
     def start(
         self, model_path: str, engine: str, prompt: str, *, negative_prompt: str = "",
@@ -123,6 +142,11 @@ class ImageEngine:
                 self._free_memory_for(engine)
                 if engine == "mflux":
                     out = await self._run_mflux(job, model_path, prompt, steps, guidance, width, height, seed, mflux_cli)
+                elif engine == "flux2-profile":
+                    out = await asyncio.to_thread(
+                        self._run_flux2_profile, job, model_path, prompt, steps,
+                        guidance, width, height, seed, text_encoder_path,
+                    )
                 elif engine == "diffusers":
                     out = await asyncio.to_thread(
                         self._run_diffusers, job, model_path, prompt, negative_prompt,
@@ -271,6 +295,28 @@ class ImageEngine:
         ]
         await self._stream_mflux(job, cmd, out_path, mflux_cli)
         return str(out_path)
+
+    def _run_flux2_profile(
+        self, job: ImageJob, model_path: str, prompt: str, steps: int | None,
+        guidance: float | None, width: int, height: int, seed: int | None,
+        text_encoder_path: str | None,
+    ) -> str:
+        """A folder that names its parts — see flux2_profile for why."""
+        profile = profile_for(model_path)
+        steps = steps or profile.steps or 4
+        job.total_steps = steps
+
+        def on_step(n: int) -> None:
+            job.step = n
+
+        return flux2_profile_runtime.generate(
+            profile, prompt=prompt, steps=steps,
+            guidance=guidance if guidance is not None else (profile.guidance or 1.0),
+            width=width, height=height,
+            seed=seed if seed is not None else int(time.time()),
+            out_path=output_dir_for() / f"{job.id}.png",
+            on_step=on_step, text_encoder_path=text_encoder_path,
+        )
 
     def _swap_text_encoder(self, pipe, gguf_path: str) -> None:
         """Replace a pipeline's text encoder with one loaded from a GGUF file.
