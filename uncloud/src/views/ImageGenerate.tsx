@@ -4,9 +4,22 @@ import { getLibrary, generateImage, getImageJob, fetchImageBlobUrl } from '../li
 import Dictate from '../components/Dictate';
 import type { LocalModel, ImageJob } from '../lib/sidecar';
 
-function defaultsFor(engine: string | undefined) {
-  return engine === 'mflux' ? { steps: 8, guidance: 1.0 } : { steps: 25, guidance: 7.0 };
+// Models that carry their own settings win: a distilled checkpoint run at the
+// 25-step default is a minute of work for a picture it makes in four.
+function defaultsFor(model: LocalModel | null | undefined) {
+  const base =
+    model?.engine === 'mflux' ? { steps: 8, guidance: 1.0 }
+    : model?.engine === 'flux2-profile' ? { steps: 4, guidance: 1.0 }
+    : { steps: 25, guidance: 7.0 };
+  return {
+    steps: model?.defaults?.steps ?? base.steps,
+    guidance: model?.defaults?.guidance ?? base.guidance,
+  };
 }
+
+// Engines with a generation path behind them. The rest are listed so it's clear
+// they were found, rather than hidden as though they were never there.
+const USABLE = new Set(['mflux', 'diffusers', 'flux2-profile']);
 
 export default function ImageGenerate() {
   const [models, setModels] = useState<LocalModel[]>([]);
@@ -25,11 +38,16 @@ export default function ImageGenerate() {
 
   useEffect(() => {
     getLibrary().then((list) => {
-      const images = list.filter((m) => m.category === 'image' && m.ready && m.capabilities.includes('text2img'));
+      // Not-ready models stay in the list, disabled: the picker shows their
+      // note, which says what is missing. Filtering them out leaves someone
+      // hunting for a model the app can see and they cannot.
+      const images = list
+        .filter((m) => m.category === 'image' && m.capabilities.includes('text2img'))
+        .sort((a, b) => Number(b.ready) - Number(a.ready));
       setModels(images);
       setModel((prev) => {
-        const next = prev ?? images[0] ?? null;
-        const d = defaultsFor(next?.engine);
+        const next = prev ?? images.find((m) => m.ready && USABLE.has(m.engine)) ?? null;
+        const d = defaultsFor(next);
         setSteps(d.steps);
         setGuidance(d.guidance);
         return next;
@@ -52,7 +70,7 @@ export default function ImageGenerate() {
   function selectModel(m: LocalModel) {
     setModel(m);
     setPickerOpen(false);
-    const d = defaultsFor(m.engine);
+    const d = defaultsFor(m);
     setSteps(d.steps);
     setGuidance(d.guidance);
   }
@@ -68,7 +86,8 @@ export default function ImageGenerate() {
       .catch(() => undefined);
   }, []);
 
-  const encoderApplies = !!encoder && model?.engine === 'diffusers';
+  const encoderApplies =
+    !!encoder && (model?.engine === 'diffusers' || model?.engine === 'flux2-profile');
 
   async function generate() {
     if (!model || !prompt.trim()) return;
@@ -111,10 +130,7 @@ export default function ImageGenerate() {
                 </div>
               )}
               {models.map((m) => {
-                // Only these two have generation pipelines behind them. The rest
-                // are listed so it's clear they were found, not hidden as though
-                // they were never there.
-                const usable = m.engine === 'mflux' || m.engine === 'diffusers';
+                const usable = USABLE.has(m.engine) && m.ready;
                 return (
                   <button
                     key={m.id}
@@ -162,7 +178,7 @@ export default function ImageGenerate() {
               <span className="text-sm">
                 {job.total_steps ? `Generating — step ${job.step}/${job.total_steps}` : 'Generating…'}
               </span>
-              {model?.engine === 'mflux' && (
+              {(model?.engine === 'mflux' || model?.engine === 'flux2-profile') && (
                 <span className="text-[11px] text-[var(--text-faint)]">
                   {job && job.step > 0
                     ? 'Model is loaded — rendering.'
@@ -288,8 +304,8 @@ export default function ImageGenerate() {
                 <span className="text-xs block">Uncensored text encoder</span>
                 <span className="text-[10px] text-[var(--text-faint)] block leading-snug">
                   Swaps this pipeline's text encoder for {encoder!.name}. Only affects
-                  models whose encoder is a language model — FLUX.2 Klein. Reloads the
-                  pipeline the first time.
+                  models whose encoder is a language model — FLUX.2 Klein. Models
+                  that already bring their own encoder are unchanged by this.
                 </span>
               </span>
             </label>
@@ -297,7 +313,7 @@ export default function ImageGenerate() {
 
           {model && (
             <button
-              onClick={() => { const d = defaultsFor(model.engine); setSteps(d.steps); setGuidance(d.guidance); setWidth(1024); setHeight(1024); setSeed(''); }}
+              onClick={() => { const d = defaultsFor(model); setSteps(d.steps); setGuidance(d.guidance); setWidth(1024); setHeight(1024); setSeed(''); }}
               className="text-xs text-[var(--text-faint)] hover:text-[var(--text-dim)] transition text-left"
             >
               Reset to defaults

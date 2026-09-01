@@ -20,8 +20,11 @@ diffusers, Playwright — lives in the sidecar.
 - **Chat** — GGUF via llama.cpp, or MLX for Apple Silicon. Optional voice in/out.
 - **Models** — browse a curated catalog, download into a folder you choose, with
   resumable transfers.
-- **Image** — text-to-image (Krea 2, SDXL), reference-image editing (FLUX Kontext),
-  a Product studio with per-category shot presets, and a saved-character library.
+- **Image** — text-to-image (Krea 2, FLUX.2 Klein, SDXL), reference-image editing
+  (FLUX Kontext), a Product studio with per-category shot presets, and a
+  saved-character library. Folders that ship a bare fine-tuned transformer and a
+  manifest naming its parts are assembled at load time against a complete
+  pipeline elsewhere in the models folder.
 - **Agent** — plans a task graph with the loaded model and executes it against 24
   tools: shell, filesystem, web search and reading, full browser control, vision,
   image generation, and persistent plan/memory.

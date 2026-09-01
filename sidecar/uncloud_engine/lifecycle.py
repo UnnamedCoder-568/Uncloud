@@ -17,6 +17,7 @@ class Released:
     text_model: bool = False
     image_pipeline: bool = False
     mflux_model: bool = False
+    flux2_profile: bool = False
     video_pipeline: bool = False
     browser: bool = False
     wake_lock: bool = False
@@ -26,6 +27,7 @@ class Released:
             "text_model": self.text_model,
             "image_pipeline": self.image_pipeline,
             "mflux_model": self.mflux_model,
+            "flux2_profile": self.flux2_profile,
             "video_pipeline": self.video_pipeline,
             "browser": self.browser,
             "wake_lock": self.wake_lock,
@@ -36,7 +38,8 @@ class Released:
 def resident() -> dict:
     """What is currently holding memory, for the UI to show before stopping."""
     out: dict = {"text_model": None, "image_pipeline": None,
-                 "mflux_model": None, "video_pipeline": None}
+                 "mflux_model": None, "flux2_profile": None,
+                 "video_pipeline": None}
     try:
         from .engines import engine_manager
 
@@ -54,6 +57,12 @@ def resident() -> dict:
         from .mflux_runtime import mflux_runtime
 
         out["mflux_model"] = mflux_runtime.loaded
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        from .flux2_profile import flux2_profile_runtime
+
+        out["flux2_profile"] = flux2_profile_runtime.loaded
     except Exception:  # noqa: BLE001
         pass
     try:
@@ -99,6 +108,15 @@ async def stop_all(*, close_browser: bool = True) -> Released:
         if mflux_runtime.loaded:
             mflux_runtime.unload()
             freed.mflux_model = True
+    except Exception:  # noqa: BLE001
+        pass
+
+    try:
+        from .flux2_profile import flux2_profile_runtime
+
+        if flux2_profile_runtime.holding:
+            flux2_profile_runtime.unload()
+            freed.flux2_profile = True
     except Exception:  # noqa: BLE001
         pass
 

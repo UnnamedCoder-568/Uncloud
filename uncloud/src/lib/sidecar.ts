@@ -81,6 +81,9 @@ export interface LocalModel {
   ready: boolean;
   note: string | null;
   capabilities: string[];
+  /** Settings the model asks for — a distilled checkpoint wants very few steps.
+   *  Optional: views also build LocalModel values of their own. */
+  defaults?: { steps?: number; guidance?: number };
 }
 
 export interface DownloadState {
@@ -632,6 +635,7 @@ export interface ResidentModels {
   text_model: string | null;
   image_pipeline: string | null;
   mflux_model: string | null;
+  flux2_profile: string | null;
   video_pipeline: string | null;
   anything: boolean;
 }
