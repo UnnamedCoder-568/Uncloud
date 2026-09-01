@@ -320,6 +320,7 @@ def scan_library(models_dir: Path) -> list[LocalModel]:
             id=f"local:{path_str}", name=entry.name, category=entry.category,
             engine=entry.engine, path=path_str, size_gb=size_gb,
             catalog_id=entry.id, tags=entry.tags, note=entry.note,
+            mflux_cli=entry.mflux_cli, mflux_base=entry.mflux_base,
             capabilities=entry.capabilities,
         ))
 

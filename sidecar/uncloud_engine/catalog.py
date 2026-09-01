@@ -19,6 +19,10 @@ class CatalogEntry:
     single_file: bool = False  # for engine="diffusers": load via from_single_file instead of from_pretrained
     note: str | None = None  # shown in the UI — hardware caveats, licensing, etc.
     mflux_cli: str = "mflux-generate"  # for engine="mflux": which mflux CLI binary knows this architecture
+    # Which mflux base config to build. One CLI covers a whole family — the
+    # Klein entry point serves both 4B and 9B — and loading a 4B checkpoint
+    # against the 9B config fails on tensor shape. Set it where they differ.
+    mflux_base: str | None = None
     fixup: str | None = None  # for engine="mflux": post-download layout fix to apply (see downloader.py)
     # What this model can actually do. Drives which Image sub-tabs offer it.
     #   text2img  — prompt only
@@ -33,14 +37,12 @@ CATALOG: list[CatalogEntry] = [
         id="z-image-turbo-mlx",
         name="Z-Image Turbo (MLX)",
         category="image", engine="mflux",
-        repo="Tongyi-MAI/Z-Image-Turbo",
-        size_gb=12.0,
-        description="6B model reaching FLUX-class photorealism in 8 steps. A third the "
-                    "size of Krea 2 Turbo, so it loads in a fraction of the time.",
+        repo="filipstrand/Z-Image-Turbo-mflux-4bit",
+        size_gb=5.9,
+        description="6B model reaching FLUX-class photorealism in 8 steps. Ships already "
+                    "quantised, so it loads in seconds and stays resident.",
         tags=["fast", "recommended", "apple-silicon"],
         mflux_cli="mflux-generate-z-image",
-        note="Quantise to 6-bit and this sits near 4GB — the lightest capable image "
-             "model here by a wide margin.",
     ),
     CatalogEntry(
         id="flux2-klein-9b-uncensored-encoder",
@@ -58,12 +60,13 @@ CATALOG: list[CatalogEntry] = [
         id="flux2-klein-4b-mlx",
         name="FLUX.2 Klein 4B (MLX)",
         category="image", engine="mflux",
-        repo="black-forest-labs/FLUX.2-klein-4B",
-        size_gb=9.0,
-        description="The small Klein. Less capable than the 9B on complex scenes, but "
-                    "less than half the memory.",
-        tags=["fast", "apple-silicon"],
+        repo="Runpod/FLUX.2-klein-4B-mflux-4bit",
+        size_gb=4.6,
+        description="The small Klein, already quantised. Less capable than the 9B on "
+                    "complex scenes, and roughly five times quicker per step.",
+        tags=["fast", "recommended", "apple-silicon"],
         mflux_cli="mflux-generate-flux2-klein",
+        mflux_base="flux2_klein_4b",
     ),
     # ---- Text: general purpose, GGUF (llama.cpp, portable, CPU/Metal) ----
     CatalogEntry(
@@ -247,7 +250,9 @@ CATALOG: list[CatalogEntry] = [
         size_gb=22.2,
         description="Same model at 8-bit — higher fidelity, but ~22GB resident. Only worth it on 32GB+ Macs.",
         tags=["quality", "apple-silicon"],
-        note="~22GB — very tight on a 24GB machine once macOS and other apps are accounted for. Prefer the Q4 build unless you have 32GB+.",
+        note="~22GB resident. Measured on a 24GB M5: 80s per step against 5s for Klein 4B, "
+     "because it does not fit and pages every step. One 1024x1024 image took 11 minutes. "
+     "Needs 32GB+; on 24GB take the Q4 build or a smaller model.",
         mflux_cli="mflux-generate-krea2",
         fixup="flat-transformer-shards",
     ),
