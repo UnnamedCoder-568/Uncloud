@@ -84,6 +84,10 @@ export interface LocalModel {
   /** Settings the model asks for — a distilled checkpoint wants very few steps.
    *  Optional: views also build LocalModel values of their own. */
   defaults?: { steps?: number; guidance?: number };
+  /** For MLX models found on disk rather than in the catalog: which mflux
+   *  entry point runs it, and which base model to configure it as. */
+  mflux_cli?: string | null;
+  mflux_base?: string | null;
 }
 
 export interface DownloadState {
@@ -199,6 +203,8 @@ export interface ImageGenerateOptions {
   negative_prompt?: string;
   /** Uncensored text encoder, for pipelines whose encoder is a causal LM. */
   text_encoder_path?: string;
+  mflux_cli?: string;
+  mflux_base?: string;
   steps?: number;
   guidance?: number;
   width?: number;

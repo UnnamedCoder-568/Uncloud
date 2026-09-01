@@ -29,6 +29,10 @@ class LocalModel:
     # Generation settings the model itself asks for — a distilled checkpoint at
     # 25 steps is a minute of wasted work, so the picker follows this.
     defaults: dict | None = None
+    # For locally-found MLX models: which mflux entry point runs it, and which
+    # base model to configure it as. Catalog models carry this in the catalog.
+    mflux_cli: str | None = None
+    mflux_base: str | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -37,15 +41,35 @@ class LocalModel:
             "catalog_id": self.catalog_id, "tags": self.tags or [], "ready": self.ready,
             "note": self.note, "capabilities": self.capabilities or ["text2img"],
             "defaults": self.defaults or {},
+            "mflux_cli": self.mflux_cli, "mflux_base": self.mflux_base,
         }
 
 
 def _dir_size_gb(path: Path) -> float:
+    """Total bytes under a folder, following symlinked component directories.
+
+    rglob does not descend into symlinked folders, and a model assembled by
+    pointing at components from elsewhere — an 8-bit transformer beside a 4-bit
+    encoder, say — is entirely symlinks. Reported as 0 GB it reads as broken.
+    Real paths are tracked so a link back up the tree cannot loop.
+    """
+    import os
+
     total = 0
-    for f in path.rglob("*"):
-        if f.is_file():
+    seen: set[tuple[int, int]] = set()
+    for root, dirs, files in os.walk(path, followlinks=True):
+        try:
+            st = os.stat(root)
+        except OSError:
+            continue
+        key = (st.st_dev, st.st_ino)
+        if key in seen:
+            dirs[:] = []
+            continue
+        seen.add(key)
+        for name in files:
             try:
-                total += f.stat().st_size
+                total += os.stat(os.path.join(root, name)).st_size
             except OSError:
                 pass
     return total / (1024 ** 3)
@@ -156,6 +180,83 @@ def _classify_gguf(path: Path) -> tuple[str, str, str | None]:
     return "text", "gguf", None
 
 
+# A checkpoint written by `mflux-save` has no manifest at the root — just
+# component folders of numbered shards — so it is recognised by that shape.
+# The quantisation level is recorded in the shard index; the base model it was
+# cut from is not, and mflux needs it (Klein ships as both 4B and 9B, and the
+# wrong config fails on tensor shape). Uncloud writes that alongside.
+MLX_MARKER = "uncloud-mlx.json"
+
+_MLX_BASE_CLI = {
+    "flux2_klein_9b": "mflux-generate-flux2-klein",
+    "flux2_klein_9b_kv": "mflux-generate-flux2-klein",
+    "flux2_klein_base_9b": "mflux-generate-flux2-klein",
+    "flux2_klein_4b": "mflux-generate-flux2-klein",
+    "flux2_klein_base_4b": "mflux-generate-flux2-klein",
+    "krea2": "mflux-generate-krea2",
+    "krea2_raw": "mflux-generate-krea2",
+    "krea_dev": "mflux-generate-krea2",
+    "z_image": "mflux-generate-z-image",
+    "z_image_turbo": "mflux-generate-z-image",
+}
+
+
+@dataclass
+class MlxCheckpoint:
+    path: Path
+    base: str | None
+    quantize: int | None
+    name: str
+    defaults: dict | None = None
+
+    @property
+    def cli(self) -> str | None:
+        return _MLX_BASE_CLI.get(self.base or "")
+
+    @property
+    def ready(self) -> bool:
+        return self.cli is not None
+
+    def note(self) -> str:
+        bits = f"{self.quantize}-bit MLX" if self.quantize else "MLX"
+        if self.ready:
+            return (f"Pre-quantised {bits} checkpoint — loads in seconds and stays "
+                    f"in memory, instead of being rebuilt for every prompt.")
+        return (f"{bits} checkpoint, but nothing records which base model it was "
+                f"cut from, so mflux cannot configure it. Add a {MLX_MARKER} "
+                f'beside it with {{"base_model": "flux2_klein_9b"}} or similar.')
+
+
+def read_mlx_checkpoint(child: Path) -> MlxCheckpoint | None:
+    """Recognise a checkpoint written by mflux-save."""
+    index = child / "transformer" / "model.safetensors.index.json"
+    if not index.is_file() or not (child / "vae").is_dir():
+        return None
+
+    quantize = None
+    try:
+        meta = json.loads(index.read_text()).get("metadata") or {}
+        raw = meta.get("quantization_level")
+        quantize = int(raw) if raw is not None else None
+    except (OSError, ValueError, TypeError):
+        pass
+
+    base = None
+    name = child.name
+    defaults = None
+    marker = child / MLX_MARKER
+    if marker.is_file():
+        try:
+            data = json.loads(marker.read_text())
+            base = data.get("base_model")
+            name = data.get("name") or name
+            defaults = data.get("defaults")
+        except (OSError, ValueError):
+            pass
+    return MlxCheckpoint(path=child, base=base, quantize=quantize, name=name,
+                         defaults=defaults)
+
+
 def _mlx_dir_engine(child: Path) -> tuple[str, str, str | None] | None:
     """Distinguish an mflux-loadable model from a self-contained MLX port.
 
@@ -252,6 +353,24 @@ def scan_library(models_dir: Path) -> list[LocalModel]:
             if not child.is_dir() or child.name.startswith("."):
                 continue
             if child.name in SKIP_DIRS or str(child) in seen_dirs:
+                continue
+
+            # Pre-quantised MLX checkpoints, which have no root manifest at all
+            # and would otherwise be walked into as if they were a folder of
+            # unrelated models.
+            mlx = read_mlx_checkpoint(child)
+            if mlx is not None:
+                path_str = str(child)
+                if path_str in seen_paths:
+                    continue
+                seen_paths.add(path_str)
+                seen_dirs.add(path_str)
+                found.append(LocalModel(
+                    id=f"local:{child}", name=mlx.name, category="image",
+                    engine="mflux", path=path_str, size_gb=_dir_size_gb(child),
+                    ready=mlx.ready, note=mlx.note(), defaults=mlx.defaults,
+                    mflux_cli=mlx.cli, mflux_base=mlx.base,
+                ))
                 continue
 
             # Folders that name their parts rather than shipping a loadable

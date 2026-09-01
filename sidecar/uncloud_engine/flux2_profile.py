@@ -456,14 +456,22 @@ def _device() -> str:
     return "cpu"
 
 
-def _release() -> None:
+def _trim_device_cache() -> None:
+    """Return unused blocks to the system without touching loaded weights."""
     import torch
 
+    try:
+        if torch.backends.mps.is_available():
+            torch.mps.empty_cache()
+        elif torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except Exception:  # noqa: BLE001 - a cache hint must never fail a render
+        pass
+
+
+def _release() -> None:
     gc.collect()
-    if torch.backends.mps.is_available():
-        torch.mps.empty_cache()
-    elif torch.cuda.is_available():
-        torch.cuda.empty_cache()
+    _trim_device_cache()
 
 
 class Flux2ProfileRuntime:
@@ -578,6 +586,13 @@ class Flux2ProfileRuntime:
             callback_on_step_end=callback,
         )
         result.images[0].save(out_path)
+        # Hand back the scratch space the denoise loop allocated. Without this
+        # the allocator's free pool grows across generations and renders get
+        # progressively slower at unchanged settings — measured at 112s, then
+        # 145s, then 236s for the same 1024x1024 image, on a machine that was
+        # not short of memory or thermally throttled. The weights stay put; only
+        # cached-but-unused blocks go back.
+        _trim_device_cache()
         return str(out_path)
 
 
