@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
-import { setModelsDir, setDeviceAccess, setHfToken, getSettings, setKeepAwake, getAgentTools, setAgentToolGroups, setOutputDir, getResident, stopAllModels} from '../lib/sidecar';
+import { setModelsDir, setDeviceAccess, setHfToken, getSettings, setKeepAwake, getAgentTools, setAgentToolGroups, setOutputDir, getResident, stopAllModels, getWeightCache, clearWeightCache } from '../lib/sidecar';
 import type { Settings, AgentTools, ResidentModels } from '../lib/sidecar';
+import { formatBytes } from '../lib/format';
 
 export default function SettingsView() {
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -31,6 +32,22 @@ export default function SettingsView() {
 
   const [resident, setResident] = useState<ResidentModels | null>(null);
   const [stopping, setStopping] = useState(false);
+  const [cacheBytes, setCacheBytes] = useState<number | null>(null);
+  const [clearing, setClearing] = useState(false);
+
+  useEffect(() => {
+    getWeightCache().then((c) => setCacheBytes(c.bytes)).catch(() => undefined);
+  }, []);
+
+  async function clearCache() {
+    setClearing(true);
+    try {
+      await clearWeightCache();
+      setCacheBytes((await getWeightCache().catch(() => null))?.bytes ?? 0);
+    } finally {
+      setClearing(false);
+    }
+  }
 
   // Polled, because a model can be loaded by any tab at any time.
   useEffect(() => {
@@ -111,6 +128,30 @@ export default function SettingsView() {
           >
             {settings.models_dir}
           </button>
+        </section>
+
+        <section className="card p-4">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <h2 className="text-sm mb-1">Converted weight cache</h2>
+              <p className="text-[11px] text-[var(--text-faint)] max-w-sm">
+                Some models are stored in a form that has to be converted before it
+                can be used — fp8 checkpoints and GGUF encoders. The result is kept
+                here so it is done once instead of before every generation. Clearing
+                it frees the space and costs that conversion time again.
+              </p>
+              <p className="text-[11px] text-[var(--text-dim)] font-mono mt-2">
+                {cacheBytes === null ? '—' : formatBytes(cacheBytes)}
+              </p>
+            </div>
+            <button
+              onClick={clearCache}
+              disabled={!cacheBytes || clearing}
+              className="text-[11px] px-3 py-1.5 rounded-lg bg-[var(--bg-inset)] text-[var(--text-dim)] hover:text-white disabled:opacity-30 transition shrink-0"
+            >
+              {clearing ? 'Clearing…' : 'Clear'}
+            </button>
+          </div>
         </section>
 
         {resident && (
