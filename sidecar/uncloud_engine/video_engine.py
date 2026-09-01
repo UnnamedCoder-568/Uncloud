@@ -145,11 +145,19 @@ class VideoEngine:
             job.stage = "loading model"
             # bfloat16 is the difference between 12 GB and 24 GB here.
             pipe = LTXPipeline.from_pretrained(model_path, torch_dtype=torch.bfloat16)
-            try:
-                # Keeps one component resident at a time rather than all three.
-                pipe.enable_model_cpu_offload(device=device)
-            except Exception:
+            # Offloading components back to the CPU between stages is how you
+            # fit a pipeline into a small VRAM budget — on a discrete GPU. On
+            # Apple Silicon the CPU and GPU share one pool, so it frees nothing
+            # and buys a real copy: measured 2.32ms per 8MB round trip, about
+            # 3.4 GB/s, for the ~15GB of components here. Load straight to the
+            # device and let the shared memory do its job.
+            if device == "mps":
                 pipe = pipe.to(device)
+            else:
+                try:
+                    pipe.enable_model_cpu_offload(device=device)
+                except Exception:  # noqa: BLE001 - fall back to a plain move
+                    pipe = pipe.to(device)
             try:
                 pipe.vae.enable_tiling()
             except Exception:  # noqa: BLE001
