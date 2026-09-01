@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { FolderOpen, Trash2, Loader2, RefreshCw } from 'lucide-react';
-import { listOutputs, outputBlobUrl, revealOutput, deleteOutput } from '../lib/sidecar';
+import { open } from '@tauri-apps/plugin-dialog';
+import { FolderOpen, Trash2, Loader2, RefreshCw, FolderCog } from 'lucide-react';
+import { listOutputs, outputBlobUrl, revealOutput, deleteOutput, setOutputDir } from '../lib/sidecar';
 import type { OutputFile } from '../lib/sidecar';
 import { formatBytes } from '../lib/format';
 
@@ -99,13 +100,34 @@ export default function OutputsView() {
     refresh();
   }
 
+  // The folder is shown here, so it should be changeable here — sending someone
+  // to Settings to act on what they are already looking at is a detour.
+  async function changeFolder() {
+    const picked = await open({ directory: true, multiple: false, defaultPath: root || undefined });
+    if (typeof picked !== 'string' || !picked || picked === root) return;
+    await setOutputDir(picked);
+    refresh();
+  }
+
   return (
     <div className="h-full overflow-y-auto">
       <div className="px-6 py-5">
         <div className="flex items-start justify-between gap-4 mb-4">
           <div className="min-w-0">
             <h1 className="text-2xl font-semibold">Outputs</h1>
-            <p className="text-[11px] text-[var(--text-faint)] font-mono mt-1 truncate">{root}</p>
+            <button
+              onClick={changeFolder}
+              title="Choose where generated work is saved"
+              className="flex items-center gap-1.5 text-[11px] text-[var(--text-faint)] font-mono mt-1 truncate hover:text-[var(--text-dim)] transition"
+            >
+              <FolderCog size={11} className="shrink-0" />
+              <span className="truncate">{root}</span>
+            </button>
+            {root.includes('/.uncloud/outputs') && (
+              <p className="text-[11px] text-amber-400/80 mt-1">
+                Still the default hidden folder — click the path to pick somewhere you'll open.
+              </p>
+            )}
           </div>
           <button
             onClick={refresh}
