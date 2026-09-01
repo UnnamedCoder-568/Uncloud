@@ -325,8 +325,10 @@ def quantize_list() -> list[dict]:
     return quantize_manager.list_jobs()
 
 
+# async, because start() schedules the build with asyncio.create_task and a
+# sync endpoint runs in a threadpool where there is no loop to schedule on.
 @app.post("/api/quantize", dependencies=[Depends(require_token)])
-def quantize_start(body: QuantizeBody) -> dict:
+async def quantize_start(body: QuantizeBody) -> dict:
     from .quantize import quantize_manager
 
     try:
