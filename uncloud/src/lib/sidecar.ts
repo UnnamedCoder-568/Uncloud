@@ -639,6 +639,35 @@ export async function setOutputDir(path: string) {
 
 // ------------------------------------------------------------ model memory
 
+// ---------------------------------------------------------------- quantise
+export interface QuantizeBase { id: string; repo: string; cli: string }
+
+export interface QuantizeJob {
+  id: string;
+  name: string;
+  dest: string;
+  status: 'running' | 'done' | 'error';
+  stage: string;
+  error: string | null;
+  done: boolean;
+  size_gb: number;
+  log: string[];
+}
+
+export async function getQuantizeBases() {
+  return api<{ bits: number[]; bases: QuantizeBase[] }>('/api/quantize/bases');
+}
+export async function listQuantizeJobs() {
+  return api<QuantizeJob[]>('/api/quantize');
+}
+export async function startQuantize(body: {
+  source: string; base: string; name: string;
+  transformer_bits: number; encoder_bits: number;
+  lora_paths?: string[]; lora_scales?: number[];
+}) {
+  return apiPost<QuantizeJob>('/api/quantize', body);
+}
+
 export async function getWeightCache() {
   return api<{ bytes: number; path: string }>('/api/system/weight_cache');
 }

@@ -299,6 +299,59 @@ def image_components() -> list[dict]:
 
 
 # --------------------------------------------------------------- downloads
+# ------------------------------------------------------------- quantising
+class QuantizeBody(BaseModel):
+    source: str
+    base: str
+    name: str
+    transformer_bits: int = 8
+    encoder_bits: int = 4
+    dest_dir: str | None = None
+    lora_paths: list[str] = []
+    lora_scales: list[float] = []
+
+
+@app.get("/api/quantize/bases", dependencies=[Depends(require_token)])
+def quantize_bases() -> dict:
+    from .quantize import BITS, base_models
+
+    return {"bits": list(BITS), "bases": base_models()}
+
+
+@app.get("/api/quantize", dependencies=[Depends(require_token)])
+def quantize_list() -> list[dict]:
+    from .quantize import quantize_manager
+
+    return quantize_manager.list_jobs()
+
+
+@app.post("/api/quantize", dependencies=[Depends(require_token)])
+def quantize_start(body: QuantizeBody) -> dict:
+    from .quantize import quantize_manager
+
+    try:
+        job = quantize_manager.start(
+            source=body.source, base=body.base,
+            dest_dir=body.dest_dir or str(settings.models_dir),
+            name=body.name, transformer_bits=body.transformer_bits,
+            encoder_bits=body.encoder_bits,
+            lora_paths=body.lora_paths, lora_scales=body.lora_scales,
+        )
+    except (ValueError, FileNotFoundError, RuntimeError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return job.to_dict()
+
+
+@app.get("/api/quantize/{job_id}", dependencies=[Depends(require_token)])
+def quantize_status(job_id: str) -> dict:
+    from .quantize import quantize_manager
+
+    job = quantize_manager.jobs.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="No such job")
+    return job.to_dict()
+
+
 class DownloadBody(BaseModel):
     catalog_id: str
 

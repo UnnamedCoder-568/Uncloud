@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { Check, Download, FolderCog, HardDrive, Loader2, CheckCircle2, XCircle } from 'lucide-react';
+import Quantize from '../components/Quantize';
 import { getCatalog, getLibrary, startDownload, listDownloads, getSettings, setModelsDir as saveModelsDir } from '../lib/sidecar';
 import type { CatalogEntry, LocalModel, DownloadState } from '../lib/sidecar';
 import { formatBytes, formatSpeed } from '../lib/format';
@@ -151,6 +152,8 @@ export default function ModelsView() {
             {dirSaved ? <><Check size={13} /> Saved</> : 'Save'}
           </button>
         </section>
+
+        <Quantize models={library} onBuilt={refresh} />
 
         {filteredLocal.length > 0 && (
           <section className="mb-8">
