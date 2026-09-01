@@ -384,6 +384,10 @@ class ImageGenerateBody(BaseModel):
     # Optional uncensored text encoder, for pipelines whose encoder is a
     # causal LM (FLUX.2 Klein). Ignored elsewhere.
     text_encoder_path: str | None = None
+    # Locally-found MLX checkpoints are not in the catalog, so the picker sends
+    # which mflux entry point runs them and which base to configure them as.
+    mflux_cli: str | None = None
+    mflux_base: str | None = None
     prompt: str
     catalog_id: str | None = None
     negative_prompt: str = ""
@@ -400,7 +404,8 @@ async def generate_image(body: ImageGenerateBody) -> dict:
     job = image_engine.start(
         body.model_path, body.engine, body.prompt, negative_prompt=body.negative_prompt,
         steps=body.steps, guidance=body.guidance, width=body.width, height=body.height, seed=body.seed,
-        mflux_cli=entry.mflux_cli if entry else "mflux-generate",
+        mflux_cli=body.mflux_cli or (entry.mflux_cli if entry else "mflux-generate"),
+        mflux_base=body.mflux_base,
         text_encoder_path=body.text_encoder_path,
     )
     return job.to_dict()

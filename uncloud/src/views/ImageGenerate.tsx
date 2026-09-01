@@ -98,6 +98,10 @@ export default function ImageGenerate() {
       steps, guidance, width, height,
       seed: seed.trim() ? Number(seed.trim()) : undefined,
       text_encoder_path: encoderApplies && useEncoder ? encoder!.path : undefined,
+      // Set for MLX checkpoints found on disk; catalog models leave these
+      // unset and the engine falls back to the catalog's own entry point.
+      mflux_cli: model.mflux_cli ?? undefined,
+      mflux_base: model.mflux_base ?? undefined,
     });
     setJob(newJob);
   }

@@ -69,13 +69,22 @@ class MfluxRuntime:
         except Exception:  # noqa: BLE001
             pass
 
-    def _build(self, cli: str, model_path: str, quantize: int | None):
+    def _build(self, cli: str, model_path: str, quantize: int | None,
+               base: str | None = None):
         module_name, class_name, factory = _VARIANTS[cli]
         module = __import__(module_name, fromlist=[class_name])
         cls = getattr(module, class_name)
 
         from mflux.models.common.config import ModelConfig
 
+        # One CLI can cover several sizes — Klein ships as both 4B and 9B, and
+        # loading a 4B checkpoint against the 9B config fails on shape. A
+        # pre-quantised checkpoint records which base it came from.
+        factory = base or factory
+        if not hasattr(ModelConfig, factory):
+            raise RuntimeError(
+                f"mflux does not know a base model called '{factory}'."
+            )
         config = getattr(ModelConfig, factory)()
         kwargs: dict[str, Any] = {"model_config": config}
         if quantize:
@@ -90,16 +99,17 @@ class MfluxRuntime:
         self, *, cli: str, model_path: str, prompt: str, seed: int,
         steps: int, width: int, height: int, guidance: float,
         negative_prompt: str = "", quantize: int | None = None,
+        base: str | None = None,
         on_step: Callable[[int], None] | None = None,
         out_path: str | Path,
     ) -> str:
         if cli not in _VARIANTS:
             raise ValueError(f"{cli} has no in-process path")
 
-        key = (cli, model_path, quantize)
+        key = (cli, model_path, quantize, base)
         if self._key != key:
             self.unload()
-            self._model = self._build(cli, model_path, quantize)
+            self._model = self._build(cli, model_path, quantize, base)
             self._key = key
 
         if on_step is not None:
