@@ -191,6 +191,8 @@ export interface ImageJob {
   error: string | null;
   kind: 'generate' | 'edit';
   label: string | null;
+  /** Where the finished file landed, for Save / Save as / Reveal. */
+  output_path: string | null;
 }
 
 export interface ImageGenerateOptions {
@@ -681,4 +683,10 @@ export async function revealOutput(path: string) {
 
 export async function deleteOutput(path: string) {
   return apiPost<{ ok: boolean }>('/api/outputs/delete', { path });
+}
+
+/** Copy a generated file out to somewhere the user picked. `dest` is a folder
+ *  when `into_folder`, otherwise the full filename a save dialog returned. */
+export async function saveCopy(path: string, dest: string, into_folder: boolean) {
+  return apiPost<{ path: string }>('/api/outputs/save_copy', { path, dest, into_folder });
 }

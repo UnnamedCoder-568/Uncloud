@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ChevronDown, ImagePlus, Loader2, Wand2, X, ArrowRight } from 'lucide-react';
 import { getLibrary, uploadImage, editImage, getImageJob, fetchImageBlobUrl } from '../lib/sidecar';
 import Dictate from '../components/Dictate';
+import SaveActions from '../components/SaveActions';
 import type { LocalModel, ImageJob } from '../lib/sidecar';
 
 const PRESETS = [
@@ -192,6 +193,14 @@ export default function ImageEdit() {
             >
               Continue editing this <ArrowRight size={12} />
             </button>
+            <SaveActions
+              path={job?.output_path ?? null}
+              onDiscarded={() => {
+                URL.revokeObjectURL(outUrl);
+                setOutUrl(null);
+                setJob(null);
+              }}
+            />
           </div>
         ) : busy ? (
           <div className="flex flex-col items-center gap-3 text-[var(--text-dim)]">

@@ -1,12 +1,24 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
-import { setModelsDir, markOnboarded, getSettings } from '../lib/sidecar';
+import { homeDir, join } from '@tauri-apps/api/path';
+import { setModelsDir, setOutputDir, markOnboarded, getSettings } from '../lib/sidecar';
 import Wordmark from '../components/Wordmark';
 
 export default function Onboarding({ onDone }: { onDone: () => void }) {
-  const [step, setStep] = useState<'welcome' | 'folder'>('welcome');
+  const [step, setStep] = useState<'welcome' | 'folder' | 'output'>('welcome');
   const [folder, setFolder] = useState<string | null>(null);
+  const [output, setOutput] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // Suggested up front so Continue works without a second file dialog. The
+  // fallback home for generated work is inside the config dotfolder, which is
+  // the wrong place for pictures and audio someone will want to open and send.
+  useEffect(() => {
+    homeDir()
+      .then((h) => join(h, 'Uncloud'))
+      .then(setOutput)
+      .catch(() => undefined);
+  }, []);
 
   async function pickFolder() {
     const existing = await getSettings().catch(() => null);
@@ -19,11 +31,22 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
     if (typeof selected === 'string') setFolder(selected);
   }
 
+  async function pickOutput() {
+    const selected = await open({
+      directory: true,
+      multiple: false,
+      defaultPath: output ?? undefined,
+      title: 'Choose where generated work is saved',
+    });
+    if (typeof selected === 'string') setOutput(selected);
+  }
+
   async function finish() {
-    if (!folder) return;
+    if (!folder || !output) return;
     setBusy(true);
     try {
       await setModelsDir(folder);
+      await setOutputDir(output);
       await markOnboarded();
       onDone();
     } finally {
@@ -65,7 +88,33 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
               </span>
               <span className="text-[var(--text-dim)] text-xs font-mono">Browse</span>
             </button>
-            <button className="grad-button text-base w-full" disabled={!folder || busy} onClick={finish}>
+            <button
+              className="grad-button text-base w-full"
+              disabled={!folder}
+              onClick={() => setStep('output')}
+            >
+              Continue
+            </button>
+          </div>
+        )}
+
+        {step === 'output' && (
+          <div className="flex flex-col items-center gap-5 w-[440px]">
+            <p className="text-[var(--text-dim)] text-sm text-center">
+              And where should finished work go? Images, video, music and narration are
+              saved here as they are made, so pick somewhere you'll actually open —
+              you can still save any single piece elsewhere afterwards.
+            </p>
+            <button
+              className="w-full card px-4 py-3 text-sm text-left hover:border-[#38383f] transition flex items-center justify-between"
+              onClick={pickOutput}
+            >
+              <span className={output ? 'text-[var(--text)]' : 'text-[var(--text-faint)]'}>
+                {output || 'No folder selected'}
+              </span>
+              <span className="text-[var(--text-dim)] text-xs font-mono">Browse</span>
+            </button>
+            <button className="grad-button text-base w-full" disabled={!output || busy} onClick={finish}>
               {busy ? 'Setting up…' : 'Continue'}
             </button>
           </div>

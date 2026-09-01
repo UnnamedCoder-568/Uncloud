@@ -263,6 +263,9 @@ pub fn spawn_sidecar(app: &AppHandle) -> Result<(Child, SidecarInfo), String> {
         .current_dir(&dir)
         .env("PATH", child_path_env())
         .env("UV_PYTHON_DOWNLOADS", "automatic")
+        // A force quit or a crash never runs our exit handler. The engine
+        // watches this pid and shuts itself down when it disappears.
+        .env("UNCLOUD_PARENT_PID", std::process::id().to_string())
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit());
 

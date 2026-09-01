@@ -66,6 +66,8 @@ class ImageJob:
             "step": self.step, "total_steps": self.total_steps,
             "done": self.status in ("done", "error"), "error": self.error,
             "kind": self.kind, "label": self.label,
+            # The UI needs the path to offer Save / Save as / Reveal on a result.
+            "output_path": self.output_path,
         }
 
 

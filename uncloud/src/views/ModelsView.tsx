@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Download, HardDrive, Loader2, CheckCircle2, XCircle } from 'lucide-react';
-import { getCatalog, getLibrary, startDownload, listDownloads } from '../lib/sidecar';
+import { open } from '@tauri-apps/plugin-dialog';
+import { Check, Download, FolderCog, HardDrive, Loader2, CheckCircle2, XCircle } from 'lucide-react';
+import { getCatalog, getLibrary, startDownload, listDownloads, getSettings, setModelsDir as saveModelsDir } from '../lib/sidecar';
 import type { CatalogEntry, LocalModel, DownloadState } from '../lib/sidecar';
 import { formatBytes, formatSpeed } from '../lib/format';
 
@@ -22,6 +23,27 @@ export default function ModelsView() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Where downloads land. Picking a folder stages it; nothing moves until Save,
+  // so a mis-click in the file dialog cannot silently redirect the next 20GB.
+  const [modelsDir, setModelsDir] = useState('');
+  const [pendingDir, setPendingDir] = useState<string | null>(null);
+  const [dirSaved, setDirSaved] = useState(false);
+
+  async function chooseDir() {
+    const picked = await open({ directory: true, multiple: false, defaultPath: modelsDir || undefined });
+    if (typeof picked === 'string' && picked && picked !== modelsDir) setPendingDir(picked);
+  }
+
+  async function saveDir() {
+    if (!pendingDir) return;
+    await saveModelsDir(pendingDir);
+    setModelsDir(pendingDir);
+    setPendingDir(null);
+    setDirSaved(true);
+    setTimeout(() => setDirSaved(false), 2500);
+    refresh();
+  }
+
   /**
    * Each source is fetched independently. Previously all three went through a
    * single Promise.all with no catch, so one failing call left every list empty
@@ -31,12 +53,16 @@ export default function ModelsView() {
     setLoading(true);
     const problems: string[] = [];
 
-    const [c, l, d] = await Promise.all([
+    const [c, l, d, cfg] = await Promise.all([
       getCatalog().catch((e) => { problems.push(`catalog: ${e}`); return null; }),
       getLibrary().catch((e) => { problems.push(`installed models: ${e}`); return null; }),
       listDownloads().catch((e) => { problems.push(`downloads: ${e}`); return null; }),
+      getSettings().catch(() => null),
     ]);
 
+    // This view stays mounted, and the same folder is editable from Settings —
+    // reread it rather than trusting what was fetched when the app started.
+    if (cfg) setModelsDir(cfg.models_dir);
     if (c) setCatalog(c);
     if (l) setLibrary(l);
     if (d) setDownloads(d);
@@ -94,6 +120,38 @@ export default function ModelsView() {
       </header>
 
       <div className="px-6 py-5">
+        <section className="card p-4 mb-8 flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-[var(--bg-inset)] flex items-center justify-center shrink-0">
+            <FolderCog size={15} className="text-[var(--text-dim)]" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="text-[10px] uppercase tracking-[0.18em] text-[var(--text-faint)]">
+              Models are saved to
+            </div>
+            <div className="text-xs font-mono truncate mt-0.5" title={pendingDir ?? modelsDir}>
+              {pendingDir ?? (modelsDir || 'Not set yet')}
+            </div>
+            {pendingDir && (
+              <div className="text-[11px] text-amber-400/80 mt-1">
+                Not saved yet — press Save to download here from now on.
+              </div>
+            )}
+          </div>
+          <button
+            onClick={chooseDir}
+            className="text-xs px-3 py-1.5 rounded-lg bg-[var(--bg-inset)] text-[var(--text-dim)] hover:text-white transition shrink-0"
+          >
+            Change…
+          </button>
+          <button
+            onClick={saveDir}
+            disabled={!pendingDir}
+            className="btn-accent text-xs px-3 py-1.5 rounded-lg shrink-0 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
+          >
+            {dirSaved ? <><Check size={13} /> Saved</> : 'Save'}
+          </button>
+        </section>
+
         {filteredLocal.length > 0 && (
           <section className="mb-8">
             <h2 className="text-[10px] uppercase tracking-[0.18em] text-[var(--text-faint)] mb-3">

@@ -157,6 +157,78 @@ async def stop_all(*, close_browser: bool = True) -> Released:
     return freed
 
 
+def watch_parent() -> None:
+    """Shut down when the app that launched this engine is gone.
+
+    The desktop app terminates the engine when it quits, but that only covers
+    the exits where it gets to run code. A force quit, a crash, or `kill -9`
+    leaves the engine alive with whatever models it had loaded — twenty
+    gigabytes with no window left to release it from. The launcher passes its
+    own pid; when that pid stops existing, so does this process.
+
+    Started by hand there is no pid to shadow and this does nothing, so running
+    the engine standalone still works.
+    """
+    import os
+    import threading
+    import time
+
+    raw = os.environ.get("UNCLOUD_PARENT_PID", "")
+    if not raw.isdigit():
+        return
+    parent = int(raw)
+
+    def alive() -> bool:
+        try:
+            import psutil
+        except ImportError:
+            try:
+                os.kill(parent, 0)
+            except ProcessLookupError:
+                return False
+            except OSError:
+                pass  # exists but is not ours to signal
+            return True
+
+        try:
+            # A zombie has already exited — its table entry just lingers until
+            # something reaps it, and pid_exists() cannot tell the two apart.
+            return psutil.Process(parent).status() != psutil.STATUS_ZOMBIE
+        except psutil.NoSuchProcess:
+            return False
+        except psutil.Error:
+            return True
+
+    def poll() -> None:
+        while alive():
+            time.sleep(2.0)
+        stop_all_blocking()
+        _end_process_group()
+
+    threading.Thread(target=poll, daemon=True, name="parent-watchdog").start()
+
+
+def _end_process_group() -> None:
+    """Take down anything we spawned that stop_all did not know about.
+
+    The engine is its own process group leader, so one signal reaches every
+    model server and render worker beneath it. SIGTERM is ignored here first —
+    the signal lands on this process too, and the handler that would catch it
+    has already done its work.
+    """
+    import os
+    import signal
+    import time
+
+    try:
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        os.killpg(os.getpgid(0), signal.SIGTERM)
+        time.sleep(0.5)
+    except (AttributeError, OSError, ValueError):
+        pass  # not POSIX, or no group of our own — exiting is still correct
+    os._exit(0)
+
+
 def stop_all_blocking() -> None:
     """Signal-handler-safe wrapper: no event loop is guaranteed here."""
     try:

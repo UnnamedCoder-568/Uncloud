@@ -101,7 +101,15 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| {
-            if let tauri::RunEvent::ExitRequested { .. } = event {
+            // Both events, because they cover different exits. Closing the
+            // last window raises ExitRequested; Cmd-Q and the Quit menu item
+            // go straight to Exit, which is how people actually quit on macOS
+            // — handling only the first left the engine running with its
+            // models still resident. `take()` makes the second call a no-op.
+            if matches!(
+                event,
+                tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit
+            ) {
                 let state = app_handle.state::<SidecarState>();
                 let taken = state.child.lock().unwrap().take();
                 if let Some(mut child) = taken {
