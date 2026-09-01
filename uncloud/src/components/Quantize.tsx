@@ -27,6 +27,11 @@ function estimate(model: LocalModel, tBits: number, eBits: number): string {
   return `~${gb.toFixed(1)} GB`;
 }
 
+// Architectures mflux has no implementation for. Quantising is not a format
+// conversion — mflux has to know the model's structure to rebuild it — so an
+// SDXL or SD3 checkpoint cannot go through this no matter which base is picked.
+const UNSUPPORTED = /\b(sdxl|sd3|sd-3|pony|illustrious|noobai|stable[-\s]?diffusion|xl)\b/i;
+
 function guessBase(name: string, bases: QuantizeBase[]): string {
   const n = name.toLowerCase();
   const has = (id: string) => bases.some((b) => b.id === id);
@@ -37,7 +42,12 @@ function guessBase(name: string, bases: QuantizeBase[]): string {
   if (n.includes('krea') && has('krea2')) return 'krea2';
   if (n.includes('z-image') || n.includes('z image')) return 'z_image_turbo';
   if (n.includes('kontext') && has('dev_kontext')) return 'dev_kontext';
-  return bases[0]?.id ?? '';
+  if (n.includes('qwen') && has('qwen_image')) return 'qwen_image';
+  if (n.includes('schnell') && has('schnell')) return 'schnell';
+  if (n.includes('flux') && has('dev')) return 'dev';
+  // No guess rather than a wrong one: defaulting to whatever sorted first sends
+  // the build off against an unrelated architecture and it fails minutes later.
+  return '';
 }
 
 export default function Quantize({ models, onBuilt }: {
@@ -80,6 +90,7 @@ export default function Quantize({ models, onBuilt }: {
   }, [jobs.filter((j) => j.status === 'done').length]);
 
   const model = candidates.find((m) => m.path === source) ?? null;
+  const unsupported = !!model && UNSUPPORTED.test(model.name);
 
   useEffect(() => {
     if (!model || !bases.length) return;
@@ -138,6 +149,7 @@ export default function Quantize({ models, onBuilt }: {
         <label className="flex flex-col gap-1">
           <span className="text-[10px] uppercase tracking-wider text-[var(--text-faint)]">Based on</span>
           <select className={`${select} w-52`} value={base} onChange={(e) => setBase(e.target.value)}>
+            <option value="">Choose…</option>
             {bases.map((b) => <option key={b.id} value={b.id}>{b.cli}</option>)}
           </select>
         </label>
@@ -164,14 +176,28 @@ export default function Quantize({ models, onBuilt }: {
 
         <button
           onClick={build}
-          disabled={!model || !base || !name.trim()}
+          disabled={!model || !base || !name.trim() || unsupported}
           className="btn-accent text-xs px-4 py-1.5 rounded-lg disabled:opacity-40 disabled:cursor-not-allowed"
         >
           Build
         </button>
       </div>
 
-      {model && (
+      {unsupported && (
+        <p className="text-[11px] text-amber-400/90 mt-2 max-w-2xl leading-relaxed">
+          mflux has no implementation for this architecture, so it cannot be quantised
+          here — that needs the model's structure, not just its weights. SDXL-family
+          models run on the diffusers path instead, which is fine for them: they are
+          small enough that memory was never the problem.
+        </p>
+      )}
+      {model && !unsupported && !base && (
+        <p className="text-[11px] text-amber-400/90 mt-2">
+          Pick which base model this is built on — the guess failed, and the wrong one
+          fails minutes into the build rather than immediately.
+        </p>
+      )}
+      {model && !unsupported && (
         <p className="text-[11px] text-[var(--text-faint)] mt-2">
           {model.size_gb} GB → {estimate(model, tBits, eBits)} ·{' '}
           {tBits === eBits ? 'one pass' : 'two passes, one per precision'} · a few
