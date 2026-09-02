@@ -239,6 +239,19 @@ class MlxCheckpoint:
                 f'beside it with {{"base_model": "flux2_klein_9b"}} or similar.')
 
 
+def _mlx_display_name(child: Path) -> str:
+    """A folder called Quantized-Q8 says nothing about which model it is.
+
+    Published checkpoints often sit in a subfolder named after the
+    quantisation, under a folder named after the model. Fold the parent in when
+    the name on its own would be meaningless in a picker.
+    """
+    generic = ("quantized", "q4", "q6", "q8", "4bit", "6bit", "8bit", "mlx", "model")
+    if child.name.lower().replace("-", " ").replace("_", " ").split()[0] in generic:
+        return f"{child.parent.name} ({child.name})"
+    return child.name
+
+
 def read_mlx_checkpoint(child: Path) -> MlxCheckpoint | None:
     """Recognise an MLX checkpoint, in any of the three shapes they arrive in.
 
@@ -287,7 +300,7 @@ def read_mlx_checkpoint(child: Path) -> MlxCheckpoint | None:
     scales = marker_data.get("lora_scales") or [1.0] * len(loras)
     return MlxCheckpoint(
         path=child, base=marker_data.get("base_model"), quantize=quantize,
-        name=marker_data.get("name") or child.name,
+        name=marker_data.get("name") or _mlx_display_name(child),
         defaults=marker_data.get("defaults"),
         weights=weights if weights != child else None,
         lora_paths=loras or None,
