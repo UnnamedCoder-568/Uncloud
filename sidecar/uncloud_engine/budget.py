@@ -16,6 +16,29 @@ from __future__ import annotations
 from pathlib import Path
 
 
+# Which runtimes exist on which machines. mflux and MLX are Apple Silicon and
+# nothing else — they are not slower elsewhere, they do not install. Everything
+# below them runs anywhere torch does.
+_APPLE_ONLY_ENGINES = frozenset({"mflux", "mlx", "mlx-vlm"})
+
+
+def is_apple_silicon() -> bool:
+    import platform
+
+    return platform.system() == "Darwin" and platform.machine() == "arm64"
+
+
+def engine_runs_here(engine: str) -> bool:
+    """Whether this machine has the runtime a model needs.
+
+    Asked before a model is offered, not after it is downloaded. The failure
+    without this is the worst shape available: the Models tab lists a 13.7GB
+    checkpoint, the download succeeds, and Generate raises ModuleNotFoundError
+    because mflux was never installed on this platform.
+    """
+    return not (engine in _APPLE_ONLY_ENGINES and not is_apple_silicon())
+
+
 def memory_budget() -> dict:
     """Total and usable memory, and the accelerator's own ceiling if it has one."""
     import platform
@@ -43,8 +66,15 @@ def memory_budget() -> dict:
                 budget = total * 0.75
         elif torch.cuda.is_available():
             device = "cuda"
-            props = torch.cuda.get_device_properties(0)
-            budget = props.total_memory / 1e9
+            # Free VRAM, not total. A discrete card is already holding the
+            # desktop, a browser's compositor and anything else with a context
+            # on it — often a gigabyte or two — and a job sized against the
+            # number on the box is a job that does not fit.
+            try:
+                free, _total = torch.cuda.mem_get_info()
+                budget = free / 1e9
+            except Exception:  # noqa: BLE001 - older torch, or no context yet
+                budget = torch.cuda.get_device_properties(0).total_memory / 1e9
     except Exception:  # noqa: BLE001 - torch may be missing
         pass
 
@@ -142,6 +172,11 @@ DECODE_GB_PER_MPX = 9.6
 # Taking the larger of the phases instead gave 1.91 and 1.44 for the same two
 # runs, which is a way of saying that model was wrong and the constant was
 # absorbing the error.
+#
+# Both runs were on Metal. CUDA's caching allocator hands memory back on
+# empty_cache where MPS does not, so the real figure there is probably lower
+# and this estimate is pessimistic rather than dangerous. Unmeasured either
+# way — nobody has run this on an NVIDIA card.
 _ALLOCATOR_OVERHEAD = 1.12
 
 # The decode is tiled, so its cost is set by one tile rather than the frame.

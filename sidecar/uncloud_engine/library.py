@@ -227,10 +227,20 @@ class MlxCheckpoint:
 
     @property
     def ready(self) -> bool:
-        return self.cli is not None
+        from .budget import engine_runs_here
+
+        return self.cli is not None and engine_runs_here("mflux")
 
     def note(self) -> str:
+        from .budget import engine_runs_here
+
         bits = f"{self.quantize}-bit MLX" if self.quantize else "MLX"
+        if not engine_runs_here("mflux"):
+            # Model folders travel — copied between machines, or synced. Say
+            # what this is rather than reporting it broken.
+            return (f"An Apple Silicon checkpoint. {bits} weights run through "
+                    f"mflux, which exists only on Apple Silicon, so this one "
+                    f"cannot be loaded on this machine.")
         if self.ready:
             return (f"Pre-quantised {bits} checkpoint — loads in seconds and stays "
                     f"in memory, instead of being rebuilt for every prompt.")

@@ -58,3 +58,31 @@ class BudgetTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PlatformTest(unittest.TestCase):
+    def test_apple_only_runtimes_are_not_offered_elsewhere(self) -> None:
+        # The failure this prevents: a Windows user downloads 13.7GB and gets
+        # ModuleNotFoundError on Generate, because mflux never installed.
+        real = budget.is_apple_silicon
+        budget.is_apple_silicon = lambda: False
+        try:
+            for engine in ("mflux", "mlx", "mlx-vlm"):
+                self.assertFalse(budget.engine_runs_here(engine), engine)
+            for engine in ("diffusers", "gguf", "faster-whisper"):
+                self.assertTrue(budget.engine_runs_here(engine), engine)
+        finally:
+            budget.is_apple_silicon = real
+
+    def test_something_is_still_offered_on_a_non_mac(self) -> None:
+        # Gating is only correct if it leaves a usable app behind.
+        from uncloud_engine.catalog import CATALOG
+
+        real = budget.is_apple_silicon
+        budget.is_apple_silicon = lambda: False
+        try:
+            left = {e.category for e in CATALOG if budget.engine_runs_here(e.engine)}
+        finally:
+            budget.is_apple_silicon = real
+        for category in ("image", "text", "video", "voice-stt"):
+            self.assertIn(category, left)
