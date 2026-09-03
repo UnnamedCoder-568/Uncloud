@@ -23,6 +23,9 @@ const SIZES = [
   { w: 704, h: 480, label: '704×480', tier: 'Balanced' },
   { w: 960, h: 544, label: '960×544', tier: 'Sharp' },
   { w: 1216, h: 704, label: '1216×704', tier: 'Max detail' },
+  // Wan's native size. Not a nicety for that family — below it the model
+  // returns moving colour rather than a worse clip.
+  { w: 1280, h: 704, label: '1280×704', tier: 'Native' },
 ];
 
 const QUALITY_NEGATIVE = 'worst quality, inconsistent motion, blurry, jittery, distorted';
