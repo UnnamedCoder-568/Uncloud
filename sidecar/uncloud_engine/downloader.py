@@ -27,6 +27,9 @@ class DownloadState:
     speed_bytes_s: float = 0.0
     error: str | None = None
     dest: str = ""
+    # Which part is being fetched. A model assembled from several repositories
+    # restarts the percentage per file, so without this the bar looks stuck.
+    stage: str = ""
     _task: asyncio.Task | None = field(default=None, repr=False)
 
     def to_dict(self) -> dict:
@@ -35,7 +38,7 @@ class DownloadState:
             "status": self.status, "downloaded_bytes": self.downloaded_bytes,
             "total_bytes": self.total_bytes, "percent": round(self.percent, 1),
             "speed_bytes_s": round(self.speed_bytes_s, 0), "error": self.error,
-            "dest": self.dest,
+            "dest": self.dest, "stage": self.stage,
         }
 
 
@@ -92,7 +95,16 @@ class DownloadManager:
                 dest_dir = settings.models_dir / entry.id
                 dest_dir.mkdir(parents=True, exist_ok=True)
                 state.dest = str(dest_dir)
-                await self._download_snapshot(state, entry.repo, dest_dir)
+                await self._download_snapshot(state, entry.repo, dest_dir,
+                                              entry.allow_patterns or None)
+            for repo, filename in entry.extra_files:
+                state.stage = f"fetching {filename}"
+                await self._download_file(state, repo, filename, dest_dir / filename)
+            if entry.marker:
+                import json
+
+                (dest_dir / entry.marker_name).write_text(
+                    json.dumps(entry.marker, indent=2) + "\n")
             if entry.fixup:
                 _apply_fixup(entry.fixup, dest_dir)
             state.status = "done"
@@ -143,10 +155,12 @@ class DownloadManager:
         tmp.rename(dest)
         state.percent = 100.0
 
-    async def _download_snapshot(self, state: DownloadState, repo: str, dest_dir: Path) -> None:
+    async def _download_snapshot(self, state: DownloadState, repo: str, dest_dir: Path,
+                                 allow_patterns: list[str] | None = None) -> None:
         def poll_and_download() -> None:
             from huggingface_hub import snapshot_download
-            snapshot_download(repo_id=repo, local_dir=str(dest_dir))
+            snapshot_download(repo_id=repo, local_dir=str(dest_dir),
+                              allow_patterns=allow_patterns)
 
         async def poll_progress() -> None:
             while True:

@@ -58,8 +58,17 @@ def memory_budget() -> dict:
     }
 
 
-# LTX 2B: 32x spatial and 8x temporal compression, 28 layers, 2048 hidden.
-_LTX = {"spatial": 32, "temporal": 8, "layers": 28, "dim": 2048, "heads": 32}
+# Per-family architecture. "spatial" is the effective stride from pixels to
+# tokens, which for Wan is its 16x VAE times a 2x2 patch, landing on the same
+# 32 as LTX. The temporal figure does not match: Wan keeps twice as many latent
+# frames per second of clip, so the same two seconds is twice the tokens and,
+# attention being quadratic, four times the sequence cost. Smaller weights, not
+# a smaller sequence.
+_ARCH = {
+    "ltx": {"spatial": 32, "temporal": 8, "layers": 28, "dim": 2048, "heads": 32},
+    "wan": {"spatial": 32, "temporal": 4, "layers": 30, "dim": 3072, "heads": 24},
+}
+_LTX = _ARCH["ltx"]
 
 
 def resident_weights_gb(model_path: str) -> float:
@@ -75,6 +84,28 @@ def resident_weights_gb(model_path: str) -> float:
     root = Path(model_path)
     if not root.is_dir():
         return 6.0
+
+    # A GGUF component stays packed in memory, so the file size on disk is what
+    # it costs. The encoder is excluded: it is dropped before denoising, and
+    # counting it is what previously refused clips that run comfortably.
+    marker = root / "uncloud-video.json"
+    if marker.is_file():
+        try:
+            declared = json.loads(marker.read_text())
+        except (OSError, ValueError):
+            declared = {}
+        transformer = declared.get("transformer_gguf")
+        if transformer and (root / transformer).is_file():
+            total = (root / transformer).stat().st_size / 1e9
+            vae = root / "vae"
+            if vae.is_dir():
+                size = sum(f.stat().st_size for f in vae.rglob("*.safetensors"))
+                try:
+                    dtype = json.loads((vae / "config.json").read_text()).get("torch_dtype")
+                except (OSError, ValueError):
+                    dtype = None
+                total += (size / 2 if str(dtype) in ("float32", "fp32") else size) / 1e9
+            return round(total + 0.5, 1)
 
     total = 0.0
     for component in ("transformer", "vae"):
@@ -94,15 +125,37 @@ def resident_weights_gb(model_path: str) -> float:
     return round(total + 0.5, 1) if total else 6.0
 
 
-def estimate_video_gb(frames: int, width: int, height: int,
-                      weights_gb: float = 6.0) -> dict:
-    """Roughly what a clip will need, and where it goes.
+# What a VAE decode costs, per megapixel of output frame. Measured twice on
+# this stack and it came out the same both times: 9.6 GB/Mpx decoding Wan video
+# at bfloat16, 9.8 GB/Mpx decoding a FLUX.2 image. The decode expands a latent
+# through wide convolutions at full resolution, and that dominates everything
+# else in both cases.
+DECODE_GB_PER_MPX = 9.6
 
-    Weights dominate at ordinary lengths: a four-second clip needs about half a
-    gigabyte of sequence against six of weights, which is why "make it shorter"
-    is usually the wrong advice for a job that ran out of memory.
+# MPS holds allocated buffers above what is live, and it is the driver's total
+# that runs into the ceiling. One end-to-end run — Wan, 25 frames, 1280x704 —
+# peaked at 19.3 GB against 10.1 GB of parts, so parts are scaled by this.
+# Calibrated on a single measurement: treat it as the right order, not a number
+# to trust to a decimal place.
+_ALLOCATOR_OVERHEAD = 1.9
+
+
+def estimate_video_gb(frames: int, width: int, height: int,
+                      weights_gb: float = 6.0, family: str = "ltx",
+                      vae_gb: float = 1.4) -> dict:
+    """Roughly what a clip will need at its worst moment, and where it goes.
+
+    A generation has two peaks, not one, and they do not overlap: denoising
+    holds the transformer and the sequence, then the transformer is released
+    and the decode holds the VAE and a full-resolution frame. The larger of the
+    two is what has to fit.
+
+    Guessing that the transformer is the expensive half is wrong. At 1280x704
+    denoising measured 6.5 GB of parts against 10.1 GB for the decode — the
+    decode is the wall, and it is why quantising the weights does not buy a
+    machine into range on its own.
     """
-    cfg = _LTX
+    cfg = _ARCH.get(family, _LTX)
     latent_frames = max(1, (frames - 1) // cfg["temporal"] + 1)
     tokens = latent_frames * (height // cfg["spatial"]) * (width // cfg["spatial"])
 
@@ -112,11 +165,22 @@ def estimate_video_gb(frames: int, width: int, height: int,
     attention = (tokens * tokens * cfg["heads"] * 2 / 1e9) * 0.25
     sequence = hidden + attention
 
+    denoise = weights_gb + sequence
+    # LTX tiles its decode, which caps it. Wan's tiled path runs out of memory
+    # on Metal at every tile size measured, so it decodes whole frames and pays
+    # the full cost.
+    megapixels = width * height / 1e6
+    decode = vae_gb + (DECODE_GB_PER_MPX * megapixels if family == "wan"
+                       else min(DECODE_GB_PER_MPX * megapixels, 2.0))
+    total = max(denoise, decode) * _ALLOCATOR_OVERHEAD
+
     return {
         "tokens": tokens,
         "weights_gb": round(weights_gb, 1),
         "sequence_gb": round(sequence, 1),
-        "total_gb": round(weights_gb + sequence, 1),
+        "denoise_gb": round(denoise * _ALLOCATOR_OVERHEAD, 1),
+        "decode_gb": round(decode * _ALLOCATOR_OVERHEAD, 1),
+        "total_gb": round(total, 1),
     }
 
 
@@ -124,10 +188,15 @@ def estimate_video_gb(frames: int, width: int, height: int,
 # because whether a machine can run video at all is a question about the
 # machine, and the answer has to be the same in both places.
 VIDEO_FRAMES = (25, 49, 97, 145, 193, 241)
-VIDEO_SIZES = ((448, 256), (512, 320), (640, 384), (704, 480), (960, 544), (1216, 704))
+VIDEO_SIZES = ((448, 256), (512, 320), (640, 384), (704, 480), (960, 544),
+               (1216, 704), (1280, 704))
+
+# Below this many output pixels a family stops producing anything usable, as
+# distinct from running out of memory. Zero means it degrades gracefully.
+_USABLE_PIXELS = {"wan": 1216 * 704, "ltx": 0}
 
 
-def video_capability(weights_gb: float = 6.0) -> dict:
+def video_capability(weights_gb: float = 6.0, family: str = "ltx") -> dict:
     """How far this machine gets with video, if anywhere.
 
     A machine that cannot hold even the shortest draft clip should not be shown
@@ -142,8 +211,15 @@ def video_capability(weights_gb: float = 6.0) -> dict:
     if not budget:
         return {"runnable": True, "budget_gb": 0.0, "reason": "unknown"}
 
+    # Fitting is not the same as being worth running. Wan collapses into
+    # coloured smear below its native size — verified at 1280x704 (good) and
+    # 448x256 (unusable, same prompt, seed and steps). Sizes in between were
+    # not swept, so the floor is set at the one that is known good rather than
+    # at a guess about where it breaks.
+    usable = _USABLE_PIXELS.get(family, 0)
+
     def fits(frames: int, width: int, height: int) -> bool:
-        return estimate_video_gb(frames, width, height, weights_gb)["total_gb"] <= budget
+        return estimate_video_gb(frames, width, height, weights_gb, family)["total_gb"] <= budget
 
     smallest_frames, (smallest_w, smallest_h) = VIDEO_FRAMES[0], VIDEO_SIZES[0]
     if not fits(smallest_frames, smallest_w, smallest_h):
@@ -163,10 +239,18 @@ def video_capability(weights_gb: float = 6.0) -> dict:
     longest = max(f for f in VIDEO_FRAMES if fits(f, smallest_w, smallest_h))
     largest = max((s for s in VIDEO_SIZES if fits(smallest_frames, *s)),
                   key=lambda s: s[0] * s[1])
-    return {
+    out = {
         "runnable": True,
         "budget_gb": round(budget, 1),
         "weights_gb": round(weights_gb, 1),
         "longest_frames_at_min_size": longest,
         "largest_size_at_min_frames": list(largest),
     }
+    if usable and largest[0] * largest[1] < usable:
+        out["runnable"] = False
+        out["reason"] = (
+            "This machine can hold a clip, but only at sizes below the one "
+            "this model needs. Run it smaller and it does not degrade — it "
+            "returns moving colour with no subject in it."
+        )
+    return out
