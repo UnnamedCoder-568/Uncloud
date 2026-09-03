@@ -177,12 +177,15 @@ def system_budget(frames: int = 0, width: int = 0, height: int = 0,
     # Whether this machine can run video at all, independent of the job asked
     # for — the Video tab is hidden below this floor rather than failing the
     # same way on every setting.
-    out["video"] = video_capability(weights_gb or resident_weights_gb(model_path))
+    from .video_engine import family_for
+
+    family = family_for(model_path).name if model_path else "ltx"
+    weights = weights_gb or resident_weights_gb(model_path)
+    out["video"] = video_capability(weights, family)
     if frames and width and height:
         # Measure what stays resident rather than trusting a folder size: the
         # text encoder is the bulk of the folder and is freed before denoising.
-        weights = weights_gb or resident_weights_gb(model_path)
-        est = estimate_video_gb(frames, width, height, weights)
+        est = estimate_video_gb(frames, width, height, weights, family)
         out["estimate"] = est
         budget = out["budget"]["budget_gb"]
         out["fits"] = est["total_gb"] <= budget
