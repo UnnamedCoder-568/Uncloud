@@ -5,13 +5,20 @@ FLUX.2 Klein is 34GB against 24GB of memory, so every prompt evicts half the
 pipeline and reloads it. Quantising once and saving the result turns that into
 a single fast read of something that fits.
 
-Precision is chosen per component, because the two halves do not deserve the
-same budget. The transformer decides every pixel — faces first, since fine
-facial structure is the highest-frequency detail an image has and the least
-tolerant of coarse weights. The text encoder only turns a prompt into a
-direction for the transformer to follow, and carries that just as well at low
-precision. An 8-bit transformer beside a 4-bit encoder costs what a uniform
-6-bit build costs and looks considerably better.
+Precision is uniform across components, and not by choice. Splitting it — an
+8-bit transformer beside a 4-bit encoder — is the obviously appealing trade,
+since the transformer decides every pixel while the encoder only points it in a
+direction. This builder used to do exactly that, and the result was quietly
+wrong: mflux reads one quantization_level per checkpoint, from the first
+component that records one, and passes that single value to nn.quantize for all
+of them. For FLUX.2 the first component is the VAE. So a mixed build had its
+4-bit encoder rebuilt as 8-bit modules and then filled with 4-bit-packed arrays
+by model.update(strict=False) — no shape check, no warning, garbage embeddings.
+
+The encoder swap looking like it made no difference was this, not the encoder.
+
+Uniform 6-bit costs what the 8/4 split was meant to cost and actually loads, so
+that is the trade to reach for when 8-bit will not fit.
 
 Note that lower precision does not run faster here. On an M5 a bf16 matmul
 measured 13.57 TFLOPS against 11.94 for int4 — quantisation is cheaper to hold
@@ -108,6 +115,15 @@ class QuantizeManager:
         for bits in (transformer_bits, encoder_bits):
             if bits not in BITS:
                 raise ValueError(f"{bits}-bit is not one of {BITS}")
+        if transformer_bits != encoder_bits:
+            raise ValueError(
+                f"A mixed build cannot be loaded: mflux applies one precision to "
+                f"every component, taken from whichever it reads first. "
+                f"{transformer_bits}-bit weights beside {encoder_bits}-bit ones "
+                f"would be read at a single width and produce nonsense. Build "
+                f"uniformly — 6-bit costs about what {transformer_bits}/"
+                f"{encoder_bits} was meant to."
+            )
         if not Path(source).exists():
             raise FileNotFoundError(f"No model at {source}")
 
@@ -133,38 +149,16 @@ class QuantizeManager:
                 shutil.rmtree(staging, ignore_errors=True)
                 staging.mkdir(parents=True, exist_ok=True)
 
-                # One pass per distinct precision. mflux quantises the whole
-                # model at once, so a mixed build costs two passes and then
-                # keeps one component folder from each.
-                levels = sorted({transformer_bits, encoder_bits}, reverse=True)
-                built: dict[int, Path] = {}
-                for i, bits in enumerate(levels, 1):
-                    job.stage = f"quantising at {bits}-bit ({i} of {len(levels)})"
-                    out = staging / f"q{bits}"
-                    await self._mflux_save(job, source, base, out, bits,
-                                           lora_paths, lora_scales)
-                    built[bits] = out
-
-                job.stage = "assembling"
+                job.stage = f"quantising at {transformer_bits}-bit"
                 dest_tmp = staging / "final"
-                dest_tmp.mkdir(parents=True, exist_ok=True)
-                picks = {
-                    "transformer": transformer_bits,
-                    "text_encoder": encoder_bits,
-                    "vae": transformer_bits,
-                    "tokenizer": transformer_bits,
-                }
-                for component, bits in picks.items():
-                    src = built[bits] / component
-                    if src.is_dir():
-                        shutil.move(str(src), str(dest_tmp / component))
+                await self._mflux_save(job, source, base, dest_tmp,
+                                       transformer_bits, lora_paths, lora_scales)
 
                 (dest_tmp / MLX_MARKER).write_text(json.dumps({
                     "schemaVersion": 1,
                     "name": job.name,
                     "base_model": base,
                     "quantize": transformer_bits,
-                    "encoder_quantize": encoder_bits,
                     "source": source,
                     "lora_paths": lora_paths,
                 }, indent=2) + "\n")

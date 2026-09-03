@@ -32,6 +32,41 @@ def can_run_in_process(cli: str) -> bool:
     return cli in _VARIANTS
 
 
+def _tile_flux2_vae_decode() -> None:
+    """Decode FLUX.2 images in tiles, because the decode is the memory peak.
+
+    Not the transformer, as you would assume. Denoising Klein 9B at 1024x1024
+    measured 12.1GB resident and steady; the run still peaked at 22.3GB, all of
+    it after the last step. At 1024x1536 that peak is 27.3GB on a 25.8GB
+    machine, so the decode is what pushes a working laptop into swap.
+
+    mflux can tile it — VAEUtil.decode takes a TilingConfig — but the FLUX.2
+    text-to-image path never passes one: it calls decode_packed_latents with
+    the latents alone, while the model's own tiling_config is read only by the
+    edit variant. Bind the default config to the call so the txt2img path gets
+    it too, leaving an explicit config free to override.
+    """
+    try:
+        from mflux.models.common.vae.tiling_config import TilingConfig
+        from mflux.models.flux2.model.flux2_vae.vae import Flux2VAE
+    except Exception:  # noqa: BLE001 - a newer mflux may have moved these
+        return
+    if getattr(Flux2VAE.decode_packed_latents, "_uncloud_tiled", False):
+        return
+
+    inner = Flux2VAE.decode_packed_latents
+    default = TilingConfig()
+
+    def decode_packed_latents(self, packed_latents, tiling_config=None):
+        return inner(self, packed_latents, tiling_config or default)
+
+    decode_packed_latents._uncloud_tiled = True
+    Flux2VAE.decode_packed_latents = decode_packed_latents
+
+
+_tile_flux2_vae_decode()
+
+
 class _StepProgress:
     """mflux's in-loop callback protocol, used only to report step counts."""
 
