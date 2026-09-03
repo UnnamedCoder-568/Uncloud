@@ -686,6 +686,27 @@ export async function startQuantize(body: {
   return apiPost<QuantizeJob>('/api/quantize', body);
 }
 
+export interface MemoryBudget {
+  budget: {
+    total_gb: number; available_gb: number; device: string;
+    budget_gb: number; unified: boolean; platform: string;
+  };
+  estimate?: { tokens: number; weights_gb: number; sequence_gb: number; total_gb: number };
+  fits?: boolean;
+  tight?: boolean;
+}
+
+/** What a job will cost against what the machine can give. Asked before
+ *  starting: an oversized job is refused on macOS but can take a Linux box
+ *  with a discrete GPU down with it. */
+export async function getBudget(p?: { frames: number; width: number; height: number; weights_gb?: number }) {
+  const q = p ? `?${new URLSearchParams({
+    frames: String(p.frames), width: String(p.width), height: String(p.height),
+    ...(p.weights_gb ? { weights_gb: String(p.weights_gb) } : {}),
+  })}` : '';
+  return api<MemoryBudget>(`/api/system/budget${q}`);
+}
+
 export async function getWeightCache() {
   return api<{ bytes: number; path: string }>('/api/system/weight_cache');
 }

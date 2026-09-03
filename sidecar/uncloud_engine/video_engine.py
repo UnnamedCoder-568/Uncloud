@@ -61,6 +61,40 @@ class VideoEngine:
         self._pipe = None
         self._loaded_path: str | None = None
 
+    def _encode(self, prompt: str, negative_prompt: str, guidance: float) -> dict:
+        """Turn the prompt into embeddings while the encoder is still loaded."""
+        import torch
+
+        with torch.no_grad():
+            pe, pm, ne, nm = self._pipe.encode_prompt(
+                prompt=prompt,
+                negative_prompt=negative_prompt or "",
+                do_classifier_free_guidance=guidance > 1.0,
+                device=self._pipe._execution_device,  # noqa: SLF001
+            )
+        out = {"prompt_embeds": pe, "prompt_attention_mask": pm}
+        if ne is not None:
+            out["negative_prompt_embeds"] = ne
+            out["negative_prompt_attention_mask"] = nm
+        return out
+
+    def _release_text_encoder(self) -> None:
+        """Drop the encoder once the prompt is embedded.
+
+        Nothing downstream reads it — the pipeline is given embeddings — and it
+        is the single largest thing in the pipeline. Reloaded on the next
+        generation, which costs a read rather than an out-of-memory failure.
+        """
+        import gc
+
+        import torch
+
+        self._pipe.text_encoder = None
+        self._loaded_path = None   # force a reload before the next prompt
+        gc.collect()
+        if torch.backends.mps.is_available():
+            torch.mps.empty_cache()
+
     def list_jobs(self) -> list[dict]:
         return [j.to_dict() for j in self.jobs.values()]
 
@@ -175,15 +209,23 @@ class VideoEngine:
             job.step = int(step_index) + 1
             return cb_kwargs
 
+        # The text encoder is 9.4GB and runs once, at the start. Leaving it
+        # resident through thirty denoising steps is most of why a four-second
+        # clip ran out of memory on a 24GB machine: the weights were 15.3GB
+        # while the sequence itself needed under half a gigabyte.
+        job.stage = "reading prompt"
+        embeds = self._encode(prompt, negative_prompt, float(guidance))
+        self._release_text_encoder()
+
+        job.stage = "generating"
         result = self._pipe(
-            prompt=prompt,
-            negative_prompt=negative_prompt or None,
             width=width, height=height,
             num_frames=frames,
             num_inference_steps=int(steps),
             guidance_scale=float(guidance),
             generator=gen,
             callback_on_step_end=progress,
+            **embeds,
         )
         job.stage = "encoding"
         dest = output_dir_for("video") / f"{job.id}.mp4"
