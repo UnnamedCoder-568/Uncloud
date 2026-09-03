@@ -372,7 +372,7 @@ def scan_library(models_dir: Path) -> list[LocalModel]:
             engine=entry.engine, path=path_str, size_gb=size_gb,
             catalog_id=entry.id, tags=entry.tags, note=entry.note,
             mflux_cli=entry.mflux_cli, mflux_base=entry.mflux_base,
-            capabilities=entry.capabilities,
+            defaults=entry.defaults or None, capabilities=entry.capabilities,
         ))
 
     # 1. Loose GGUF files anywhere under the folder.

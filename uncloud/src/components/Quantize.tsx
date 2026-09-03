@@ -6,25 +6,24 @@ import {
 import type { LocalModel, QuantizeBase, QuantizeJob } from '../lib/sidecar';
 
 /**
- * Build a pre-quantised MLX copy of a model, choosing precision per component.
+ * Build a pre-quantised MLX copy of a model at one precision.
  *
- * The two halves do not deserve the same budget. The transformer decides every
- * pixel — faces first, because fine facial structure is the highest-frequency
- * detail in an image and the first thing coarse weights ruin. The text encoder
- * only turns a prompt into a direction, and carries that fine at low precision.
+ * There used to be two controls here — a high-precision transformer beside a
+ * cheap text encoder, which is the trade anyone would want. It could not work:
+ * mflux reads a single precision per checkpoint and applies it to every
+ * component, so the mixed build's encoder was read at the wrong width and
+ * returned nonsense. Uniform 6-bit costs what 8/4 was meant to cost.
  *
  * Lower precision is not faster here: on Apple Silicon a bf16 matmul measured
  * 13.6 TFLOPS against 11.9 for int4. It buys memory, not speed, so the right
  * choice is the highest precision that still fits.
  */
 
-// What a model of this size costs to hold, roughly, per bit width.
-function estimate(model: LocalModel, tBits: number, eBits: number): string {
+// What a model of this size costs to hold, roughly, at a given bit width.
+function estimate(model: LocalModel, bits: number): string {
   if (!model.size_gb) return '';
-  // Source is bf16 (16 bits); the two halves are close to even in these models.
-  const half = model.size_gb / 2;
-  const gb = (half * tBits) / 16 + (half * eBits) / 16;
-  return `~${gb.toFixed(1)} GB`;
+  // Source is bf16 — 16 bits per weight.
+  return `~${((model.size_gb * bits) / 16).toFixed(1)} GB`;
 }
 
 // Architectures mflux has no implementation for. Quantising is not a format
@@ -60,8 +59,7 @@ export default function Quantize({ models, onBuilt }: {
 
   const [source, setSource] = useState<string>('');
   const [base, setBase] = useState<string>('');
-  const [tBits, setTBits] = useState(8);
-  const [eBits, setEBits] = useState(4);
+  const [qBits, setQBits] = useState(6);
   const [name, setName] = useState('');
   const [error, setError] = useState<string | null>(null);
 
@@ -95,8 +93,8 @@ export default function Quantize({ models, onBuilt }: {
   useEffect(() => {
     if (!model || !bases.length) return;
     setBase(guessBase(model.name, bases));
-    setName(`${model.name} (${tBits === eBits ? `${tBits}-bit` : `${tBits}/${eBits}-bit`} MLX)`);
-  }, [source, bases.length, tBits, eBits]);
+    setName(`${model.name} (${qBits}-bit MLX)`);
+  }, [source, bases.length, qBits]);
 
   async function build() {
     if (!model || !base || !name.trim()) return;
@@ -104,7 +102,7 @@ export default function Quantize({ models, onBuilt }: {
     try {
       await startQuantize({
         source: model.path, base, name: name.trim(),
-        transformer_bits: tBits, encoder_bits: eBits,
+        transformer_bits: qBits, encoder_bits: qBits,
       });
       setJobs(await listQuantizeJobs().catch(() => []));
     } catch (e) {
@@ -126,11 +124,10 @@ export default function Quantize({ models, onBuilt }: {
           <h2 className="text-sm mb-1">Make a version that fits this Mac</h2>
           <p className="text-[11px] text-[var(--text-faint)] max-w-2xl leading-relaxed">
             Quantises a model once and saves the result, so it loads in seconds and
-            stays in memory instead of being rebuilt for every prompt. Precision is
-            per component: the transformer decides every pixel and faces suffer
-            first when it is coarse, while the text encoder only turns your prompt
-            into a direction and carries that fine at 4-bit. Lower precision buys
-            memory, not speed — pick the highest that fits.
+            stays in memory instead of being rebuilt for every prompt. Lower
+            precision buys memory, not speed — a bf16 matmul measured 13.6 TFLOPS
+            against 11.9 for 4-bit — so pick the highest that fits. On a 24GB Mac
+            that is usually 6-bit for a 9B model, 8-bit for anything smaller.
           </p>
         </div>
       </div>
@@ -155,15 +152,8 @@ export default function Quantize({ models, onBuilt }: {
         </label>
 
         <label className="flex flex-col gap-1">
-          <span className="text-[10px] uppercase tracking-wider text-[var(--text-faint)]">Detail</span>
-          <select className={select} value={tBits} onChange={(e) => setTBits(Number(e.target.value))}>
-            {bits.map((b) => <option key={b} value={b}>{b}-bit</option>)}
-          </select>
-        </label>
-
-        <label className="flex flex-col gap-1">
-          <span className="text-[10px] uppercase tracking-wider text-[var(--text-faint)]">Prompt</span>
-          <select className={select} value={eBits} onChange={(e) => setEBits(Number(e.target.value))}>
+          <span className="text-[10px] uppercase tracking-wider text-[var(--text-faint)]">Precision</span>
+          <select className={select} value={qBits} onChange={(e) => setQBits(Number(e.target.value))}>
             {bits.map((b) => <option key={b} value={b}>{b}-bit</option>)}
           </select>
         </label>
@@ -199,9 +189,8 @@ export default function Quantize({ models, onBuilt }: {
       )}
       {model && !unsupported && (
         <p className="text-[11px] text-[var(--text-faint)] mt-2">
-          {model.size_gb} GB → {estimate(model, tBits, eBits)} ·{' '}
-          {tBits === eBits ? 'one pass' : 'two passes, one per precision'} · a few
-          minutes, and the machine will be busy.
+          {model.size_gb} GB → {estimate(model, qBits)} · a few minutes, and the
+          machine will be busy.
         </p>
       )}
 

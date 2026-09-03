@@ -23,6 +23,9 @@ class CatalogEntry:
     # Klein entry point serves both 4B and 9B — and loading a 4B checkpoint
     # against the 9B config fails on tensor shape. Set it where they differ.
     mflux_base: str | None = None
+    # Generation settings this model was distilled for. A four-step model run at
+    # the picker's default of eight is twice the wait for nothing.
+    defaults: dict = field(default_factory=dict)
     fixup: str | None = None  # for engine="mflux": post-download layout fix to apply (see downloader.py)
     # What this model can actually do. Drives which Image sub-tabs offer it.
     #   text2img  — prompt only
@@ -67,6 +70,23 @@ CATALOG: list[CatalogEntry] = [
         tags=["fast", "recommended", "apple-silicon"],
         mflux_cli="mflux-generate-flux2-klein",
         mflux_base="flux2_klein_4b",
+    ),
+    CatalogEntry(
+        id="flux2-klein-9b-mflux-q6",
+        name="FLUX.2 Klein 9B (6-bit MLX)",
+        category="image", engine="mflux",
+        repo="mflux-community/flux2-klein-9b-mflux-q6",
+        size_gb=13.7,
+        description="The full-size Klein. Holds a complex scene together and renders "
+                    "readable text inside an image, which the 4B mangles. Distilled, "
+                    "so it still runs in four steps.",
+        tags=["recommended", "apple-silicon", "quality"],
+        mflux_cli="mflux-generate-flux2-klein",
+        mflux_base="flux2_klein_9b",
+        defaults={"steps": 4, "guidance": 1.0},
+        note="6-bit because 8-bit does not fit: that build is 17.9GB against a "
+             "19.1GB Metal ceiling, leaving nothing for activations. 6-bit is "
+             "13.7GB resident.",
     ),
     # ---- Text: general purpose, GGUF (llama.cpp, portable, CPU/Metal) ----
     CatalogEntry(
