@@ -133,6 +133,23 @@ def family_for(model_path: str) -> Family:
     return FAMILIES.get(read_marker(model_path).get("family", ""), FAMILIES["ltx"])
 
 
+def free_device_cache() -> None:
+    """Hand cached buffers back, on whichever accelerator this is.
+
+    Every one of these calls used to be guarded by a check for Metal, which
+    made the tiled decode a no-op on CUDA — it releases each tile and then
+    nothing reclaims it, so the memory that tiling exists to save is never
+    given up. The guards were written on a Mac and describe the machine they
+    were written on rather than the problem.
+    """
+    import torch
+
+    if torch.backends.mps.is_available():
+        torch.mps.empty_cache()
+    elif torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+
 def valid_frames(n: int, family: Family | None = None) -> int:
     """Round to a frame count this family will actually honour."""
     step = (family or FAMILIES["ltx"]).frame_step
@@ -212,8 +229,7 @@ class VideoEngine:
         self._pipe.text_encoder = None
         self._loaded_path = None   # force a reload before the next prompt
         gc.collect()
-        if torch.backends.mps.is_available():
-            torch.mps.empty_cache()
+        free_device_cache()
 
     @staticmethod
     def _build_wan(model_path: str, marker: dict, dtype):
@@ -293,8 +309,7 @@ class VideoEngine:
         self._pipe.transformer = None
         self._loaded_path = None   # force a reload before the next prompt
         gc.collect()
-        if torch.backends.mps.is_available():
-            torch.mps.empty_cache()
+        free_device_cache()
 
     def _decode_wan_tiled(self, latents, tile: int = 256, stride: int = 192):
         """Decode Wan latents a tile at a time, freeing each before the next.
@@ -344,8 +359,7 @@ class VideoEngine:
                         feat_idx=vae._conv_idx, first_chunk=(k == 0)))
                 row.append(torch.cat(frames, dim=2))
                 del frames, piece
-                if torch.backends.mps.is_available():
-                    torch.mps.empty_cache()
+                free_device_cache()
 
             cropped = []
             for j, piece in enumerate(row):
@@ -357,8 +371,7 @@ class VideoEngine:
             out_rows.append(torch.cat(cropped, dim=-1))
             previous = row
             del cropped
-            if torch.backends.mps.is_available():
-                torch.mps.empty_cache()
+            free_device_cache()
 
         vae.clear_cache()
         decoded = torch.cat(out_rows, dim=3)[:, :, :, :sample_h, :sample_w]
@@ -401,8 +414,7 @@ class VideoEngine:
             import torch
 
             gc.collect()
-            if torch.backends.mps.is_available():
-                torch.mps.empty_cache()
+            free_device_cache()
         except Exception:  # noqa: BLE001
             pass
 

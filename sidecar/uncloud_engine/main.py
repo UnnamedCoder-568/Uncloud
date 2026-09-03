@@ -313,9 +313,15 @@ def set_hf_token(body: HfTokenBody) -> dict:
 # ----------------------------------------------------------------- catalog
 @app.get("/api/catalog", dependencies=[Depends(require_token)])
 def catalog() -> list[dict]:
+    from .budget import engine_runs_here
+
     installed = {m.catalog_id for m in scan_library_cached(settings.models_dir) if m.catalog_id}
     out = []
     for entry in get_catalog():
+        # A model whose runtime does not exist here is not a model this machine
+        # has; offering it is offering a download that ends in a stack trace.
+        if not engine_runs_here(entry.engine):
+            continue
         d = entry.__dict__.copy()
         d["installed"] = entry.id in installed
         out.append(d)
