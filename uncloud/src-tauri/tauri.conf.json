@@ -48,6 +48,9 @@
       "../../sidecar/pyproject.toml": "engine/pyproject.toml",
       "../../sidecar/uv.lock": "engine/uv.lock",
       "binaries/*": ""
+    },
+    "macOS": {
+      "signingIdentity": "-"
     }
   }
 }
