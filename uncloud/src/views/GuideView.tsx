@@ -1,8 +1,7 @@
-import { useEffect, useState } from 'react';
 import {
   MessageSquare, Boxes, Workflow, ImageIcon, Music, Mic, Settings as Cog,
 } from 'lucide-react';
-import { getSettings } from '../lib/sidecar';
+import { useSettings } from '../lib/useSettings';
 
 interface Section {
   id: string;
@@ -87,11 +86,7 @@ const SECTIONS: Section[] = [
 ];
 
 export default function GuideView() {
-  const [modelsDir, setModelsDir] = useState('');
-
-  useEffect(() => {
-    getSettings().then((s) => setModelsDir(s.models_dir)).catch(() => undefined);
-  }, []);
+  const modelsDir = useSettings()?.models_dir ?? '';
 
   return (
     <div className="h-full overflow-y-auto">

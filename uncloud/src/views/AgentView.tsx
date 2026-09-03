@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { CheckCircle2, XCircle, Loader2, Circle, Send, ShieldAlert, Cpu } from 'lucide-react';
-import { agentSocket, getSettings, getLibrary, startEngine, engineStatus } from '../lib/sidecar';
+import { agentSocket, getLibrary, startEngine, engineStatus } from '../lib/sidecar';
 import type { LocalModel } from '../lib/sidecar';
 import Dictate from '../components/Dictate';
+import { useSettings } from '../lib/useSettings';
 
 interface AgentTask {
   id: string;
@@ -25,12 +26,9 @@ export default function AgentView() {
   const [graph, setGraph] = useState<AgentGraph | null>(null);
   const [phase, setPhase] = useState<'idle' | 'planning' | 'running' | 'done' | 'error'>('idle');
   const [error, setError] = useState<string | null>(null);
-  const [deviceAccess, setDeviceAccess] = useState(false);
+  const settings = useSettings();
+  const deviceAccess = settings?.agent_device_access ?? true;
   const wsRef = useRef<WebSocket | null>(null);
-
-  useEffect(() => {
-    getSettings().then((s) => setDeviceAccess(s.agent_device_access));
-  }, []);
 
   // The agent plans with whichever text model the engine has loaded. That was
   // invisible here, so an unloaded engine looked like a broken agent.
