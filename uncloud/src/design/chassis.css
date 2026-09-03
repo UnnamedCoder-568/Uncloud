@@ -271,6 +271,12 @@
               color var(--duration-fast) var(--ease);
 }
 .menu-row:hover { background: var(--surface-hover); color: var(--text); }
+/* A row carrying an explanation under its label cannot be a fixed 36px. */
+.menu-row-tall {
+  height: auto; min-height: var(--row-h);
+  padding: var(--space-2);
+  align-items: flex-start;
+}
 .menu-row > span:first-child { flex: 1; overflow: hidden;
                                text-overflow: ellipsis; white-space: nowrap; }
 
@@ -341,6 +347,9 @@
  * ends the row, and it is the only thing here with a fill. */
 .composer-actions {
   display: flex; align-items: center; gap: var(--space-2);
+  /* Wraps, because the number of pills depends on what is being made and a
+     row that overflows would push the send button off the card. */
+  flex-wrap: wrap;
   margin-top: var(--space-1);
 }
 .composer-spacer { flex: 1; }
