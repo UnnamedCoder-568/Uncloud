@@ -1,12 +1,25 @@
-"""Text-to-video via diffusers. Currently LTX-Video.
+"""Text-to-video via diffusers.
 
 Memory is the whole problem. LTX ships a T5 text encoder that is 18 GB on
 disk in fp32; loaded as-is alongside the transformer and VAE it will not fit
 on a 24 GB machine, and what you get is not an error but an hour of swapping.
-Loading in bfloat16 halves it, and offloading each component back to the CPU
-between stages keeps only one resident at a time.
+Loading in bfloat16 halves it, and dropping the encoder once the prompt is
+embedded keeps only one large component resident at a time.
 
-Frame counts follow LTX's own constraint of 8n+1.
+That is as far as bfloat16 goes, and it is not far enough: 6.5 GB of weights
+puts video out of reach of every 8 GB machine before a frame is drawn. There
+is no MLX runtime for video the way mflux is for images, so the speed path
+that fixed the image side does not exist here. What does exist is GGUF —
+weights stay packed and are dequantised per operation — and it works on Metal
+even though nothing says so. A Q4 transformer holds 3.4 GB where bfloat16
+holds 6.5.
+
+So this module knows two families. LTX loads a diffusers folder whole. Wan is
+assembled from GGUF files beside a diffusers skeleton, and is both the newer
+model and the smaller one. They differ in more than loading — frame counts
+are 8n+1 for LTX and 4n+1 for Wan, and Wan's encode_prompt returns embeddings
+without attention masks — so the differences live in one table rather than
+scattered through the generate path.
 """
 
 from __future__ import annotations
@@ -25,14 +38,70 @@ from .power import keep_awake
 # LTX accepts frame counts of the form 8n+1; anything else is silently padded.
 DEFAULT_FRAMES = 49          # ~2s at 24fps
 DEFAULT_FPS = 24
-DEFAULT_W, DEFAULT_H = 512, 320
-MAX_PIXELS = 704 * 480       # beyond this a 24 GB machine starts swapping
+DEFAULT_W, DEFAULT_H = 960, 544
+DEFAULT_STEPS = 40
+DEFAULT_GUIDANCE = 3.0
+DEFAULT_EXPORT_QUALITY = 9.0
+DEFAULT_NEGATIVE_PROMPT = (
+    "worst quality, inconsistent motion, blurry, jittery, distorted"
+)
+MAX_PIXELS = 1216 * 704      # LTX's recommended sub-720p detail ceiling
+
+# A folder holding one of these declares which family it belongs to and where
+# its GGUF files are. Without it a folder is assumed to be LTX, which is what
+# every already-installed video model is.
+VIDEO_MARKER = "uncloud-video.json"
 
 
-def valid_frames(n: int) -> int:
-    """Round to the nearest 8n+1 that LTX will actually honour."""
-    n = max(9, min(257, int(n)))
-    return ((n - 1) // 8) * 8 + 1
+@dataclass(frozen=True)
+class Family:
+    """What differs between video model families, in one place.
+
+    Getting frame_step wrong is not an error — the pipeline rounds silently and
+    returns a clip of a length nobody asked for — so it is declared rather than
+    inferred.
+    """
+    name: str
+    frame_step: int              # accepted frame counts are frame_step*n + 1
+    size_multiple: int
+    max_pixels: int
+    steps: int
+    guidance: float
+    fps: int
+
+
+FAMILIES: dict[str, Family] = {
+    "ltx": Family(name="ltx", frame_step=8, size_multiple=32,
+                  max_pixels=1216 * 704, steps=40, guidance=3.0, fps=24),
+    # Wan 2.2 TI2V-5B is native 1280x704 at 24fps, and its VAE compresses 4x
+    # temporally rather than LTX's 8x.
+    "wan": Family(name="wan", frame_step=4, size_multiple=16,
+                  max_pixels=1280 * 704, steps=30, guidance=5.0, fps=24),
+}
+
+
+def read_marker(model_path: str) -> dict:
+    """What a model folder says about itself, or nothing."""
+    import json
+
+    marker = Path(model_path) / VIDEO_MARKER
+    if not marker.is_file():
+        return {}
+    try:
+        return json.loads(marker.read_text())
+    except (OSError, ValueError):
+        return {}
+
+
+def family_for(model_path: str) -> Family:
+    return FAMILIES.get(read_marker(model_path).get("family", ""), FAMILIES["ltx"])
+
+
+def valid_frames(n: int, family: Family | None = None) -> int:
+    """Round to a frame count this family will actually honour."""
+    step = (family or FAMILIES["ltx"]).frame_step
+    n = max(step + 1, min(257, int(n)))
+    return ((n - 1) // step) * step + 1
 
 
 @dataclass
@@ -61,17 +130,32 @@ class VideoEngine:
         self._pipe = None
         self._loaded_path: str | None = None
 
-    def _encode(self, prompt: str, negative_prompt: str, guidance: float) -> dict:
-        """Turn the prompt into embeddings while the encoder is still loaded."""
+    def _encode(self, prompt: str, negative_prompt: str, guidance: float,
+                family: Family) -> dict:
+        """Turn the prompt into embeddings while the encoder is still loaded.
+
+        The two families disagree about what an embedding is: LTX returns
+        attention masks alongside and its pipeline expects them back, Wan
+        returns embeddings alone and rejects the mask arguments.
+        """
         import torch
 
         with torch.no_grad():
-            pe, pm, ne, nm = self._pipe.encode_prompt(
+            result = self._pipe.encode_prompt(
                 prompt=prompt,
                 negative_prompt=negative_prompt or "",
                 do_classifier_free_guidance=guidance > 1.0,
                 device=self._pipe._execution_device,  # noqa: SLF001
             )
+
+        if family.name == "wan":
+            pe, ne = result
+            out = {"prompt_embeds": pe}
+            if ne is not None:
+                out["negative_prompt_embeds"] = ne
+            return out
+
+        pe, pm, ne, nm = result
         out = {"prompt_embeds": pe, "prompt_attention_mask": pm}
         if ne is not None:
             out["negative_prompt_embeds"] = ne
@@ -95,6 +179,107 @@ class VideoEngine:
         if torch.backends.mps.is_available():
             torch.mps.empty_cache()
 
+    @staticmethod
+    def _build_wan(model_path: str, marker: dict, dtype):
+        """Assemble a Wan pipeline whose two big components stay quantised.
+
+        The folder is a diffusers skeleton — configs, tokenizer, scheduler and
+        the VAE, which is small enough to leave alone — with the transformer
+        and text encoder supplied as GGUF beside it. Both are loaded through
+        their own from_pretrained/from_single_file so each keeps its packed
+        weights; diffusers dequantises per operation at compute time, and that
+        path runs on Metal even though only CUDA and CPU are named in it.
+
+        3.4 GB of transformer and 3.7 GB of encoder against 20 GB and 11 GB at
+        bfloat16, for the same model.
+        """
+        import torch
+        from diffusers import (AutoencoderKLWan, GGUFQuantizationConfig,
+                               UniPCMultistepScheduler, WanPipeline,
+                               WanTransformer3DModel)
+        from transformers import AutoTokenizer, UMT5EncoderModel
+
+        root = Path(model_path)
+        gguf = GGUFQuantizationConfig(compute_dtype=dtype)
+
+        transformer = WanTransformer3DModel.from_single_file(
+            str(root / marker["transformer_gguf"]),
+            quantization_config=gguf, torch_dtype=dtype,
+            config=str(root / "transformer"),
+        )
+        text_encoder = UMT5EncoderModel.from_pretrained(
+            str(root / "text_encoder"),
+            gguf_file=str(root / marker["text_encoder_gguf"]),
+            torch_dtype=dtype,
+        )
+        # The reference pipeline loads this VAE at float32, and on a machine
+        # with memory to spare that is the safe default. Here it is the whole
+        # budget: decoding 25 frames at 704x480 measured 12.03GB at float32
+        # against 3.24GB at bfloat16 — and the bfloat16 decode was the faster
+        # of the two, 230s against 303s, with output in the same [-1, 1] range.
+        # The decoder upcasts to float32 internally where it matters anyway.
+        vae = AutoencoderKLWan.from_pretrained(str(root / "vae"), torch_dtype=dtype)
+
+        # Assembling a pipeline by hand skips the flags from_pretrained would
+        # have read out of model_index.json. TI2V-5B sets expand_timesteps, and
+        # without it the timestep schedule is wrong in a way that still runs:
+        # every step completes, nothing raises, and the clip comes out as
+        # moving colour with no subject in it.
+        import json
+
+        try:
+            index = json.loads((root / "model_index.json").read_text())
+        except (OSError, ValueError):
+            index = {}
+
+        return WanPipeline(
+            tokenizer=AutoTokenizer.from_pretrained(str(root / "tokenizer")),
+            text_encoder=text_encoder,
+            transformer=transformer,
+            vae=vae,
+            scheduler=UniPCMultistepScheduler.from_pretrained(str(root / "scheduler")),
+            boundary_ratio=index.get("boundary_ratio"),
+            expand_timesteps=bool(index.get("expand_timesteps", False)),
+        )
+
+    def _release_transformer(self) -> None:
+        """Drop the transformer once the last step is done.
+
+        The same argument as the text encoder, at the other end of the job: the
+        decode is the largest single allocation in a video generation, and by
+        the time it starts the transformer has nothing left to do. Holding 3.4GB
+        of it through the decode is 3.4GB the decode cannot have.
+        """
+        import gc
+
+        import torch
+
+        self._pipe.transformer = None
+        self._loaded_path = None   # force a reload before the next prompt
+        gc.collect()
+        if torch.backends.mps.is_available():
+            torch.mps.empty_cache()
+
+    def _decode_wan(self, latents):
+        """Decode Wan latents the way its pipeline would, after the fact.
+
+        Denoising with output_type="latent" returns before the decode, which is
+        the whole point — it leaves a window to free the transformer. The cost
+        is doing the pipeline's own denormalisation here.
+        """
+        import torch
+
+        vae = self._pipe.vae
+        cfg = vae.config
+        latents = latents.to(vae.dtype)
+        mean = (torch.tensor(cfg.latents_mean).view(1, cfg.z_dim, 1, 1, 1)
+                .to(latents.device, latents.dtype))
+        inv_std = (1.0 / torch.tensor(cfg.latents_std).view(1, cfg.z_dim, 1, 1, 1)
+                   .to(latents.device, latents.dtype))
+        with torch.no_grad():
+            video = vae.decode(latents / inv_std + mean, return_dict=False)[0]
+        return self._pipe.video_processor.postprocess_video(video, output_type="np")[0]
+
     def list_jobs(self) -> list[dict]:
         return [j.to_dict() for j in self.jobs.values()]
 
@@ -116,10 +301,12 @@ class VideoEngine:
             pass
 
     def start(
-        self, model_path: str, prompt: str, *, negative_prompt: str = "",
+        self, model_path: str, prompt: str, *,
+        negative_prompt: str = DEFAULT_NEGATIVE_PROMPT,
         frames: int = DEFAULT_FRAMES, fps: int = DEFAULT_FPS,
         width: int = DEFAULT_W, height: int = DEFAULT_H,
-        steps: int = 30, guidance: float = 3.0, seed: int | None = None,
+        steps: int = DEFAULT_STEPS, guidance: float = DEFAULT_GUIDANCE,
+        seed: int | None = None,
     ) -> VideoJob:
         job = VideoJob(id=uuid.uuid4().hex[:12], prompt=prompt, total_steps=steps)
         self.jobs[job.id] = job
@@ -163,12 +350,15 @@ class VideoEngine:
         from diffusers import LTXPipeline
         from diffusers.utils import export_to_video
 
-        if width * height > MAX_PIXELS:
-            scale = (MAX_PIXELS / (width * height)) ** 0.5
-            width, height = int(width * scale) // 32 * 32, int(height * scale) // 32 * 32
-        # LTX wants both dimensions divisible by 32.
-        width, height = max(160, width // 32 * 32), max(160, height // 32 * 32)
-        frames = valid_frames(frames)
+        family = family_for(model_path)
+        marker = read_marker(model_path)
+
+        if width * height > family.max_pixels:
+            scale = (family.max_pixels / (width * height)) ** 0.5
+            width, height = int(width * scale), int(height * scale)
+        mult = family.size_multiple
+        width, height = max(mult * 5, width // mult * mult), max(mult * 5, height // mult * mult)
+        frames = valid_frames(frames, family)
 
         device = "mps" if torch.backends.mps.is_available() else (
             "cuda" if torch.cuda.is_available() else "cpu"
@@ -178,7 +368,10 @@ class VideoEngine:
             self._pipe = None
             job.stage = "loading model"
             # bfloat16 is the difference between 12 GB and 24 GB here.
-            pipe = LTXPipeline.from_pretrained(model_path, torch_dtype=torch.bfloat16)
+            if family.name == "wan":
+                pipe = self._build_wan(model_path, marker, torch.bfloat16)
+            else:
+                pipe = LTXPipeline.from_pretrained(model_path, torch_dtype=torch.bfloat16)
             # Offloading components back to the CPU between stages is how you
             # fit a pipeline into a small VRAM budget — on a discrete GPU. On
             # Apple Silicon the CPU and GPU share one pool, so it frees nothing
@@ -192,10 +385,18 @@ class VideoEngine:
                     pipe.enable_model_cpu_offload(device=device)
                 except Exception:  # noqa: BLE001 - fall back to a plain move
                     pipe = pipe.to(device)
-            try:
-                pipe.vae.enable_tiling()
-            except Exception:  # noqa: BLE001
-                pass
+            # The decode is the peak here, as it is for images — but the fix
+            # does not transfer. LTX tiles its decode and wants tiling on.
+            # Wan's tiled_decode runs out of memory on Metal at every tile size
+            # measured, default 256px tiles included, because each tile carries
+            # its own frame cache and the overlaps accumulate; its plain path
+            # already walks the clip a frame at a time and completes. Tiling
+            # Wan made a decode that works into one that does not.
+            if family.name != "wan":
+                try:
+                    pipe.vae.enable_tiling()
+                except Exception:  # noqa: BLE001
+                    pass
             self._pipe = pipe
             self._loaded_path = model_path
 
@@ -214,11 +415,11 @@ class VideoEngine:
         # clip ran out of memory on a 24GB machine: the weights were 15.3GB
         # while the sequence itself needed under half a gigabyte.
         job.stage = "reading prompt"
-        embeds = self._encode(prompt, negative_prompt, float(guidance))
+        embeds = self._encode(prompt, negative_prompt, float(guidance), family)
         self._release_text_encoder()
 
         job.stage = "generating"
-        result = self._pipe(
+        call = dict(
             width=width, height=height,
             num_frames=frames,
             num_inference_steps=int(steps),
@@ -227,9 +428,23 @@ class VideoEngine:
             callback_on_step_end=progress,
             **embeds,
         )
+        if family.name == "wan":
+            latents = self._pipe(output_type="latent", **call).frames
+            self._release_transformer()
+            job.stage = "decoding"
+            clip = self._decode_wan(latents)
+        else:
+            clip = self._pipe(**call).frames[0]
+
         job.stage = "encoding"
         dest = output_dir_for("video") / f"{job.id}.mp4"
-        export_to_video(result.frames[0], str(dest), fps=int(fps))
+        # Diffusers defaults to quality=5, which visibly softens already-small
+        # generated frames. Preserve detail in the MP4 rather than throwing it
+        # away during the final encode.
+        export_to_video(
+            clip, str(dest), fps=int(fps),
+            quality=DEFAULT_EXPORT_QUALITY,
+        )
         return str(dest)
 
 

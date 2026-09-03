@@ -27,6 +27,14 @@ class CatalogEntry:
     # the picker's default of eight is twice the wait for nothing.
     defaults: dict = field(default_factory=dict)
     fixup: str | None = None  # for engine="mflux": post-download layout fix to apply (see downloader.py)
+    # Not every model is one repository. A quantised video stack is the
+    # publisher's diffusers skeleton — configs, tokenizer, scheduler, VAE —
+    # plus a transformer and text encoder from whoever quantised them, and the
+    # marker that records which is which.
+    allow_patterns: list[str] = field(default_factory=list)  # limit the main snapshot
+    extra_files: list[tuple[str, str]] = field(default_factory=list)  # (repo, filename)
+    marker: dict = field(default_factory=dict)  # written into the folder after download
+    marker_name: str = "uncloud-video.json"
     # What this model can actually do. Drives which Image sub-tabs offer it.
     #   text2img  — prompt only
     #   edit      — takes a reference image + an instruction (Kontext-style)
@@ -340,6 +348,34 @@ CATALOG: list[CatalogEntry] = [
         size_gb=9.0,
         description="Fast real-time-ish video generation, good for iteration.",
         tags=["fast", "recommended"],
+    ),
+    CatalogEntry(
+        id="wan2.2-ti2v-5b-gguf-q4",
+        name="Wan 2.2 TI2V-5B (GGUF Q4)",
+        category="video", engine="diffusers",
+        repo="Wan-AI/Wan2.2-TI2V-5B-Diffusers",
+        allow_patterns=["model_index.json", "scheduler/*", "tokenizer/*",
+                        "text_encoder/config.json", "transformer/config.json", "vae/*"],
+        extra_files=[
+            ("QuantStack/Wan2.2-TI2V-5B-GGUF", "Wan2.2-TI2V-5B-Q4_K_M.gguf"),
+            ("city96/umt5-xxl-encoder-gguf", "umt5-xxl-encoder-Q4_K_M.gguf"),
+        ],
+        marker={
+            "schemaVersion": 1, "family": "wan",
+            "name": "Wan 2.2 TI2V-5B (GGUF Q4)",
+            "transformer_gguf": "Wan2.2-TI2V-5B-Q4_K_M.gguf",
+            "text_encoder_gguf": "umt5-xxl-encoder-Q4_K_M.gguf",
+            "defaults": {"steps": 30, "guidance": 5.0},
+        },
+        size_gb=9.9,
+        description="A 5B video model that fits where a 2B one used to. Its "
+                    "transformer and text encoder stay quantised in memory, so "
+                    "they hold 3.4GB and 3.7GB against 20GB and 11GB at bfloat16.",
+        tags=["quality", "apache-2.0"],
+        note="Apache-2.0, unlike LTX. Weights stay packed and are unpacked per "
+             "operation, and Metal has no fused kernel for that: measured 2.7x "
+             "the compute of the same model at bfloat16. It buys the memory to "
+             "run at all, not speed.",
     ),
     CatalogEntry(
         id="cogvideox-5b",
