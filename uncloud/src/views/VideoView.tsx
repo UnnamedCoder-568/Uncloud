@@ -40,7 +40,7 @@ export default function VideoView() {
   const [budget, setBudget] = useState<MemoryBudget | null>(null);
   useEffect(() => {
     let cancelled = false;
-    getBudget({ frames, width: size.w, height: size.h, weights_gb: model?.size_gb })
+    getBudget({ frames, width: size.w, height: size.h, model_path: model?.path })
       .then((b) => { if (!cancelled) setBudget(b); })
       .catch(() => undefined);
     return () => { cancelled = true; };
@@ -165,8 +165,9 @@ export default function VideoView() {
             ))}
           </div>
           <p className="mt-1.5 text-[10px] text-[var(--text-faint)] leading-relaxed">
-            Video is far heavier than images. Start small — a longer or larger clip
-            on 24 GB will swap rather than fail, which is slower than it sounds.
+            Resolution is the expensive axis, not length: a 10s clip needs about
+            1 GB more than a 4s one. Past ~10s the model drifts, having been trained
+            on shorter clips, so quality gives out before memory does.
           </p>
         </div>
 

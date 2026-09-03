@@ -13,6 +13,8 @@ to tell "this fits" from "this will take the machine down".
 
 from __future__ import annotations
 
+from pathlib import Path
+
 
 def memory_budget() -> dict:
     """Total and usable memory, and the accelerator's own ceiling if it has one."""
@@ -58,6 +60,38 @@ def memory_budget() -> dict:
 
 # LTX 2B: 32x spatial and 8x temporal compression, 28 layers, 2048 hidden.
 _LTX = {"spatial": 32, "temporal": 8, "layers": 28, "dim": 2048, "heads": 32}
+
+
+def resident_weights_gb(model_path: str) -> float:
+    """What a video pipeline actually holds while it denoises.
+
+    Not the folder size. LTX ships an 18GB fp32 text encoder that is loaded as
+    bfloat16 — halving it — and then released before denoising begins, so it
+    contributes nothing to the peak. Using the directory size instead estimated
+    24GB for a clip that measured 6.5GB, and refused jobs that run comfortably.
+    """
+    import json
+
+    root = Path(model_path)
+    if not root.is_dir():
+        return 6.0
+
+    total = 0.0
+    for component in ("transformer", "vae"):
+        folder = root / component
+        if not folder.is_dir():
+            continue
+        size = sum(f.stat().st_size for f in folder.rglob("*.safetensors"))
+        # fp32 on disk becomes bfloat16 in memory.
+        try:
+            dtype = json.loads((folder / "config.json").read_text()).get("torch_dtype")
+        except (OSError, ValueError):
+            dtype = None
+        if str(dtype) in ("float32", "fp32"):
+            size /= 2
+        total += size / 1e9
+    # A little headroom for the scheduler, latents and decode buffers.
+    return round(total + 0.5, 1) if total else 6.0
 
 
 def estimate_video_gb(frames: int, width: int, height: int,

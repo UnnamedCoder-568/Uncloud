@@ -161,18 +161,21 @@ def system_resident() -> dict:
 
 @app.get("/api/system/budget", dependencies=[Depends(require_token)])
 def system_budget(frames: int = 0, width: int = 0, height: int = 0,
-                  weights_gb: float = 6.0) -> dict:
+                  weights_gb: float = 0.0, model_path: str = "") -> dict:
     """What this machine can give, and what the requested job would take.
 
     Asked before starting rather than discovered during: on macOS an oversized
     job is refused with a message, but a discrete GPU can take the machine down
     with it.
     """
-    from .budget import estimate_video_gb, memory_budget
+    from .budget import estimate_video_gb, memory_budget, resident_weights_gb
 
     out: dict = {"budget": memory_budget()}
     if frames and width and height:
-        est = estimate_video_gb(frames, width, height, weights_gb)
+        # Measure what stays resident rather than trusting a folder size: the
+        # text encoder is the bulk of the folder and is freed before denoising.
+        weights = weights_gb or resident_weights_gb(model_path)
+        est = estimate_video_gb(frames, width, height, weights)
         out["estimate"] = est
         budget = out["budget"]["budget_gb"]
         out["fits"] = est["total_gb"] <= budget
