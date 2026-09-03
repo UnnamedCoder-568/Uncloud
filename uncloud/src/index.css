@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "./design/chassis.css";
 
 /* Fonts are bundled, not fetched. Uncloud has to look right with no
    network at all, and a CDN @import silently degrades to system fonts. */
@@ -51,134 +52,93 @@
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 
-
+/* Uncloud's own layer on top of the shared chassis.
+ *
+ * The chassis owns the neutrals, the geometry and the shell. This file owns
+ * two things only: the accent, which is the brand and is deliberately NOT
+ * shared with Ad Studio, and a set of aliases from Uncloud's older token
+ * names onto the chassis ones.
+ *
+ * The aliases exist so that thirteen views adopted the chassis without being
+ * rewritten. New code should use the chassis names directly.
+ */
 :root {
-  --bg: #0a0a0c;
-  --bg-raised: #111114;
-  --bg-inset: #08080a;
-  --border: #232329;
-  --border-soft: #1a1a1f;
-  --text: #e8e8ec;
-  --text-dim: #8b8b96;
-  --text-faint: #55555f;
+  /* ------------------------------------------------------------ the accent
+   * Warm, on a cool monochrome interface, and clear of the colours already
+   * spoken for semantically: rose for errors, emerald for success.
+   *
+   * Amber needs dark text on it, not white — white on #f59e0b is 2.1:1 and
+   * illegible. --accent-on is 11.4:1 and is what the chassis paints on every
+   * accent fill. */
+  --accent:       #F59E0B;
+  --accent-hover: #FBBF24;
+  --accent-on:    #1F1500;
 
-  --sans: 'Inter', system-ui, sans-serif;
-  --mono: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+  /* The two-stop mark. Reserved for the wordmark and the one hero moment per
+     screen; it is not UI chrome. A gradient on a button reads as a demo. */
+  --accent-2:    #DC2626;
+  --accent-grad: linear-gradient(135deg, var(--accent), var(--accent-2));
+  --grad:        linear-gradient(90deg, var(--accent), var(--accent-2));
+
+  --sans:    'Inter', system-ui, sans-serif;
+  --mono:    'JetBrains Mono', ui-monospace, Menlo, monospace;
   --display: 'Montserrat', 'Inter', system-ui, sans-serif;
 
-  /* Brand accent. Warm on a cool monochrome UI, and clear of the colours the
-     interface already uses semantically: rose for errors, emerald for success. */
-  --accent: #f59e0b;
-  --accent-2: #dc2626;
-  --accent-grad: linear-gradient(135deg, var(--accent), var(--accent-2));
-  --grad: linear-gradient(90deg, var(--accent), var(--accent-2));
+  /* ------------------------------------------------- chassis aliases
+   * Old name on the left, chassis token on the right. Nothing here is a
+   * literal colour, so a light theme keeps working if it is ever switched on. */
+  --bg-raised:   var(--surface);
+  --bg-inset:    var(--sidebar);
+  --border-soft: var(--border);
+  --text-dim:    var(--text-2);
+  --text-faint:  var(--text-3);
 }
 
 * { box-sizing: border-box; }
 
-html, body, #root {
-  height: 100%;
-  margin: 0;
-}
+html, body, #root { height: 100%; margin: 0; }
 
 body {
   background: var(--bg);
   color: var(--text);
   font-family: var(--sans);
+  font-size: var(--text-base);
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
 }
 
-::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #2a2a31; border-radius: 10px; }
-::-webkit-scrollbar-thumb:hover { background: #38383f; }
-
 .font-mono { font-family: var(--mono); }
 
-/* Rainbow-underglow pill button, matching the reference style */
-.grad-button {
-  position: relative;
-  font-family: var(--sans);
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  color: #fff;
-  background: #0d0d10;
-  border-radius: 999px;
-  padding: 14px 36px;
-  border: 1px solid #29292f;
-  cursor: pointer;
-  transition: transform 0.15s ease, border-color 0.15s ease;
-  isolation: isolate;
-}
-.grad-button::before {
-  content: "";
-  position: absolute;
-  left: 8%;
-  right: 8%;
-  bottom: -1px;
-  height: 2px;
-  background: var(--grad);
-  border-radius: 999px;
-  filter: blur(0.5px);
-}
-.grad-button::after {
-  content: "";
-  position: absolute;
-  left: 15%;
-  right: 15%;
-  bottom: -14px;
-  height: 28px;
-  background: var(--grad);
-  filter: blur(18px);
-  opacity: 0.55;
-  z-index: -1;
-  border-radius: 999px;
-}
-.grad-button:hover { transform: translateY(-1px); border-color: #3a3a42; }
-.grad-button:active { transform: translateY(0); }
-.grad-button:disabled { opacity: 0.5; cursor: default; transform: none; }
-
-.grad-text {
-  background: var(--grad);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-}
-
+/* ---------------------------------------------------------------- surfaces */
 .card {
-  background: var(--bg-raised);
+  background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: var(--radius-lg);
 }
 
-.animate-in {
-  animation: fade-up 0.4s ease both;
-}
+.animate-in { animation: fade-up 0.32s var(--ease) both; }
 @keyframes fade-up {
   from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: translateY(0); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
 .spinner {
   width: 14px; height: 14px;
-  border: 2px solid #2a2a31;
-  border-top-color: var(--text-dim);
+  border: 2px solid var(--border-strong);
+  border-top-color: var(--text-2);
   border-radius: 50%;
   animation: spin 0.7s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* Wordmark cog — also the app's loading spinner, so the brand mark does double duty. */
-@keyframes uncloud-cog {
-  to { transform: rotate(360deg); }
-}
+/* The wordmark cog doubles as the loading spinner, so the brand mark earns
+   its place twice. */
+@keyframes uncloud-cog { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) {
   [style*="uncloud-cog"] { animation: none !important; }
 }
 
-/* ---------------------------------------------------------------- accents */
-
+/* ----------------------------------------------------------------- accents */
 .accent-bar { background: var(--accent-grad); }
 
 .accent-text {
@@ -188,25 +148,65 @@ body {
   color: transparent;
 }
 
-/* Primary action, where the brand should carry rather than plain white. */
+/* Primary action. Flat, not gradient: the chassis asks for one accent used
+   rarely, and a gradient fill is the single loudest thing an interface can do. */
 .btn-accent {
-  background: var(--accent-grad);
-  color: #fff;
+  background: var(--accent);
+  color: var(--accent-on);
   border: none;
+  font-weight: 500;
 }
-.btn-accent:hover:not(:disabled) { filter: brightness(1.08); }
+.btn-accent:hover:not(:disabled) { background: var(--accent-hover); }
 .btn-accent:disabled {
-  background: var(--border);
-  color: var(--text-faint);
+  background: var(--surface);
+  color: var(--text-3);
   filter: none;
 }
 
-/* Vertical rail marking the active sidebar item. */
-.nav-active-rail {
+/* The hero call to action — onboarding, setup, the empty Outputs screen.
+   One per screen at most. */
+.grad-button {
+  position: relative;
+  font-family: var(--sans);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  background: var(--surface);
+  border-radius: var(--radius-full);
+  padding: 13px 32px;
+  border: 1px solid var(--border-strong);
+  cursor: pointer;
+  transition: transform var(--duration-fast) var(--ease),
+              border-color var(--duration-fast) var(--ease);
+  isolation: isolate;
+}
+.grad-button::before {
+  content: "";
   position: absolute;
-  left: 0; top: 50%;
-  transform: translateY(-50%);
-  width: 3px; height: 20px;
-  border-radius: 999px;
-  background: var(--accent-grad);
+  left: 8%; right: 8%; bottom: -1px;
+  height: 2px;
+  background: var(--grad);
+  border-radius: var(--radius-full);
+  filter: blur(0.5px);
+}
+.grad-button::after {
+  content: "";
+  position: absolute;
+  left: 15%; right: 15%; bottom: -14px;
+  height: 28px;
+  background: var(--grad);
+  filter: blur(18px);
+  opacity: 0.5;
+  z-index: -1;
+  border-radius: var(--radius-full);
+}
+.grad-button:hover { transform: translateY(-1px); border-color: var(--text-3); }
+.grad-button:active { transform: translateY(0); }
+.grad-button:disabled { opacity: 0.5; cursor: default; transform: none; }
+
+.grad-text {
+  background: var(--grad);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }

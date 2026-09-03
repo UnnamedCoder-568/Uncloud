@@ -1,5 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
-import { ChevronDown, Send, Square, Mic, Volume2, VolumeX, Loader2 } from 'lucide-react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { ChevronDown, ArrowUp, Square, Mic, Volume2, VolumeX, Loader2 } from 'lucide-react';
+import { TitleBarPortal } from '../components/TitleBar';
+import { Cog } from '../components/Wordmark';
 import { getLibrary, startEngine, engineStatus, streamChat, transcribeAudio, speakText, IMAGE_MARKER, CHAT_IMAGE_SYSTEM_PROMPT, quickImagePreview} from '../lib/sidecar';
 import type { LocalModel, ChatMessage } from '../lib/sidecar';
 
@@ -11,6 +13,7 @@ export default function ChatView() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [generating, setGenerating] = useState(false);
+  const chatAbort = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const [sttModel, setSttModel] = useState<LocalModel | null>(null);
@@ -94,6 +97,8 @@ export default function ChatView() {
     setGenerating(true);
     setMessages((m) => [...m, { role: 'assistant', content: '' }]);
     let full = '';
+    const controller = new AbortController();
+    chatAbort.current = controller;
     try {
       // Generating an image frees the chat engine to make room — reload it transparently if needed.
       const status = await engineStatus();
@@ -105,7 +110,7 @@ export default function ChatView() {
         { role: 'system', content: CHAT_IMAGE_SYSTEM_PROMPT },
         ...next,
       ];
-      for await (const chunk of streamChat(withSystem)) {
+      for await (const chunk of streamChat(withSystem, controller.signal)) {
         if (chunk.kind === 'text') full += chunk.text;
         setMessages((m) => {
           const copy = [...m];
@@ -133,10 +138,26 @@ export default function ChatView() {
         }
       }
     } catch (e) {
-      setMessages((m) => [...m, { role: 'assistant', content: `⚠ ${e}` }]);
+      if (e instanceof DOMException && e.name === 'AbortError') {
+        setMessages((m) => {
+          const copy = [...m];
+          const last = copy[copy.length - 1];
+          if (last?.role === 'assistant' && !last.content.trim()) {
+            copy[copy.length - 1] = { ...last, content: 'Stopped.' };
+          }
+          return copy;
+        });
+      } else {
+        setMessages((m) => [...m, { role: 'assistant', content: `⚠ ${e}` }]);
+      }
     } finally {
+      chatAbort.current = null;
       setGenerating(false);
     }
+  }
+
+  function stopGenerating() {
+    chatAbort.current?.abort();
   }
 
   async function startRecording() {
@@ -166,64 +187,157 @@ export default function ChatView() {
     setRecording(false);
   }
 
+  // The field grows with what is typed, to a ceiling, then scrolls. Unbounded
+  // growth would push the conversation off the top of the screen, which is the
+  // opposite of what a bigger field is for.
+  const field = useRef<HTMLTextAreaElement>(null);
+  const resize = useCallback(() => {
+    const el = field.current;
+    if (!el) return;
+    el.style.height = 'auto';               // reset, or it can only ever grow
+    el.style.height = `${Math.min(el.scrollHeight, window.innerHeight * 0.4)}px`;
+  }, []);
+  useLayoutEffect(resize, [input, messages.length, resize]);
+  useEffect(() => {
+    window.addEventListener('resize', resize);
+    return () => window.removeEventListener('resize', resize);
+  }, [resize]);
+
+  const empty = messages.length === 0;
+
+  const composer = (
+    <div className="composer-inner">
+      <div className="composer-card">
+        <textarea
+          ref={field}
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              send(input, autoSpeak);
+            }
+          }}
+          placeholder={activeModel ? 'Ask anything' : 'Load a model to start'}
+          disabled={!activeModel}
+          rows={1}
+          className="composer-input"
+        />
+
+        <div className="composer-actions">
+          {sttModel && (
+            <button
+              onClick={recording ? stopRecording : startRecording}
+              disabled={!activeModel || transcribing}
+              title={recording ? 'Stop recording' : `Dictate with ${sttModel.name}`}
+              aria-label={recording ? 'Stop recording' : 'Dictate'}
+              className={recording ? 'pill pill-icon pill-on' : 'pill pill-icon'}
+              style={recording ? { color: 'var(--danger)' } : undefined}
+            >
+              {transcribing ? <Loader2 size={14} className="animate-spin" />
+                : recording ? <Square size={11} fill="currentColor" />
+                : <Mic size={15} />}
+            </button>
+          )}
+
+          {/* Speaking replies is a property of the next message, so it belongs
+              beside the field rather than up in the window chrome. */}
+          <button
+            onClick={() => setAutoSpeak((v) => !v)}
+            title={autoSpeak ? 'Speak replies: on' : 'Speak replies: off'}
+            className={autoSpeak ? 'pill pill-on' : 'pill'}
+          >
+            {speaking ? <Loader2 size={14} className="animate-spin" />
+              : autoSpeak ? <Volume2 size={15} /> : <VolumeX size={15} />}
+            <span>Speak</span>
+          </button>
+
+          <div className="composer-spacer" />
+
+          <button
+            onClick={generating ? stopGenerating : () => send(input, autoSpeak)}
+            disabled={!activeModel || (!generating && !input.trim())}
+            title={generating ? 'Stop response' : 'Send'}
+            aria-label={generating ? 'Stop response' : 'Send'}
+            className="composer-send"
+          >
+            {generating ? <Square size={12} fill="currentColor" /> : <ArrowUp size={17} />}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <div className="h-full flex flex-col">
-      <header className="h-14 shrink-0 border-b border-[var(--border-soft)] flex items-center px-5 relative">
-        <button
-          className="flex items-center gap-2 text-sm px-3 py-1.5 rounded-lg hover:bg-[var(--bg-raised)] transition"
-          onClick={() => setPickerOpen((v) => !v)}
-        >
-          {loadingModel ? (
-            <span className="flex items-center gap-2 text-[var(--text-dim)]"><span className="spinner" /> Loading model…</span>
-          ) : activeModel ? (
-            <>
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-              <span>{activeModel.name}</span>
-            </>
-          ) : (
-            <span className="text-[var(--text-faint)]">Select a model</span>
-          )}
-          <ChevronDown size={14} className="text-[var(--text-faint)]" />
-        </button>
-
-        {pickerOpen && (
-          <div className="absolute top-14 left-5 w-96 card p-1.5 z-10 shadow-2xl max-h-80 overflow-y-auto">
-            {models.length === 0 && (
-              <div className="text-xs text-[var(--text-faint)] px-3 py-4 text-center">
-                No text models found yet. Download one from the Models tab.
-              </div>
+      {/* The model in play is the window's context, so it lives in the title
+          bar rather than in a header of this view's own. */}
+      <TitleBarPortal>
+        <div style={{ position: 'relative' }}>
+          <button className="tb-context" onClick={() => setPickerOpen((v) => !v)}
+                  aria-haspopup="listbox" aria-expanded={pickerOpen}>
+            {loadingModel ? (
+              <><span className="spinner" /><span>Loading model…</span></>
+            ) : activeModel ? (
+              <>
+                <span style={{
+                  width: 6, height: 6, borderRadius: 999,
+                  background: 'var(--success)', flex: 'none',
+                }} />
+                <span>{activeModel.name}</span>
+              </>
+            ) : (
+              <span style={{ color: 'var(--text-3)' }}>Select model</span>
             )}
-            {models.map((m) => (
-              <button
-                key={m.id}
-                onClick={() => selectModel(m)}
-                className="w-full text-left px-3 py-2 rounded-lg hover:bg-[var(--bg-inset)] transition flex items-center justify-between"
-              >
-                <span className="text-sm">{m.name}</span>
-                <span className="text-[10px] font-mono text-[var(--text-faint)] uppercase">{m.engine}</span>
-              </button>
-            ))}
-          </div>
-        )}
+            <ChevronDown size={15} style={{ flex: 'none', color: 'var(--text-3)' }} />
+          </button>
 
-        <button
-          onClick={() => setAutoSpeak((v) => !v)}
-          title={autoSpeak ? 'Auto-speak replies: on' : 'Auto-speak replies: off'}
-          className={`ml-auto w-8 h-8 rounded-lg flex items-center justify-center transition ${
-            autoSpeak ? 'bg-[var(--bg-raised)] text-white' : 'text-[var(--text-faint)] hover:text-[var(--text-dim)] hover:bg-[var(--bg-raised)]/50'
-          }`}
-        >
-          {speaking ? <Loader2 size={14} className="animate-spin" /> : autoSpeak ? <Volume2 size={14} /> : <VolumeX size={14} />}
-        </button>
-      </header>
+          {pickerOpen && (
+            <div
+              className="card no-drag chassis-scroll"
+              role="listbox"
+              style={{
+                position: 'absolute', top: 36, left: 0, zIndex: 50,
+                width: 340, maxHeight: 320, padding: 6,
+                boxShadow: 'var(--shadow-lg)',
+              }}
+            >
+              {models.length === 0 && (
+                <div style={{
+                  fontSize: 'var(--text-xs)', color: 'var(--text-3)',
+                  padding: '16px 12px', textAlign: 'center',
+                }}>
+                  No text models yet. Download one from the Models tab.
+                </div>
+              )}
+              {models.map((m) => (
+                <button key={m.id} onClick={() => selectModel(m)} role="option"
+                        aria-selected={activeModel?.id === m.id} className="menu-row">
+                  <span>{m.name}</span>
+                  <span className="font-mono" style={{
+                    fontSize: 10, color: 'var(--text-3)',
+                    textTransform: 'uppercase', flex: 'none',
+                  }}>{m.engine}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </TitleBarPortal>
 
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-6">
-        {messages.length === 0 ? (
-          <div className="h-full flex items-center justify-center text-[var(--text-faint)] text-sm">
-            {activeModel ? 'Say something to get started.' : 'Pick a model above to start chatting.'}
+      {empty ? (
+        /* Nothing to read yet, so the composer IS the page. */
+        <div className="composer composer-centred">
+          <div className="greeting">
+            <Cog px={32} />
+            <span>What are we making?</span>
           </div>
-        ) : (
-          <div className="max-w-2xl mx-auto flex flex-col gap-5">
+          {composer}
+        </div>
+      ) : (
+        <>
+          <div ref={scrollRef} className="flex-1 chassis-scroll" style={{ padding: '8px 24px 0' }}>
+            <div className="column flex flex-col gap-5 py-4">
             {messages.map((m, i) => (
               <div key={i} className={m.role === 'user' ? 'self-end max-w-[80%]' : 'self-start max-w-[85%]'}>
                 {/* A reasoning model produces most of its tokens here before
@@ -276,47 +390,13 @@ export default function ChatView() {
                 ))}
               </div>
             ))}
+            </div>
           </div>
-        )}
-      </div>
 
-      <div className="p-4 border-t border-[var(--border-soft)]">
-        <div className="max-w-2xl mx-auto flex items-end gap-2 card px-3 py-2 focus-within:border-[#3a3a42]">
-          <textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                send(input, autoSpeak);
-              }
-            }}
-            placeholder={activeModel ? 'Message Uncloud…' : 'Load a model first'}
-            disabled={!activeModel}
-            rows={1}
-            className="flex-1 bg-transparent outline-none resize-none text-sm py-1.5 placeholder:text-[var(--text-faint)] max-h-40"
-          />
-          {sttModel && (
-            <button
-              onClick={recording ? stopRecording : startRecording}
-              disabled={!activeModel || transcribing}
-              title={sttModel.name}
-              className={`w-8 h-8 rounded-full flex items-center justify-center transition shrink-0 disabled:opacity-30 ${
-                recording ? 'bg-rose-950/60 text-rose-300' : 'bg-[var(--bg-inset)] text-[var(--text-dim)] hover:text-white'
-              }`}
-            >
-              {transcribing ? <Loader2 size={13} className="animate-spin" /> : recording ? <Square size={11} fill="currentColor" /> : <Mic size={14} />}
-            </button>
-          )}
-          <button
-            onClick={() => send(input, autoSpeak)}
-            disabled={!activeModel || !input.trim() || generating}
-            className="w-8 h-8 rounded-full btn-accent flex items-center justify-center disabled:opacity-30 transition shrink-0"
-          >
-            {generating ? <Square size={12} fill="currentColor" /> : <Send size={14} />}
-          </button>
-        </div>
-      </div>
+          <div className="composer composer-docked">{composer}</div>
+        </>
+      )}
+
       <audio ref={audioRef} className="hidden" />
     </div>
   );

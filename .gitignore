@@ -36,7 +36,9 @@ workspace/
 Astro Mark 1/
 /src-tauri/
 server.py
-docs/
+# Anchored. Unanchored, this matched docs/ at ANY depth and silently swallowed
+# uncloud/docs/ — only the legacy prototype at the root is meant to be ignored.
+/docs/
 .aider*
 .continue/
 1ls
