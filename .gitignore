@@ -18,6 +18,7 @@ __pycache__/
 
 # ----------------------------------------------------------------- builds
 dist/
+dist-installers/
 build/
 target/
 *.dmg
@@ -47,8 +48,14 @@ Option 1*
 
 # --------------------------------------------------- fetched at build time
 # uv is downloaded per-platform by CI; ~50 MB, never committed.
+#
+# binaries/ holds exactly ONE uv — the one matching the target being built —
+# because tauri.conf globs binaries/* into the bundle. The per-architecture
+# copies are staged from vendor/ and must live outside binaries/, or every
+# build would ship all of them.
 uncloud/src-tauri/binaries/uv
 uncloud/src-tauri/binaries/uv.exe
+uncloud/src-tauri/vendor/
 
 # ------------------------------------------------------------------- local
 .DS_Store
