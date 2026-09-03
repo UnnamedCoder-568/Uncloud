@@ -258,11 +258,11 @@ async def run_tool(tool_id: str, args: dict[str, Any]) -> str:
                 str(args.get("description", "")),
                 str(args.get("instructions", "")),
             )
+    if tool_id == "app_open":
+        return _app_open(args.get("target", ""), args.get("app", ""))
     if tool_id.startswith("browser_"):
         from . import browser
 
-        if tool_id == "app_open":
-            return _app_open(args.get("target", ""), args.get("app", ""))
         if tool_id == "browser_open":
             return await browser.open_url(args.get("url", ""))
         if tool_id == "browser_read":

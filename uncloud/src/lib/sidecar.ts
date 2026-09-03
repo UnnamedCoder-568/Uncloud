@@ -156,9 +156,17 @@ export async function engineStatus() {
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;
+  /** A reasoning model's working, streamed before the answer. */
+  reasoning?: string;
 }
 
-export async function* streamChat(messages: ChatMessage[]): AsyncGenerator<string> {
+/** A streamed chunk: the answer itself, or the model thinking out loud. */
+export interface ChatChunk {
+  kind: 'text' | 'thinking';
+  text: string;
+}
+
+export async function* streamChat(messages: ChatMessage[]): AsyncGenerator<ChatChunk> {
   const url = `${await baseUrl()}/api/chat`;
   const headers = { ...(await authHeaders()), 'Content-Type': 'application/json' };
   const resp = await fetch(url, { method: 'POST', headers, body: JSON.stringify({ messages }) });
@@ -179,8 +187,13 @@ export async function* streamChat(messages: ChatMessage[]): AsyncGenerator<strin
       if (data === '[DONE]') return;
       try {
         const json = JSON.parse(data);
-        const delta = json.choices?.[0]?.delta?.content;
-        if (delta) yield delta;
+        const d = json.choices?.[0]?.delta;
+        // Reasoning models put most of their output here and only then produce
+        // an answer. Dropping it meant the UI sat blank through a couple of
+        // hundred tokens and looked like it had hung.
+        const thinking = d?.reasoning_content ?? d?.reasoning;
+        if (thinking) yield { kind: 'thinking', text: thinking };
+        if (d?.content) yield { kind: 'text', text: d.content };
       } catch {
         // ignore partial/malformed chunk
       }

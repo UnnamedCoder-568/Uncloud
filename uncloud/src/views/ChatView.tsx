@@ -105,11 +105,14 @@ export default function ChatView() {
         { role: 'system', content: CHAT_IMAGE_SYSTEM_PROMPT },
         ...next,
       ];
-      for await (const token of streamChat(withSystem)) {
-        full += token;
+      for await (const chunk of streamChat(withSystem)) {
+        if (chunk.kind === 'text') full += chunk.text;
         setMessages((m) => {
           const copy = [...m];
-          copy[copy.length - 1] = { role: 'assistant', content: copy[copy.length - 1].content + token };
+          const prev = copy[copy.length - 1];
+          copy[copy.length - 1] = chunk.kind === 'thinking'
+            ? { ...prev, reasoning: (prev.reasoning ?? '') + chunk.text }
+            : { ...prev, content: prev.content + chunk.text };
           return copy;
         });
       }
@@ -223,6 +226,23 @@ export default function ChatView() {
           <div className="max-w-2xl mx-auto flex flex-col gap-5">
             {messages.map((m, i) => (
               <div key={i} className={m.role === 'user' ? 'self-end max-w-[80%]' : 'self-start max-w-[85%]'}>
+                {/* A reasoning model produces most of its tokens here before
+                    answering. Hidden, it reads as a hung app; shown in full it
+                    buries the answer. Collapsed, with a live hint while it is
+                    still thinking. */}
+                {m.role === 'assistant' && m.reasoning && (
+                  <details className="mb-1.5 px-1 group">
+                    <summary className="text-[11px] text-[var(--text-faint)] cursor-pointer select-none hover:text-[var(--text-dim)] transition">
+                      {m.content ? 'Thought before answering' : 'Thinking…'}
+                      <span className="ml-1.5 opacity-60 group-open:hidden">
+                        {m.reasoning.trim().split(/\s+/).length} words
+                      </span>
+                    </summary>
+                    <div className="mt-1.5 text-[11px] text-[var(--text-faint)] whitespace-pre-wrap leading-relaxed border-l border-[var(--border-soft)] pl-3">
+                      {m.reasoning.trimEnd()}
+                    </div>
+                  </details>
+                )}
                 <div
                   className={
                     m.role === 'user'
@@ -230,7 +250,8 @@ export default function ChatView() {
                       : 'text-sm text-[var(--text)] whitespace-pre-wrap leading-relaxed px-1'
                   }
                 >
-                  {m.content.replace(IMAGE_MARKER, '').trimEnd() || <span className="spinner" />}
+                  {m.content.replace(IMAGE_MARKER, '').trimEnd()
+                    || (m.reasoning ? null : <span className="spinner" />)}
                 </div>
                 {(previews[i] || []).map((p, k) => (
                   <div key={k} className="mt-2 max-w-[280px]">
