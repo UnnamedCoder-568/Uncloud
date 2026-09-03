@@ -64,6 +64,17 @@ pub fn engine_home() -> PathBuf {
 /// This is a compile-time constant, so it is only ever meaningful on the
 /// machine that built the binary — a packaged app must not depend on it.
 fn dev_sidecar_dir() -> Option<PathBuf> {
+    // The comment above said a packaged app must not depend on this. It did:
+    // nothing enforced it, so every release build preferred the build
+    // machine's checkout and the bundled engine was never once exercised.
+    // Set UNCLOUD_SIDECAR_DIR to point a release build somewhere on purpose.
+    if let Some(override_dir) = std::env::var_os("UNCLOUD_SIDECAR_DIR") {
+        let dir = PathBuf::from(override_dir);
+        return dir.join("pyproject.toml").is_file().then_some(dir);
+    }
+    if !cfg!(debug_assertions) {
+        return None;
+    }
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()?
         .parent()?
