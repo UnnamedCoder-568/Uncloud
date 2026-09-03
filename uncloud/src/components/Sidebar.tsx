@@ -1,107 +1,130 @@
+/** The left rail.
+ *
+ *  Laid out to the shared chassis: 260px, 36px rows, uppercase section labels,
+ *  identity pinned to the bottom. See docs/DESIGN-LANGUAGE.md.
+ *
+ *  It hides entirely rather than collapsing to an icon strip. A 60px strip
+ *  cannot clear the macOS traffic lights, so a collapsed rail would leave them
+ *  straddling the boundary between two different background colours.
+ */
 import { useState } from 'react';
+import type { ReactNode } from 'react';
 import Wordmark from './Wordmark';
-import { MessageSquare, Boxes, Workflow, ImageIcon, Clapperboard, Mic, Music, Settings, HelpCircle, ChevronLeft, ChevronRight, FolderOpen} from 'lucide-react';
+import {
+  MessageSquare, Boxes, Workflow, ImageIcon, Clapperboard, Mic, Music,
+  Settings, HelpCircle, FolderOpen,
+} from 'lucide-react';
 
-export type View = 'chat' | 'models' | 'agent' | 'image' | 'video' | 'music' | 'voice' | 'outputs' | 'guide' | 'settings';
+export type View =
+  | 'chat' | 'models' | 'agent' | 'image' | 'video' | 'music' | 'voice'
+  | 'outputs' | 'guide' | 'settings';
 
-const items: { id: View; label: string; icon: React.ComponentType<{ size?: number; strokeWidth?: number; className?: string }> }[] = [
-  { id: 'chat', label: 'Chat', icon: MessageSquare },
-  { id: 'models', label: 'Models', icon: Boxes },
-  { id: 'agent', label: 'Agent', icon: Workflow },
-  { id: 'image', label: 'Image', icon: ImageIcon },
-  { id: 'video', label: 'Video', icon: Clapperboard },
-  { id: 'music', label: 'Music', icon: Music },
-  { id: 'voice', label: 'Voice', icon: Mic },
-  { id: 'outputs', label: 'Outputs', icon: FolderOpen },
+type Icon = React.ComponentType<{ size?: number; strokeWidth?: number }>;
+
+const GROUPS: { label?: string; items: { id: View; label: string; icon: Icon }[] }[] = [
+  {
+    items: [
+      { id: 'chat', label: 'Chat', icon: MessageSquare },
+      { id: 'models', label: 'Models', icon: Boxes },
+      { id: 'agent', label: 'Agent', icon: Workflow },
+    ],
+  },
+  {
+    label: 'Create',
+    items: [
+      { id: 'image', label: 'Image', icon: ImageIcon },
+      { id: 'video', label: 'Video', icon: Clapperboard },
+      { id: 'music', label: 'Music', icon: Music },
+      { id: 'voice', label: 'Voice', icon: Mic },
+    ],
+  },
+  {
+    label: 'Library',
+    items: [{ id: 'outputs', label: 'Outputs', icon: FolderOpen }],
+  },
 ];
 
-function loadExpanded(): boolean {
-  return localStorage.getItem('uncloud-sidebar-expanded') !== 'false';
+const FOOT: { id: View; label: string; icon: Icon }[] = [
+  { id: 'guide', label: 'Guide', icon: HelpCircle },
+  { id: 'settings', label: 'Settings', icon: Settings },
+];
+
+function Row({ item, active, onChange }: {
+  item: { id: View; label: string; icon: Icon };
+  active: View;
+  onChange: (v: View) => void;
+}) {
+  const { id, label, icon: Icon } = item;
+  return (
+    <button
+      onClick={() => onChange(id)}
+      title={label}
+      aria-current={active === id ? 'page' : undefined}
+      className={active === id ? 'rail-row rail-row-active' : 'rail-row'}
+    >
+      <Icon size={18} strokeWidth={1.75} />
+      <span>{label}</span>
+    </button>
+  );
 }
 
-export default function Sidebar({ active, onChange }: { active: View; onChange: (v: View) => void }) {
-  const [expanded, setExpanded] = useState(loadExpanded);
-
-  function toggle() {
-    setExpanded((v) => {
-      const next = !v;
-      localStorage.setItem('uncloud-sidebar-expanded', String(next));
-      return next;
-    });
-  }
+export default function Sidebar({ active, onChange, top }: {
+  active: View;
+  onChange: (v: View) => void;
+  /** The window's title strip. The rail owns the left half of it. */
+  top: ReactNode;
+}) {
+  const [hovered, setHovered] = useState(false);
 
   return (
-    <div
-      className={`shrink-0 h-full bg-[var(--bg-inset)] border-r border-[var(--border-soft)] flex flex-col pt-12 pb-4 gap-1 transition-[width] duration-150 ${
-        expanded ? 'w-[210px] px-3' : 'w-[68px] items-center'
-      }`}
-      data-tauri-drag-region
+    <nav
+      className="rail"
+      // The cog in the wordmark punches its holes in var(--bg). On the rail
+      // that would be the wrong grey by one step, so --bg is re-pointed at the
+      // rail's own colour for the subtree.
+      style={{ '--bg': 'var(--sidebar)' } as React.CSSProperties}
     >
-      <div className={`flex items-center gap-2 mb-4 ${expanded ? 'px-1' : 'justify-center'}`}>
-        {expanded ? (
-          <Wordmark size={20} />
-        ) : (
-          <Wordmark size={20} className="[&>span]:hidden" />
-        )}
+      {top}
+
+      <div style={{ padding: '4px 16px 12px' }}>
+        <Wordmark size={19} />
       </div>
 
-      {items.map(({ id, label, icon: Icon }) => (
-        <button
-          key={id}
-          onClick={() => onChange(id)}
-          title={label}
-          className={`relative h-11 rounded-xl flex items-center transition ${expanded ? 'px-3 gap-3 w-full' : 'w-11 justify-center'} ${
-            active === id
-              ? 'bg-[var(--bg-raised)] text-white border border-[var(--border)]'
-              : 'text-[var(--text-faint)] hover:text-[var(--text-dim)] hover:bg-[var(--bg-raised)]/50 border border-transparent'
-          }`}
-        >
-          {active === id && <span className="nav-active-rail" />}
-          <Icon size={18} strokeWidth={1.75} className="shrink-0" />
-          {expanded && <span className="text-sm">{label}</span>}
-        </button>
-      ))}
+      <div className="rail-body chassis-scroll">
+        {GROUPS.map((group, i) => (
+          <div key={group.label ?? i}>
+            {group.label && <div className="rail-label">{group.label}</div>}
+            {group.items.map((item) => (
+              <Row key={item.id} item={item} active={active} onChange={onChange} />
+            ))}
+          </div>
+        ))}
+      </div>
 
-      <div className="flex-1" />
+      <div style={{ padding: '0 8px 4px' }}>
+        {FOOT.map((item) => (
+          <Row key={item.id} item={item} active={active} onChange={onChange} />
+        ))}
+      </div>
 
-      <button
-        onClick={() => onChange('guide')}
-        title="Guide"
-        className={`relative h-11 rounded-xl flex items-center transition ${expanded ? 'px-3 gap-3 w-full' : 'w-11 justify-center'} ${
-          active === 'guide'
-            ? 'bg-[var(--bg-raised)] text-white border border-[var(--border)]'
-            : 'text-[var(--text-faint)] hover:text-[var(--text-dim)] hover:bg-[var(--bg-raised)]/50 border border-transparent'
-        }`}
-      >
-        {active === 'guide' && <span className="nav-active-rail" />}
-        <HelpCircle size={18} strokeWidth={1.75} className="shrink-0" />
-        {expanded && <span className="text-sm">Guide</span>}
-      </button>
-
-      <button
+      {/* Identity. Nothing is signed in to — that is the product — so it says
+          so rather than showing an account that does not exist. */}
+      <div
+        className="rail-foot"
         onClick={() => onChange('settings')}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onChange('settings'); }}
         title="Settings"
-        className={`relative h-11 rounded-xl flex items-center transition ${expanded ? 'px-3 gap-3 w-full' : 'w-11 justify-center'} ${
-          active === 'settings'
-            ? 'bg-[var(--bg-raised)] text-white border border-[var(--border)]'
-            : 'text-[var(--text-faint)] hover:text-[var(--text-dim)] hover:bg-[var(--bg-raised)]/50 border border-transparent'
-        }`}
       >
-        {active === 'settings' && <span className="nav-active-rail" />}
-        <Settings size={18} strokeWidth={1.75} className="shrink-0" />
-        {expanded && <span className="text-sm">Settings</span>}
-      </button>
-
-      <button
-        onClick={toggle}
-        title={expanded ? 'Collapse sidebar' : 'Expand sidebar'}
-        className={`h-9 rounded-xl flex items-center text-[var(--text-faint)] hover:text-[var(--text-dim)] hover:bg-[var(--bg-raised)]/50 transition mt-1 ${
-          expanded ? 'px-3 gap-3 w-full justify-start' : 'w-11 justify-center'
-        }`}
-      >
-        {expanded ? <ChevronLeft size={16} /> : <ChevronRight size={16} />}
-        {expanded && <span className="text-xs">Collapse</span>}
-      </button>
-    </div>
+        <span className="rail-avatar">U</span>
+        <span className="rail-foot-text">
+          <b>Uncloud</b>
+          <small>{hovered ? 'Settings' : 'Running on this machine'}</small>
+        </span>
+      </div>
+    </nav>
   );
 }

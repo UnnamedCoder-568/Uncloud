@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Sidebar from './components/Sidebar';
 import type { View } from './components/Sidebar';
+import TitleBar, { NavControls, TitleBarSlot } from './components/TitleBar';
 import Onboarding from './views/Onboarding';
 import ChatView from './views/ChatView';
 import ModelsView from './views/ModelsView';
@@ -31,14 +32,62 @@ const PANES: { id: View; render: () => React.ReactElement }[] = [
   { id: 'settings', render: () => <SettingsView /> },
 ];
 
+/** Where the rail was left last time. Reopening to a hidden rail that the user
+ *  never chose to hide is disorienting, so the choice is remembered. */
+function loadRailOpen(): boolean {
+  try { return localStorage.getItem('uncloud.rail') !== 'closed'; }
+  catch { return true; }
+}
+
 export default function App() {
   // null while we're still asking; false sends the user to setup.
   const [engineUp, setEngineUp] = useState<boolean | null>(null);
   const [ready, setReady] = useState(false);
   const [onboarded, setOnboarded] = useState(false);
-  const [view, setView] = useState<View>('chat');
   const [visited, setVisited] = useState<Set<View>>(() => new Set<View>(['chat']));
   const [engineError, setEngineError] = useState<string | null>(null);
+  const [railOpen, setRailOpen] = useState(loadRailOpen);
+  const [slot, setSlot] = useState<HTMLDivElement | null>(null);
+
+  // Real history, so the title bar's arrows do something. Kept as ONE piece of
+  // state: a stack and a position updated by two separate setters can disagree
+  // for a render, and the disagreement shows up as the wrong pane.
+  const [nav, setNav] = useState<{ stack: View[]; at: number }>(
+    { stack: ['chat'], at: 0 });
+  const view = nav.stack[nav.at];
+
+  const setView = useCallback((next: View) => {
+    setNav((n) => {
+      if (n.stack[n.at] === next) return n;
+      // Navigating from the middle drops what was ahead, as a browser does.
+      const stack = [...n.stack.slice(0, n.at + 1), next];
+      return { stack, at: stack.length - 1 };
+    });
+  }, []);
+
+  const goBack = useCallback(
+    () => setNav((n) => (n.at > 0 ? { ...n, at: n.at - 1 } : n)), []);
+  const goForward = useCallback(
+    () => setNav((n) => (n.at < n.stack.length - 1 ? { ...n, at: n.at + 1 } : n)), []);
+
+  const toggleRail = useCallback(() => {
+    setRailOpen((open) => {
+      try { localStorage.setItem('uncloud.rail', open ? 'closed' : 'open'); }
+      catch { /* private window; the default is fine */ }
+      return !open;
+    });
+  }, []);
+
+  const controls = useMemo(() => (
+    <NavControls
+      railOpen={railOpen}
+      onToggleRail={toggleRail}
+      onBack={goBack}
+      onForward={goForward}
+      canBack={nav.at > 0}
+      canForward={nav.at < nav.stack.length - 1}
+    />
+  ), [railOpen, toggleRail, goBack, goForward, nav.at, nav.stack.length]);
 
   useEffect(() => {
     runtimeStatus()
@@ -87,16 +136,31 @@ export default function App() {
 
   return (
     <div className="h-screen w-screen flex bg-[var(--bg)]">
-      <Sidebar active={view} onChange={setView} />
-      <main className="flex-1 min-w-0">
+      {railOpen && (
+        <Sidebar
+          active={view}
+          onChange={setView}
+          top={<TitleBar inset>{controls}</TitleBar>}
+        />
+      )}
+      <main className="flex-1 min-w-0 flex flex-col">
+        {/* With the rail hidden this is the only strip, so it takes the inset
+            for the traffic lights and carries the navigation controls too. */}
+        <TitleBar inset={!railOpen}>
+          {!railOpen && controls}
+          <div ref={setSlot} className="flex items-center gap-1 flex-1 min-w-0" />
+        </TitleBar>
         {PANES.map(({ id, render }) =>
           // Mounted on first visit and kept mounted after. Unmounting on every
           // tab change threw away whatever was in the view — a prompt being
           // written, options set, a generation still running — which made
           // switching tabs mid-job destructive.
           visited.has(id) ? (
-            <div key={id} className={view === id ? 'h-full' : 'hidden'}>
-              {render()}
+            <div key={id} className={view === id ? 'flex-1 min-h-0' : 'hidden'}>
+              {/* Only the visible pane may write to the title bar. */}
+              <TitleBarSlot value={view === id ? slot : null}>
+                {render()}
+              </TitleBarSlot>
             </div>
           ) : null,
         )}

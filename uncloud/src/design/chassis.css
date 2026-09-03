@@ -1,0 +1,402 @@
+/* The shared chassis — Uncloud and Uncloud Ad Studio.
+ *
+ * THIS FILE IS BYTE-IDENTICAL IN BOTH REPOSITORIES. Verify with md5, not by
+ * eye. If you change it here, copy it there in the same commit; a chassis that
+ * has drifted is worse than no chassis, because it looks maintained.
+ *
+ * See docs/DESIGN-LANGUAGE.md for the reasoning behind every number below.
+ *
+ * WHAT THIS FILE OWNS: the neutral palette, the geometry, and the shell —
+ * title bar, left rail, composer, reading column.
+ *
+ * WHAT IT DOES NOT OWN: the accent. Each app defines --accent, --accent-hover
+ * and --accent-on for itself, because the accent is the brand and the brand is
+ * the one thing the two products must not share. This file only consumes them.
+ */
+
+:root {
+  /* -------------------------------------------------------------- neutrals
+   * Separation is by tint. Each step is a few percent of lightness, not a
+   * line. Nothing is pure black or pure white: pure black makes every edge
+   * vibrate on OLED, and pure white text blooms at 14px. */
+  --sidebar:         #171717;
+  --bg:              #212121;
+  --surface:         #303030;
+  --surface-hover:   #3A3A3A;
+  --surface-sunken:  #1A1A1A;
+  --border:          #2F2F2F;
+  --border-strong:   #4A4A4A;
+
+  /* The rail sits on its own background, so it needs its own hover and active
+   * steps. Reusing --surface for both made "hovered" and "selected" render
+   * identically, and in light mode made the selected row almost invisible
+   * against the rail. Hover is a hint; active is a statement. */
+  --rail-hover:      #232323;
+  --rail-active:     #303030;
+
+  --text:            #ECECEC;  /* 13.6:1 on --bg — AAA */
+  --text-2:          #B4B4B4;  /*  7.8:1 on --bg — AAA */
+  --text-3:          #8F8F8F;  /*  5.0:1 on --bg — AA, labels and icons */
+
+  /* ------------------------------------------------------------- semantic
+   * Held clear of any product accent so "success" never reads as "branded". */
+  --success:         #6FBF8E;
+  --warning:         #D6A85C;
+  --danger:          #E88B84;
+  --info:            #8CB6DA;
+
+  /* ------------------------------------------------------------- geometry
+   * These are the numbers that make two different apps feel like one app. */
+  --rail-w:          260px;
+  --rail-w-collapsed: 60px;
+  --titlebar-h:      44px;
+  --row-h:           36px;
+  --column-w:        768px;   /* reading column AND composer, deliberately */
+  --composer-radius: 26px;
+
+  --radius-sm:       6px;
+  --radius:          8px;
+  --radius-md:       12px;
+  --radius-lg:       16px;
+  --radius-full:     9999px;
+
+  --space-1: 4px;  --space-2: 8px;  --space-3: 12px; --space-4: 16px;
+  --space-5: 20px; --space-6: 24px; --space-8: 32px; --space-10: 40px;
+  --space-12: 48px; --space-16: 64px;
+
+  /* ----------------------------------------------------------- typography */
+  --text-xs:   12px;
+  --text-sm:   13px;
+  --text-base: 14px;   /* interface default — density comes from rows, not type */
+  --text-md:   16px;
+  --text-lg:   18px;
+  --text-xl:   22px;
+  --text-2xl:  26px;
+  --text-3xl:  30px;   /* the greeting, and nothing else */
+
+  /* ---------------------------------------------------------------- depth */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow:    0 2px 8px rgba(0, 0, 0, 0.40);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.55);
+
+  /* --------------------------------------------------------------- motion */
+  --ease:          cubic-bezier(0.4, 0, 0.2, 1);
+  --duration-fast: 110ms;
+  --duration:      170ms;
+
+  color-scheme: dark;
+}
+
+/* ------------------------------------------------------------------- light
+ * Not an inversion — a second palette held to the same contrast standard.
+ * Some people cannot use dark interfaces at all; a light mode that has been
+ * left to rot excludes them silently. */
+:root[data-theme="light"] {
+  --sidebar:         #F5F5F3;
+  --bg:              #FFFFFF;
+  --surface:         #F0F0EE;
+  --surface-hover:   #E7E7E4;
+  --surface-sunken:  #FAFAF8;
+  --border:          #E4E4E0;
+  --border-strong:   #CFCFC9;
+  --rail-hover:      #ECECE8;
+  --rail-active:     #DEDED9;
+
+  --text:            #1B1D1C;  /* 16.9:1 on --bg — AAA */
+  --text-2:          #5E6664;  /*  5.9:1 on --bg — AA  */
+  --text-3:          #767D7B;  /*  4.2:1 — LARGE TEXT AND ICONS ONLY */
+
+  --success:         #2E7D4F;
+  --warning:         #9A6412;
+  --danger:          #B3261E;
+  --info:            #2F5F8A;
+
+  --shadow-sm: 0 1px 2px rgba(27, 29, 28, 0.05);
+  --shadow:    0 2px 8px rgba(27, 29, 28, 0.08);
+  --shadow-lg: 0 12px 32px rgba(27, 29, 28, 0.12);
+
+  color-scheme: light;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --duration-fast: 0ms; --duration: 0ms; }
+}
+
+/* ================================================================ the shell */
+
+/* ------------------------------------------------------------- title bar
+ * macOS runs titleBarStyle:"Overlay" with hiddenTitle, so the traffic lights
+ * float over our chrome and this strip is ours. The whole strip drags; every
+ * control inside it must opt out with .no-drag, or the buttons stop being
+ * clickable — which is indistinguishable from a hung app. */
+.titlebar {
+  height: var(--titlebar-h);
+  flex: 0 0 var(--titlebar-h);
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0 var(--space-3);
+  -webkit-app-region: drag;
+  user-select: none;
+}
+.titlebar-pad { padding-left: 78px; }  /* clears the traffic lights */
+.no-drag { -webkit-app-region: no-drag; }
+
+/* A title-bar control: sidebar toggle, back, forward, overflow. */
+.tb-btn {
+  -webkit-app-region: no-drag;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px;
+  border: 0; padding: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease),
+              color var(--duration-fast) var(--ease);
+}
+.tb-btn:hover:not(:disabled) { background: var(--surface); color: var(--text); }
+.tb-btn:disabled { opacity: 0.35; cursor: default; }
+
+/* The centre slot names the current context, and changes it. If it only
+   labelled something, it would be a heading, not a button. */
+.tb-context {
+  -webkit-app-region: no-drag;
+  display: inline-flex; align-items: center; gap: var(--space-2);
+  height: 30px; padding: 0 var(--space-3);
+  border: 0; border-radius: var(--radius);
+  background: transparent;
+  color: var(--text);
+  font: inherit; font-size: var(--text-base); font-weight: 500;
+  cursor: pointer;
+  max-width: 340px;
+  transition: background var(--duration-fast) var(--ease);
+}
+.tb-context:hover { background: var(--surface); }
+.tb-context > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ------------------------------------------------------------------- rail */
+.rail {
+  width: var(--rail-w);
+  flex: 0 0 var(--rail-w);
+  display: flex; flex-direction: column;
+  background: var(--sidebar);
+  overflow: hidden;
+  transition: width var(--duration) var(--ease), flex-basis var(--duration) var(--ease);
+}
+.rail-collapsed {
+  width: var(--rail-w-collapsed);
+  flex-basis: var(--rail-w-collapsed);
+}
+.rail-body { flex: 1; min-height: 0; overflow-y: auto; padding: 0 var(--space-2); }
+
+.rail-row {
+  display: flex; align-items: center; gap: var(--space-3);
+  width: 100%;
+  height: var(--row-h);
+  padding: 0 var(--space-2);
+  margin-bottom: 2px;
+  border: 0; border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-2);
+  font: inherit; font-size: var(--text-base);
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--duration-fast) var(--ease),
+              color var(--duration-fast) var(--ease);
+}
+.rail-row:hover { background: var(--rail-hover); color: var(--text); }
+.rail-row-active { background: var(--rail-active); color: var(--text); font-weight: 500; }
+.rail-row-active:hover { background: var(--rail-active); }
+.rail-row > svg { flex: 0 0 auto; }
+.rail-row > span { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+.rail-collapsed .rail-row { justify-content: center; padding: 0; gap: 0; }
+.rail-collapsed .rail-row > span,
+.rail-collapsed .rail-label,
+.rail-collapsed .rail-foot-text { display: none; }
+
+/* Section label. Uppercase and small, because it is a divider that happens to
+   have a name — it should never compete with the rows under it. */
+.rail-label {
+  padding: var(--space-4) var(--space-2) var(--space-2);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+/* Identity, pinned to the bottom. Both reference apps put it here and it is
+   the only place users look for account and settings. */
+.rail-foot {
+  display: flex; align-items: center; gap: var(--space-3);
+  padding: var(--space-2);
+  margin: var(--space-2);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease);
+}
+.rail-foot:hover { background: var(--rail-hover); }
+.rail-avatar {
+  flex: 0 0 auto;
+  width: 30px; height: 30px;
+  display: grid; place-items: center;
+  border-radius: var(--radius-full);
+  background: var(--accent);
+  color: var(--accent-on);
+  font-size: var(--text-sm); font-weight: 600;
+}
+.rail-foot-text { flex: 1; min-width: 0; line-height: 1.25; }
+.rail-foot-text b { display: block; font-size: var(--text-sm); font-weight: 500;
+                    color: var(--text); overflow: hidden;
+                    text-overflow: ellipsis; white-space: nowrap; }
+.rail-foot-text small { font-size: var(--text-xs); color: var(--text-3); }
+
+/* ------------------------------------------------------------------ menus
+ * A row in a dropdown. Same geometry as a rail row, but it sits on --surface
+ * rather than on the rail, so it lightens on hover instead of darkening. */
+.menu-row {
+  display: flex; align-items: center; gap: var(--space-3);
+  width: 100%;
+  height: var(--row-h);
+  padding: 0 var(--space-2);
+  border: 0; border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-2);
+  font: inherit; font-size: var(--text-base);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease),
+              color var(--duration-fast) var(--ease);
+}
+.menu-row:hover { background: var(--surface-hover); color: var(--text); }
+.menu-row > span:first-child { flex: 1; overflow: hidden;
+                               text-overflow: ellipsis; white-space: nowrap; }
+
+/* --------------------------------------------------------------- composer
+ * Centred when there is nothing above it, docked once there is. Same
+ * component, two positions — it does not fly across the screen. */
+.composer { display: flex; justify-content: center; width: 100%; }
+.composer-centred {
+  /* flex:1 centres it when the parent is a flex column (Uncloud's chat). The
+     height floor is for when the parent is an ordinary block that scrolls (Ad
+     Studio's studio, which has a form above the composer) — there flex:1 does
+     nothing and the composer would sit hard against whatever precedes it. */
+  flex: 1;
+  min-height: 52vh;
+  flex-direction: column; align-items: center; justify-content: center;
+  padding: 0 var(--space-6);
+  /* The optical centre sits a little above the true one. */
+  padding-bottom: 8vh;
+}
+.composer-docked {
+  /* Sticky rather than fixed, so it works both as a flex sibling of a scroll
+     pane (Uncloud's chat) and inside a scrolling page (Ad Studio's studio).
+     In the flex case sticky degrades to static, which is what is wanted. */
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  flex: 0 0 auto;
+  padding: var(--space-3) var(--space-6) var(--space-5);
+  background: linear-gradient(to top, var(--bg) 68%, transparent);
+}
+.composer-inner { width: 100%; max-width: var(--column-w); }
+
+/* The greeting. One size, one weight, used on exactly one screen state. */
+.greeting {
+  display: flex; align-items: center; gap: var(--space-4);
+  margin-bottom: var(--space-10);
+  font-size: var(--text-3xl);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  text-align: center;
+}
+
+.composer-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--composer-radius);
+  padding: var(--space-3) var(--space-4);
+  transition: border-color var(--duration-fast) var(--ease);
+}
+.composer-card:focus-within { border-color: var(--border-strong); }
+
+.composer-input {
+  display: block; width: 100%;
+  border: 0; outline: none; resize: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit; font-size: var(--text-md);
+  line-height: 1.5;
+  padding: var(--space-2) var(--space-1);
+  max-height: 40vh;   /* beyond this it scrolls; growth must not evict the work */
+}
+.composer-input::placeholder { color: var(--text-3); }
+
+/* The action row under the field. Pills are borderless at rest — in both
+ * reference apps these controls are a shape you discover on hover, not a row
+ * of outlined buttons competing with the field above them. One accent circle
+ * ends the row, and it is the only thing here with a fill. */
+.composer-actions {
+  display: flex; align-items: center; gap: var(--space-2);
+  margin-top: var(--space-1);
+}
+.composer-spacer { flex: 1; }
+
+.pill {
+  display: inline-flex; align-items: center; gap: var(--space-2);
+  height: 32px; padding: 0 var(--space-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--text-2);
+  font: inherit; font-size: var(--text-sm);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--duration-fast) var(--ease),
+              color var(--duration-fast) var(--ease);
+}
+.pill:hover:not(:disabled) { background: var(--surface-hover); color: var(--text); }
+.pill:disabled { opacity: 0.4; cursor: not-allowed; }
+.pill-on { background: var(--surface-hover); color: var(--text); }
+.pill-icon { width: 32px; padding: 0; justify-content: center; }
+/* For a pill that must read as a control before it is hovered — a filter that
+   is currently off, say. Use it sparingly; the default is borderless. */
+.pill-outline { border-color: var(--border-strong); }
+
+.composer-send {
+  display: inline-grid; place-items: center;
+  width: 32px; height: 32px;
+  border: 0; border-radius: var(--radius-full);
+  background: var(--accent);
+  color: var(--accent-on);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease), opacity var(--duration-fast) var(--ease);
+}
+.composer-send:hover:not(:disabled) { background: var(--accent-hover); }
+.composer-send:disabled { opacity: 0.3; cursor: not-allowed; }
+
+/* --------------------------------------------------------- reading column
+ * The same width as the composer, so the first answer arrives directly above
+ * where the question was typed and nothing shifts sideways. */
+.column { width: 100%; max-width: var(--column-w); margin: 0 auto; }
+
+/* ------------------------------------------------------------- scrollbars */
+.chassis-scroll { overflow-y: auto; overflow-x: hidden; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background-color: var(--border-strong);
+  border-radius: var(--radius-full);
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover { background-color: var(--text-3); }
+
+/* Focus stays visible. A tool used all day has to work without a mouse. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
