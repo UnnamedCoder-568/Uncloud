@@ -53,6 +53,42 @@ MAX_PIXELS = 1216 * 704      # LTX's recommended sub-720p detail ceiling
 VIDEO_MARKER = "uncloud-video.json"
 
 
+def _stop_wan_upsampling_in_float32() -> None:
+    """Upsample Wan's frames at the dtype they arrive in.
+
+    WanUpsample casts to float32, upsamples, and casts back. It sits at the
+    widest point in the decoder — after the last spatial expansion — so that
+    round trip doubles the largest tensor in the whole pipeline, and the decode
+    is already the memory peak.
+
+    It buys nothing at these settings. Both stages use mode="nearest-exact",
+    which copies values rather than interpolating between them, so there is no
+    precision to preserve: upsampling a bfloat16 tensor directly on Metal gave
+    a result bit-identical to the float32 round trip, and did it in 1.36ms
+    against 2.02ms. Left alone for any mode that actually interpolates, where
+    the cast would be doing real work.
+    """
+    try:
+        from diffusers.models.autoencoders.autoencoder_kl_wan import WanUpsample
+    except Exception:  # noqa: BLE001 - a newer diffusers may have moved it
+        return
+    if getattr(WanUpsample.forward, "_uncloud_no_upcast", False):
+        return
+
+    import torch.nn as nn
+
+    def forward(self, x):
+        if str(self.mode).startswith("nearest"):
+            return nn.Upsample.forward(self, x)
+        return nn.Upsample.forward(self, x.float()).type_as(x)
+
+    forward._uncloud_no_upcast = True
+    WanUpsample.forward = forward
+
+
+_stop_wan_upsampling_in_float32()
+
+
 @dataclass(frozen=True)
 class Family:
     """What differs between video model families, in one place.
@@ -260,6 +296,76 @@ class VideoEngine:
         if torch.backends.mps.is_available():
             torch.mps.empty_cache()
 
+    def _decode_wan_tiled(self, latents, tile: int = 256, stride: int = 192):
+        """Decode Wan latents a tile at a time, freeing each before the next.
+
+        Wan ships a tiled decode and it runs out of memory on Metal, which is
+        why this exists. Its version decodes every tile of every row into a
+        list and blends afterwards — fine where memory is plentiful, fatal
+        here, because the tiles themselves are small (about 10MB each) but the
+        working set of each tile's decode is not, and MPS holds those buffers
+        until something asks it not to. Twenty-eight tiles' worth accumulates.
+
+        Same tiles, same blend, same output; the difference is that a tile is
+        released as soon as it has been decoded, and only the row above is kept
+        for the vertical blend. Measured at 704x480: 1.21GB against 4.89GB
+        decoding whole frames, for about 30% more time.
+        """
+        import torch
+        from diffusers.models.autoencoders.autoencoder_kl_wan import unpatchify
+
+        vae = self._pipe.vae
+        ratio = vae.spatial_compression_ratio
+        _, _, num_frames, height, width = latents.shape
+        tile_h = tile_w = tile // ratio
+        stride_h = stride_w = stride // ratio
+
+        patch = vae.config.patch_size
+        sample_h, sample_w = height * ratio, width * ratio
+        if patch is not None:
+            sample_h, sample_w = sample_h // patch, sample_w // patch
+            out_h, out_w = stride // patch, stride // patch
+            blend_h, blend_w = tile // patch - out_h, tile // patch - out_w
+        else:
+            out_h = out_w = stride
+            blend_h = blend_w = tile - stride
+
+        previous, out_rows = None, []
+        for i in range(0, height, stride_h):
+            row = []
+            for j in range(0, width, stride_w):
+                vae.clear_cache()
+                frames = []
+                for k in range(num_frames):
+                    vae._conv_idx = [0]  # noqa: SLF001 - the cache protocol
+                    piece = vae.post_quant_conv(latents[:, :, k:k + 1, i:i + tile_h, j:j + tile_w])
+                    frames.append(vae.decoder(
+                        piece, feat_cache=vae._feat_map,  # noqa: SLF001
+                        feat_idx=vae._conv_idx, first_chunk=(k == 0)))
+                row.append(torch.cat(frames, dim=2))
+                del frames, piece
+                if torch.backends.mps.is_available():
+                    torch.mps.empty_cache()
+
+            cropped = []
+            for j, piece in enumerate(row):
+                if previous is not None:
+                    piece = vae.blend_v(previous[j], piece, blend_h)
+                if j > 0:
+                    piece = vae.blend_h(row[j - 1], piece, blend_w)
+                cropped.append(piece[:, :, :, :out_h, :out_w])
+            out_rows.append(torch.cat(cropped, dim=-1))
+            previous = row
+            del cropped
+            if torch.backends.mps.is_available():
+                torch.mps.empty_cache()
+
+        vae.clear_cache()
+        decoded = torch.cat(out_rows, dim=3)[:, :, :, :sample_h, :sample_w]
+        if patch is not None:
+            decoded = unpatchify(decoded, patch_size=patch)
+        return torch.clamp(decoded, -1.0, 1.0)
+
     def _decode_wan(self, latents):
         """Decode Wan latents the way its pipeline would, after the fact.
 
@@ -277,7 +383,7 @@ class VideoEngine:
         inv_std = (1.0 / torch.tensor(cfg.latents_std).view(1, cfg.z_dim, 1, 1, 1)
                    .to(latents.device, latents.dtype))
         with torch.no_grad():
-            video = vae.decode(latents / inv_std + mean, return_dict=False)[0]
+            video = self._decode_wan_tiled(latents / inv_std + mean)
         return self._pipe.video_processor.postprocess_video(video, output_type="np")[0]
 
     def list_jobs(self) -> list[dict]:

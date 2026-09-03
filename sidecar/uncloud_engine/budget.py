@@ -132,12 +132,20 @@ def resident_weights_gb(model_path: str) -> float:
 # else in both cases.
 DECODE_GB_PER_MPX = 9.6
 
-# MPS holds allocated buffers above what is live, and it is the driver's total
-# that runs into the ceiling. One end-to-end run — Wan, 25 frames, 1280x704 —
-# peaked at 19.3 GB against 10.1 GB of parts, so parts are scaled by this.
-# Calibrated on a single measurement: treat it as the right order, not a number
-# to trust to a decimal place.
-_ALLOCATOR_OVERHEAD = 1.9
+# The phases add rather than replace each other. Freeing the transformer before
+# the decode returns it to MPS, which keeps the pages rather than handing them
+# back, so the driver's high-water — the number that meets the ceiling — tracks
+# denoise plus decode, not the larger of the two. Two end-to-end runs of the
+# same job, Wan at 25 frames and 1280x704: 17.1 GB of parts measured 19.31, and
+# 9.0 GB of parts measured 10.07. Ratios of 1.13 and 1.12.
+#
+# Taking the larger of the phases instead gave 1.91 and 1.44 for the same two
+# runs, which is a way of saying that model was wrong and the constant was
+# absorbing the error.
+_ALLOCATOR_OVERHEAD = 1.12
+
+# The decode is tiled, so its cost is set by one tile rather than the frame.
+_DECODE_TILE_PX = 256 * 256
 
 
 def estimate_video_gb(frames: int, width: int, height: int,
@@ -166,13 +174,10 @@ def estimate_video_gb(frames: int, width: int, height: int,
     sequence = hidden + attention
 
     denoise = weights_gb + sequence
-    # LTX tiles its decode, which caps it. Wan's tiled path runs out of memory
-    # on Metal at every tile size measured, so it decodes whole frames and pays
-    # the full cost.
-    megapixels = width * height / 1e6
-    decode = vae_gb + (DECODE_GB_PER_MPX * megapixels if family == "wan"
-                       else min(DECODE_GB_PER_MPX * megapixels, 2.0))
-    total = max(denoise, decode) * _ALLOCATOR_OVERHEAD
+    # Both families decode a tile at a time, so the frame's size sets how long
+    # it takes and not how much it costs.
+    decode = vae_gb + DECODE_GB_PER_MPX * (_DECODE_TILE_PX / 1e6)
+    total = (denoise + decode) * _ALLOCATOR_OVERHEAD
 
     return {
         "tokens": tokens,
