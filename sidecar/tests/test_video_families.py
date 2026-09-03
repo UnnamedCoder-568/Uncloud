@@ -19,20 +19,39 @@ class FrameConstraintTest(unittest.TestCase):
 
 
 class BudgetTest(unittest.TestCase):
-    def test_the_decode_outweighs_the_denoise_at_native_size(self) -> None:
-        # The reason quantising the weights does not bring video into range on
-        # a small machine: the peak is the decode, and it is not weights.
+    def test_a_bigger_frame_does_not_cost_more_to_decode(self) -> None:
+        # The decode is tiled, so frame size sets how long it takes and not
+        # what it costs. Before that it was the peak and it scaled with area,
+        # which is what put video out of reach of a 16GB machine.
+        small = budget.estimate_video_gb(25, 640, 384, weights_gb=5.4, family="wan")
+        native = budget.estimate_video_gb(25, 1280, 704, weights_gb=5.4, family="wan")
+        self.assertEqual(small["decode_gb"], native["decode_gb"])
+
+    def test_the_estimate_matches_what_the_job_measured(self) -> None:
+        # Two end-to-end runs of this job: 19.31GB decoding whole frames and
+        # 10.07GB decoding tiles. The estimate tracks the second.
         est = budget.estimate_video_gb(25, 1280, 704, weights_gb=5.4, family="wan")
-        self.assertGreater(est["decode_gb"], est["denoise_gb"])
-        self.assertEqual(est["total_gb"], est["decode_gb"])
+        self.assertAlmostEqual(est["total_gb"], 10.07, delta=1.0)
 
     def test_a_machine_that_fits_only_unusable_sizes_is_not_offered_video(self) -> None:
         # Wan below its native size does not degrade, it returns noise, so
         # "the clip fits" is not enough to put the tab in front of someone.
+        # At 9GB a clip fits, but only up to 704x480 — refuse it.
+        real = budget.memory_budget
+        budget.memory_budget = lambda: {"budget_gb": 9.0}
+        try:
+            self.assertFalse(budget.video_capability(5.4, "wan")["runnable"])
+        finally:
+            budget.memory_budget = real
+
+    def test_a_sixteen_gigabyte_machine_now_clears_native_resolution(self) -> None:
+        # It did not before the decode was tiled. This is the whole point.
         real = budget.memory_budget
         budget.memory_budget = lambda: {"budget_gb": 11.0}
         try:
-            self.assertFalse(budget.video_capability(5.4, "wan")["runnable"])
+            result = budget.video_capability(5.4, "wan")
+            self.assertTrue(result["runnable"])
+            self.assertEqual(result["largest_size_at_min_frames"], [1280, 704])
         finally:
             budget.memory_budget = real
 
