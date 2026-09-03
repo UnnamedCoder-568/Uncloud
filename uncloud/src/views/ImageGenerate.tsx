@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { ChevronDown, Sparkles, Loader2, SlidersHorizontal, Shuffle } from 'lucide-react';
-import { getLibrary, generateImage, getImageJob, fetchImageBlobUrl } from '../lib/sidecar';
+import { ChevronDown, Loader2, Shuffle, SlidersHorizontal, Sparkles, UserRound, UserRoundPlus } from 'lucide-react';
+import { getLibrary, generateImage, editImage, getImageJob, fetchImageBlobUrl,
+         listCharacters, saveCharacter } from '../lib/sidecar';
 import Dictate from '../components/Dictate';
 import SaveActions from '../components/SaveActions';
-import type { LocalModel, ImageJob } from '../lib/sidecar';
+import type { LocalModel, ImageJob, Character } from '../lib/sidecar';
 
 // Models that carry their own settings win: a distilled checkpoint run at the
 // 25-step default is a minute of work for a picture it makes in four.
@@ -36,6 +37,13 @@ export default function ImageGenerate() {
   const [seed, setSeed] = useState('');
   const [job, setJob] = useState<ImageJob | null>(null);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
+
+  //: The subject to keep consistent across generations. Creating a character
+  //  was already possible; using one was not, which made the feature a filing
+  //  cabinet rather than a tool.
+  const [characters, setCharacters] = useState<Character[]>([]);
+  const [characterSlug, setCharacterSlug] = useState('');
+  const character = characters.find((c) => c.slug === characterSlug) ?? null;
 
   useEffect(() => {
     getLibrary().then((list) => {
@@ -90,10 +98,34 @@ export default function ImageGenerate() {
   const encoderApplies =
     !!encoder && (model?.engine === 'diffusers' || model?.engine === 'flux2-profile');
 
+  const loadCharacters = () => listCharacters().then(setCharacters).catch(() => undefined);
+  useEffect(() => { loadCharacters(); }, []);
+
+  // Identity carries far more strongly from a reference image than from a
+  // description, but only a model that can edit from a reference can use one.
+  const canUseReference =
+    !!character?.has_reference && !!model?.capabilities.includes('edit');
+
   async function generate() {
     if (!model || !prompt.trim()) return;
     setImageUrl(null);
-    const newJob = await generateImage(model.path, model.engine, prompt.trim(), model.catalog_id, {
+
+    // A character's description goes into the prompt either way; the reference
+    // image is what actually holds the likeness, so use it when we can.
+    const described = character?.description
+      ? `${character.description.trim()}. ${prompt.trim()}`
+      : prompt.trim();
+
+    if (canUseReference && character?.reference_path) {
+      setJob(await editImage(model.path, described, character.reference_path,
+                             model.catalog_id, {
+        steps, guidance, width, height,
+        seed: seed.trim() ? Number(seed.trim()) : undefined,
+      }));
+      return;
+    }
+
+    const newJob = await generateImage(model.path, model.engine, described, model.catalog_id, {
       negative_prompt: negativePrompt.trim() || undefined,
       steps, guidance, width, height,
       seed: seed.trim() ? Number(seed.trim()) : undefined,
@@ -109,6 +141,34 @@ export default function ImageGenerate() {
   }
 
   const running = job && !job.done;
+
+  /** Promote the picture on screen into a reusable subject.
+   *
+   *  This is the other half of the loop: generate someone you like, keep them,
+   *  and every later generation can be of the same person. Without it a
+   *  character could only ever be a photograph you already had. */
+  const [savingCharacter, setSavingCharacter] = useState(false);
+  async function keepAsCharacter(existing: Character | null) {
+    const path = job?.output_path;
+    if (!path) return;
+    const name = existing?.name
+      ?? window.prompt('Name this character')?.trim();
+    if (!name) return;
+    setSavingCharacter(true);
+    try {
+      const saved = await saveCharacter({
+        name,
+        description: existing?.description ?? '',
+        tags: existing?.tags ?? [],
+        reference_path: path,
+        slug: existing?.slug ?? null,
+      });
+      await loadCharacters();
+      setCharacterSlug(saved.slug);
+    } finally {
+      setSavingCharacter(false);
+    }
+  }
 
   return (
     <div className="h-full flex">
@@ -184,6 +244,26 @@ export default function ImageGenerate() {
                 alt={prompt}
                 className="min-h-0 max-h-full max-w-full object-contain rounded-xl border border-[var(--border)]"
               />
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => keepAsCharacter(null)}
+                  disabled={savingCharacter || !job?.output_path}
+                  className="text-xs px-3 py-1.5 rounded-lg border border-[var(--border)] text-[var(--text-dim)] hover:text-white hover:bg-[var(--bg-raised)] transition disabled:opacity-40"
+                >
+                  <UserRoundPlus size={13} className="inline mr-1.5 -mt-0.5" />
+                  Save as character
+                </button>
+                {character && (
+                  <button
+                    onClick={() => keepAsCharacter(character)}
+                    disabled={savingCharacter}
+                    className="text-xs px-3 py-1.5 rounded-lg border border-[var(--border)] text-[var(--text-dim)] hover:text-white hover:bg-[var(--bg-raised)] transition disabled:opacity-40"
+                    title={`Replace ${character.name}'s reference with this picture`}
+                  >
+                    Use as {character.name}'s reference
+                  </button>
+                )}
+              </div>
               <SaveActions
                 path={job?.output_path ?? null}
                 onDiscarded={() => {
@@ -251,6 +331,33 @@ export default function ImageGenerate() {
                 {running ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
               </button>
             </div>
+            {/* Who this is of. Sits with the prompt because it is part of
+                describing the picture, not a generation setting. */}
+            <div className="flex items-center gap-2">
+              <label className="flex items-center gap-1.5 text-xs text-[var(--text-faint)]">
+                <UserRound size={13} />
+                <select
+                  value={characterSlug}
+                  onChange={(e) => setCharacterSlug(e.target.value)}
+                  className="bg-transparent outline-none text-xs text-[var(--text-dim)] cursor-pointer"
+                >
+                  <option value="">No character</option>
+                  {characters.map((c) => (
+                    <option key={c.slug} value={c.slug}>{c.name}</option>
+                  ))}
+                </select>
+              </label>
+              {character && (
+                <span className="text-[11px] text-[var(--text-faint)]">
+                  {canUseReference
+                    ? 'Using their reference image — likeness carries.'
+                    : character.has_reference
+                      ? 'This model cannot generate from a reference, so only the description is used. The likeness will drift.'
+                      : 'No reference image saved, so only the description is used. Generate one and keep it below.'}
+                </span>
+              )}
+            </div>
+
             <div className="flex items-center gap-1">
               <input
                 value={negativePrompt}
