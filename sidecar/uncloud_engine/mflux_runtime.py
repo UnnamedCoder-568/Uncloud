@@ -67,6 +67,49 @@ def _tile_flux2_vae_decode() -> None:
 _tile_flux2_vae_decode()
 
 
+def _fix_lokr_dims_for_odd_bit_widths() -> None:
+    """Let a LoKr adapter apply to a 6-bit checkpoint.
+
+    MLX packs quantised weights into uint32 words, so a linear layer's stored
+    width is ceil(in_features * bits / 32) and the original has to be recovered
+    to check an adapter against it. mflux recovers it with
+
+        input_dims *= 32 // linear.bits
+
+    which is exact only when the bit width divides 32. At 6-bit, 32 // 6 is 5
+    rather than 5.333, and a 16384-wide layer is read as 15360 — so every LoKr
+    is rejected for a shape mismatch that is arithmetic, not weights. Multiply
+    before dividing and it is exact at every width: 4 and 8 are unchanged, and
+    3, 5 and 6 stop lying.
+    """
+    try:
+        from mlx import nn
+        from mflux.models.common.lora.layer.linear_lokr_layer import LoKrLinear
+    except Exception:  # noqa: BLE001 - a newer mflux may have moved this
+        return
+    if getattr(LoKrLinear.from_linear, "_uncloud_exact_dims", False):
+        return
+
+    inner = LoKrLinear.from_linear
+
+    def from_linear(linear, lokr_w1, lokr_w2, dora_scale=None, scale=1.0):
+        if isinstance(linear, nn.QuantizedLinear) and 32 % linear.bits:
+            out_dims, packed = linear.weight.shape
+            return LoKrLinear(
+                linear=linear, output_dims=out_dims,
+                input_dims=packed * 32 // linear.bits,
+                lokr_w1=lokr_w1, lokr_w2=lokr_w2,
+                dora_scale=dora_scale, scale=scale,
+            )
+        return inner(linear, lokr_w1, lokr_w2, dora_scale, scale)
+
+    from_linear._uncloud_exact_dims = True
+    LoKrLinear.from_linear = staticmethod(from_linear)
+
+
+_fix_lokr_dims_for_odd_bit_widths()
+
+
 class _StepProgress:
     """mflux's in-loop callback protocol, used only to report step counts."""
 
