@@ -699,10 +699,14 @@ export interface MemoryBudget {
 /** What a job will cost against what the machine can give. Asked before
  *  starting: an oversized job is refused on macOS but can take a Linux box
  *  with a discrete GPU down with it. */
-export async function getBudget(p?: { frames: number; width: number; height: number; weights_gb?: number }) {
+export async function getBudget(p?: {
+  frames: number; width: number; height: number; model_path?: string;
+}) {
+  // Send the path, not a size: the engine works out what stays resident, which
+  // for video is a fraction of the folder — the text encoder is freed first.
   const q = p ? `?${new URLSearchParams({
     frames: String(p.frames), width: String(p.width), height: String(p.height),
-    ...(p.weights_gb ? { weights_gb: String(p.weights_gb) } : {}),
+    ...(p.model_path ? { model_path: p.model_path } : {}),
   })}` : '';
   return api<MemoryBudget>(`/api/system/budget${q}`);
 }
