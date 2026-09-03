@@ -64,12 +64,14 @@ export default function AgentView() {
     setPhase('planning');
     const ws = await agentSocket();
     wsRef.current = ws;
-    // The engine sends a specific reason and then closes, which fires onerror.
-    // Without this, the generic transport message overwrites the useful one —
-    // "connection lost" instead of "no text model is loaded".
-    let explained = false;
+    // Any message means the socket worked, so anything onerror reports after
+    // that is the close, not a failure to connect. Without this the generic
+    // "connection lost" overwrites whatever the engine actually said — a failed
+    // task, or "no text model is loaded".
+    let spoke = false;
     ws.onopen = () => ws.send(JSON.stringify({ goal: goal.trim() }));
     ws.onmessage = (ev) => {
+      spoke = true;
       const msg = JSON.parse(ev.data);
       if (msg.type === 'planning') setPhase('planning');
       if (msg.type === 'graph') {
@@ -81,13 +83,12 @@ export default function AgentView() {
         setPhase('done');
       }
       if (msg.type === 'error') {
-        explained = true;
         setError(msg.message);
         setPhase('error');
       }
     };
     ws.onerror = () => {
-      if (explained) return;
+      if (spoke) return;
       setError('Connection to Uncloud engine lost');
       setPhase('error');
     };

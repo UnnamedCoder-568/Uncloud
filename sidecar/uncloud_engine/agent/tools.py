@@ -106,6 +106,16 @@ TOOL_SPECS = [
         "args": ["pattern", "path (optional)", "glob (optional)"],
     },
     {
+        "id": "app_open", "name": "Open On This Mac",
+        "description": (
+            "Open a URL or a file in the user's own default browser or app, or launch "
+            "an application by name. Use this when asked to open something on their "
+            "machine — Safari, Finder, a document. Different from browser_open, which "
+            "drives a separate automated browser the user cannot see."
+        ),
+        "args": ["target", "app"],
+    },
+    {
         "id": "browser_open", "name": "Open In Browser",
         "description": "Open a URL in a real browser session and return the page's visible text. Use instead of web_read when the page needs JavaScript, or when you intend to click or type next.",
         "args": ["url"],
@@ -251,6 +261,8 @@ async def run_tool(tool_id: str, args: dict[str, Any]) -> str:
     if tool_id.startswith("browser_"):
         from . import browser
 
+        if tool_id == "app_open":
+            return _app_open(args.get("target", ""), args.get("app", ""))
         if tool_id == "browser_open":
             return await browser.open_url(args.get("url", ""))
         if tool_id == "browser_read":
@@ -588,6 +600,50 @@ async def _generate_image(args: dict[str, Any]) -> str:
 # full set is a real cost, not just a capability. A 27B copes with 31 options;
 # a small model on a laptop plans measurably worse with 31 than with 10. Groups
 # let the surface match the model actually doing the planning.
+def _app_open(target: str, app: str = "") -> str:
+    """Open a URL, file or application the way the user's desktop would.
+
+    Asked to "open Safari and go to YouTube", a model without this reaches for
+    the shell and writes AppleScript from memory — and a small model does not
+    reliably know an application's scripting dictionary. One observed attempt
+    used `currentURL of window 1`, which Safari has no such property for.
+
+    The platform launcher already does this correctly and needs no dictionary.
+    """
+    import subprocess
+    import sys
+
+    target = (target or "").strip()
+    app = (app or "").strip()
+    if not target and not app:
+        return "Nothing to open: give a target (URL or path) or an app name."
+
+    if sys.platform == "darwin":
+        cmd = ["open"]
+        if app:
+            cmd += ["-a", app]
+        if target:
+            cmd.append(target)
+    elif sys.platform.startswith("linux"):
+        if not target:
+            return f"Cannot launch an application by name on this platform: {app}"
+        cmd = ["xdg-open", target]
+    elif sys.platform == "win32":
+        cmd = ["cmd", "/c", "start", "", target or app]
+    else:
+        return f"Opening things is not supported on {sys.platform}."
+
+    try:
+        done = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return f"Could not open {target or app}: {exc}"
+    if done.returncode != 0:
+        return f"Could not open {target or app}: {done.stderr.strip() or done.returncode}"
+    what = target or app
+    where = f" in {app}" if app and target else ""
+    return f"Opened {what}{where}."
+
+
 TOOL_GROUPS: dict[str, dict] = {
     "files": {
         "label": "Files",
@@ -596,8 +652,8 @@ TOOL_GROUPS: dict[str, dict] = {
     },
     "shell": {
         "label": "Shell",
-        "note": "Run commands.",
-        "ids": {"shell"},
+        "note": "Run commands, and open things in the user's own apps.",
+        "ids": {"shell", "app_open"},
     },
     "web": {
         "label": "Web",
