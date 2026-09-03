@@ -3,7 +3,12 @@ name = "astro-engine"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.12"
+# Bounded, not just floored. Unbounded, uv on a clean machine picks the newest
+# Python it can find, and several dependencies here — curated-tokenizers among
+# them — publish no wheel for it, so uv falls back to building from source and
+# fails. The bundled app has no .python-version to fall back on; this line is
+# what travels with it.
+requires-python = ">=3.12,<3.13"
 dependencies = [
     "accelerate>=1.14.0",
     "demucs>=4.0.1",
