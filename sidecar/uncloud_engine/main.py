@@ -159,6 +159,27 @@ def system_resident() -> dict:
     return resident()
 
 
+@app.get("/api/system/budget", dependencies=[Depends(require_token)])
+def system_budget(frames: int = 0, width: int = 0, height: int = 0,
+                  weights_gb: float = 6.0) -> dict:
+    """What this machine can give, and what the requested job would take.
+
+    Asked before starting rather than discovered during: on macOS an oversized
+    job is refused with a message, but a discrete GPU can take the machine down
+    with it.
+    """
+    from .budget import estimate_video_gb, memory_budget
+
+    out: dict = {"budget": memory_budget()}
+    if frames and width and height:
+        est = estimate_video_gb(frames, width, height, weights_gb)
+        out["estimate"] = est
+        budget = out["budget"]["budget_gb"]
+        out["fits"] = est["total_gb"] <= budget
+        out["tight"] = est["total_gb"] > budget * 0.85
+    return out
+
+
 @app.get("/api/system/weight_cache", dependencies=[Depends(require_token)])
 def weight_cache() -> dict:
     from .flux2_profile import CACHE_ROOT, cache_size_bytes

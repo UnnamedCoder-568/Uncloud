@@ -1,17 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
 import { Loader2, Film, Download, ChevronDown, AlertCircle } from 'lucide-react';
 import {
-  getLibrary, getVideoOptions, generateVideo, getVideoJob, fetchVideoBlobUrl,
+  getBudget, getLibrary, getVideoOptions, generateVideo, getVideoJob, fetchVideoBlobUrl,
 } from '../lib/sidecar';
 import Dictate from '../components/Dictate';
-import type { LocalModel, VideoJob } from '../lib/sidecar';
+import type { LocalModel, VideoJob, MemoryBudget } from '../lib/sidecar';
 
 /** LTX honours frame counts of the form 8n+1; anything else is padded silently. */
 const FRAME_CHOICES = [
   { n: 25, label: '1s' },
   { n: 49, label: '2s' },
-  { n: 73, label: '3s' },
   { n: 97, label: '4s' },
+  { n: 145, label: '6s' },
+  { n: 193, label: '8s' },
+  { n: 241, label: '10s' },
 ];
 
 const SIZES = [
@@ -31,6 +33,18 @@ export default function VideoView() {
   const [frames, setFrames] = useState(49);
   const [size, setSize] = useState(SIZES[1]);
   const [steps, setSteps] = useState(30);
+
+  // Checked before starting, not discovered during. macOS refuses an oversized
+  // allocation and the job dies with a message; a machine with a discrete GPU
+  // can lock up hard enough to need a power cycle.
+  const [budget, setBudget] = useState<MemoryBudget | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    getBudget({ frames, width: size.w, height: size.h, weights_gb: model?.size_gb })
+      .then((b) => { if (!cancelled) setBudget(b); })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [frames, size.w, size.h, model?.size_gb]);
   const [guidance, setGuidance] = useState(3.0);
 
   const [job, setJob] = useState<VideoJob | null>(null);
@@ -188,9 +202,40 @@ export default function VideoView() {
           />
         </div>
 
+        {budget?.estimate && (
+          <div className={`text-[11px] leading-relaxed rounded-lg px-3 py-2 ${
+            budget.fits === false
+              ? 'bg-rose-950/40 border border-rose-500/30 text-rose-300'
+              : budget.tight
+                ? 'bg-amber-950/30 border border-amber-500/25 text-amber-300/90'
+                : 'text-[var(--text-faint)]'
+          }`}>
+            {budget.fits === false ? (
+              <>
+                <strong>Will not fit.</strong> Needs about {budget.estimate.total_gb} GB
+                against {budget.budget.budget_gb} GB available on this machine. Choose a
+                shorter clip or a smaller size — on some systems an overrun locks the
+                machine up rather than failing cleanly.
+              </>
+            ) : budget.tight ? (
+              <>
+                <strong>Tight.</strong> About {budget.estimate.total_gb} GB of
+                {' '}{budget.budget.budget_gb} GB. It should run, but the machine will be
+                slow while it does.
+              </>
+            ) : (
+              <>
+                ~{budget.estimate.total_gb} GB of {budget.budget.budget_gb} GB
+                {' · '}{budget.estimate.weights_gb} GB weights
+                {' + '}{budget.estimate.sequence_gb} GB for {budget.estimate.tokens.toLocaleString()} tokens
+              </>
+            )}
+          </div>
+        )}
+
         <button
           onClick={run}
-          disabled={!model || !prompt.trim() || busy}
+          disabled={!model || !prompt.trim() || busy || budget?.fits === false}
           className="h-10 rounded-xl btn-accent text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-30 transition"
         >
           {busy ? <Loader2 size={14} className="animate-spin" /> : <Film size={14} />}
