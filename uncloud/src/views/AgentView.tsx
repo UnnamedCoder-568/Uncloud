@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
-import { CheckCircle2, XCircle, Loader2, Circle, Send, ShieldAlert } from 'lucide-react';
-import { agentSocket, getSettings } from '../lib/sidecar';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { CheckCircle2, XCircle, Loader2, Circle, Send, ShieldAlert, Cpu } from 'lucide-react';
+import { agentSocket, getSettings, getLibrary, startEngine, engineStatus } from '../lib/sidecar';
+import type { LocalModel } from '../lib/sidecar';
 import Dictate from '../components/Dictate';
 
 interface AgentTask {
@@ -31,6 +32,33 @@ export default function AgentView() {
     getSettings().then((s) => setDeviceAccess(s.agent_device_access));
   }, []);
 
+  // The agent plans with whichever text model the engine has loaded. That was
+  // invisible here, so an unloaded engine looked like a broken agent.
+  const [textModels, setTextModels] = useState<LocalModel[]>([]);
+  const [loaded, setLoaded] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const readState = useCallback(async () => {
+    const [ms, st] = await Promise.all([
+      getLibrary().catch(() => [] as LocalModel[]),
+      engineStatus().catch(() => null),
+    ]);
+    setTextModels(ms.filter((m) => m.category === 'text' && m.ready));
+    setLoaded(st?.running ? st.model_path ?? null : null);
+  }, []);
+
+  useEffect(() => { readState(); }, [readState]);
+
+  async function loadModel(m: LocalModel) {
+    setLoading(true);
+    try {
+      await startEngine(m.path, m.engine);
+      await readState();
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function run() {
     if (!goal.trim() || phase === 'planning' || phase === 'running') return;
     setError(null);
@@ -38,6 +66,10 @@ export default function AgentView() {
     setPhase('planning');
     const ws = await agentSocket();
     wsRef.current = ws;
+    // The engine sends a specific reason and then closes, which fires onerror.
+    // Without this, the generic transport message overwrites the useful one —
+    // "connection lost" instead of "no text model is loaded".
+    let explained = false;
     ws.onopen = () => ws.send(JSON.stringify({ goal: goal.trim() }));
     ws.onmessage = (ev) => {
       const msg = JSON.parse(ev.data);
@@ -51,11 +83,16 @@ export default function AgentView() {
         setPhase('done');
       }
       if (msg.type === 'error') {
+        explained = true;
         setError(msg.message);
         setPhase('error');
       }
     };
-    ws.onerror = () => setError('Connection to Uncloud engine lost');
+    ws.onerror = () => {
+      if (explained) return;
+      setError('Connection to Uncloud engine lost');
+      setPhase('error');
+    };
   }
 
   const orderedTasks = graph ? Object.values(graph.tasks) : [];
@@ -72,6 +109,42 @@ export default function AgentView() {
             <ShieldAlert size={12} /> Scoped to the Uncloud workspace folder. Enable full device access in Settings for unrestricted shell/filesystem.
           </div>
         )}
+
+        {/* Which model does the planning. Previously invisible here, so an
+            engine with nothing loaded looked like a broken agent. */}
+        <div className="flex items-center gap-2 mt-3 text-[11px]">
+          <Cpu size={12} className="text-[var(--text-faint)] shrink-0" />
+          {loaded ? (
+            <>
+              <span className="text-[var(--text-faint)]">Planning with</span>
+              <span className="font-mono text-[var(--text-dim)] truncate">
+                {loaded.split('/').pop()}
+              </span>
+            </>
+          ) : textModels.length ? (
+            <>
+              <span className="text-amber-400/90">No text model loaded — the agent needs one to plan.</span>
+              <select
+                className="bg-[var(--bg-inset)] text-[11px] px-2 py-1 rounded-lg border border-[var(--border-soft)]"
+                disabled={loading}
+                defaultValue=""
+                onChange={(e) => {
+                  const m = textModels.find((x) => x.path === e.target.value);
+                  if (m) loadModel(m);
+                }}
+              >
+                <option value="">{loading ? 'Loading…' : 'Load one…'}</option>
+                {textModels.map((m) => (
+                  <option key={m.id} value={m.path}>{m.name} · {m.size_gb} GB</option>
+                ))}
+              </select>
+            </>
+          ) : (
+            <span className="text-amber-400/90">
+              No text models installed — download one from the Models tab.
+            </span>
+          )}
+        </div>
       </header>
 
       <div className="flex-1 overflow-y-auto px-6 py-5">
