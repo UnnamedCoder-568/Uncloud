@@ -118,3 +118,55 @@ def estimate_video_gb(frames: int, width: int, height: int,
         "sequence_gb": round(sequence, 1),
         "total_gb": round(weights_gb + sequence, 1),
     }
+
+
+# What the Video tab offers, smallest first. Kept here rather than in the view
+# because whether a machine can run video at all is a question about the
+# machine, and the answer has to be the same in both places.
+VIDEO_FRAMES = (25, 49, 97, 145, 193, 241)
+VIDEO_SIZES = ((448, 256), (512, 320), (640, 384), (704, 480), (960, 544), (1216, 704))
+
+
+def video_capability(weights_gb: float = 6.0) -> dict:
+    """How far this machine gets with video, if anywhere.
+
+    A machine that cannot hold even the shortest draft clip should not be shown
+    a Video tab. Every job there fails the same way, and a hardware limit hit
+    six times reads as a broken feature rather than a machine that is too
+    small — which is worse than not offering it, for anyone who paid.
+
+    Returns the largest length and size that fit, so the answer can be "2s at
+    512x320" rather than a bare yes or no.
+    """
+    budget = memory_budget()["budget_gb"]
+    if not budget:
+        return {"runnable": True, "budget_gb": 0.0, "reason": "unknown"}
+
+    def fits(frames: int, width: int, height: int) -> bool:
+        return estimate_video_gb(frames, width, height, weights_gb)["total_gb"] <= budget
+
+    smallest_frames, (smallest_w, smallest_h) = VIDEO_FRAMES[0], VIDEO_SIZES[0]
+    if not fits(smallest_frames, smallest_w, smallest_h):
+        return {
+            "runnable": False,
+            "budget_gb": round(budget, 1),
+            "weights_gb": round(weights_gb, 1),
+            "reason": "The shortest, smallest clip this app offers needs more "
+                      "memory than this machine can give a single job.",
+        }
+
+    # Length and size trade against each other — attention cost is quadratic in
+    # tokens, and tokens are frames times area. Reporting the longest clip and
+    # the largest frame independently would promise the combination of the two,
+    # which is exactly the job that does not fit. Each is reported against the
+    # other held at its smallest.
+    longest = max(f for f in VIDEO_FRAMES if fits(f, smallest_w, smallest_h))
+    largest = max((s for s in VIDEO_SIZES if fits(smallest_frames, *s)),
+                  key=lambda s: s[0] * s[1])
+    return {
+        "runnable": True,
+        "budget_gb": round(budget, 1),
+        "weights_gb": round(weights_gb, 1),
+        "longest_frames_at_min_size": longest,
+        "largest_size_at_min_frames": list(largest),
+    }

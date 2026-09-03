@@ -18,6 +18,7 @@ from .agent.graph import ExecutionGraph
 from .agent.orchestrator import orchestrator
 from .agent.tools import TOOL_SPECS
 from .catalog import get_catalog, get_entry
+from .chat import build_chat_payload
 from .config import settings
 from .downloader import download_manager
 from .engines import engine_manager
@@ -28,6 +29,7 @@ from . import music_engine as music_engine_mod
 from .music_engine import music_engine
 from . import narration_engine as narration_engine_mod
 from .narration_engine import narration_engine
+from . import video_engine as video_engine_mod
 
 app = FastAPI(title="Uncloud Engine")
 app.add_middleware(
@@ -168,9 +170,14 @@ def system_budget(frames: int = 0, width: int = 0, height: int = 0,
     job is refused with a message, but a discrete GPU can take the machine down
     with it.
     """
-    from .budget import estimate_video_gb, memory_budget, resident_weights_gb
+    from .budget import (estimate_video_gb, memory_budget, resident_weights_gb,
+                         video_capability)
 
     out: dict = {"budget": memory_budget()}
+    # Whether this machine can run video at all, independent of the job asked
+    # for — the Video tab is hidden below this floor rather than failing the
+    # same way on every setting.
+    out["video"] = video_capability(weights_gb or resident_weights_gb(model_path))
     if frames and width and height:
         # Measure what stays resident rather than trusting a folder size: the
         # text encoder is the bulk of the folder and is freed before denoising.
@@ -432,7 +439,7 @@ def engine_status() -> dict:
 class ChatBody(BaseModel):
     messages: list[dict]
     temperature: float = 0.7
-    max_tokens: int | None = None
+    max_tokens: int = 1024
 
 
 @app.post("/api/chat", dependencies=[Depends(require_token)])
@@ -444,9 +451,16 @@ async def chat(body: ChatBody) -> StreamingResponse:
 
     async def relay() -> Any:
         async with httpx.AsyncClient(timeout=None) as client:
-            payload = {"messages": body.messages, "temperature": body.temperature, "stream": True}
-            if body.max_tokens:
-                payload["max_tokens"] = body.max_tokens
+            payload = build_chat_payload(
+                body.messages,
+                temperature=body.temperature,
+                max_tokens=body.max_tokens,
+                engine=engine_manager.active.engine,
+            )
+            # Plain Chat is a direct-answer surface. Thinking-capable GGUF
+            # templates otherwise default to an unlimited private-reasoning
+            # pass, and small Qwen variants can loop there without ever
+            # emitting an answer. Agent planning remains a separate endpoint.
             async with client.stream(
                 "POST", f"{engine_manager.active.base_url}/v1/chat/completions", json=payload,
             ) as resp:
@@ -685,26 +699,27 @@ def get_image_output(job_id: str) -> FileResponse:
 class VideoGenerateBody(BaseModel):
     model_path: str
     prompt: str
-    negative_prompt: str = ""
-    frames: int = 49
-    fps: int = 24
-    width: int = 512
-    height: int = 320
-    steps: int = 30
-    guidance: float = 3.0
+    negative_prompt: str = video_engine_mod.DEFAULT_NEGATIVE_PROMPT
+    frames: int = video_engine_mod.DEFAULT_FRAMES
+    fps: int = video_engine_mod.DEFAULT_FPS
+    width: int = video_engine_mod.DEFAULT_W
+    height: int = video_engine_mod.DEFAULT_H
+    steps: int = video_engine_mod.DEFAULT_STEPS
+    guidance: float = video_engine_mod.DEFAULT_GUIDANCE
     seed: int | None = None
 
 
 @app.get("/api/video/options", dependencies=[Depends(require_token)])
 def video_options() -> dict:
-    from . import video_engine as ve
-
     return {
-        "default_frames": ve.DEFAULT_FRAMES,
-        "default_fps": ve.DEFAULT_FPS,
-        "default_width": ve.DEFAULT_W,
-        "default_height": ve.DEFAULT_H,
-        "max_pixels": ve.MAX_PIXELS,
+        "default_frames": video_engine_mod.DEFAULT_FRAMES,
+        "default_fps": video_engine_mod.DEFAULT_FPS,
+        "default_width": video_engine_mod.DEFAULT_W,
+        "default_height": video_engine_mod.DEFAULT_H,
+        "default_steps": video_engine_mod.DEFAULT_STEPS,
+        "default_guidance": video_engine_mod.DEFAULT_GUIDANCE,
+        "default_negative_prompt": video_engine_mod.DEFAULT_NEGATIVE_PROMPT,
+        "max_pixels": video_engine_mod.MAX_PIXELS,
     }
 
 

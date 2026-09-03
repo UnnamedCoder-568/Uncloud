@@ -17,22 +17,27 @@ const FRAME_CHOICES = [
 ];
 
 const SIZES = [
-  { w: 448, h: 256, label: '448×256' },
-  { w: 512, h: 320, label: '512×320' },
-  { w: 640, h: 384, label: '640×384' },
-  { w: 704, h: 480, label: '704×480' },
+  { w: 448, h: 256, label: '448×256', tier: 'Draft' },
+  { w: 512, h: 320, label: '512×320', tier: 'Draft' },
+  { w: 640, h: 384, label: '640×384', tier: 'Preview' },
+  { w: 704, h: 480, label: '704×480', tier: 'Balanced' },
+  { w: 960, h: 544, label: '960×544', tier: 'Sharp' },
+  { w: 1216, h: 704, label: '1216×704', tier: 'Max detail' },
 ];
+
+const QUALITY_NEGATIVE = 'worst quality, inconsistent motion, blurry, jittery, distorted';
 
 export default function VideoView() {
   const [models, setModels] = useState<LocalModel[]>([]);
   const [model, setModel] = useState<LocalModel | null>(null);
+  const [libraryLoading, setLibraryLoading] = useState(true);
   const [pickerOpen, setPickerOpen] = useState(false);
 
   const [prompt, setPrompt] = useState('');
-  const [negative, setNegative] = useState('');
+  const [negative, setNegative] = useState(QUALITY_NEGATIVE);
   const [frames, setFrames] = useState(49);
-  const [size, setSize] = useState(SIZES[1]);
-  const [steps, setSteps] = useState(30);
+  const [size, setSize] = useState(SIZES[4]);
+  const [steps, setSteps] = useState(40);
 
   // Checked before starting, not discovered during. macOS refuses an oversized
   // allocation and the job dies with a message; a machine with a discrete GPU
@@ -44,7 +49,7 @@ export default function VideoView() {
       .then((b) => { if (!cancelled) setBudget(b); })
       .catch(() => undefined);
     return () => { cancelled = true; };
-  }, [frames, size.w, size.h, model?.size_gb]);
+  }, [frames, size.w, size.h, model?.path]);
   const [guidance, setGuidance] = useState(3.0);
 
   const [job, setJob] = useState<VideoJob | null>(null);
@@ -52,19 +57,45 @@ export default function VideoView() {
   const lastUrl = useRef<string | null>(null);
 
   useEffect(() => {
-    getLibrary().then((list) => {
-      const v = list.filter((m) => m.category === 'video');
-      setModels(v);
-      setModel((p) => p ?? v[0] ?? null);
-    });
+    let cancelled = false;
+    let retryTimer: number | undefined;
+    const loadModels = async (attempt = 0) => {
+      try {
+        const list = await getLibrary();
+        if (cancelled) return;
+        const v = list.filter((m) => m.category === 'video');
+        setModels(v);
+        setModel((p) => p ?? v[0] ?? null);
+        if (v.length === 0 && attempt < 2) {
+          retryTimer = window.setTimeout(() => void loadModels(attempt + 1), 800);
+          return;
+        }
+        setLibraryLoading(false);
+      } catch {
+        if (cancelled) return;
+        if (attempt < 2) {
+          retryTimer = window.setTimeout(() => void loadModels(attempt + 1), 800);
+        } else {
+          setLibraryLoading(false);
+        }
+      }
+    };
+    void loadModels();
     // Take the engine's defaults rather than duplicating them here.
     getVideoOptions()
       .then((o) => {
         setFrames(o.default_frames);
+        setSteps(o.default_steps);
+        setGuidance(o.default_guidance);
+        setNegative(o.default_negative_prompt);
         const match = SIZES.find((s) => s.w === o.default_width && s.h === o.default_height);
         if (match) setSize(match);
       })
       .catch(() => undefined);
+    return () => {
+      cancelled = true;
+      if (retryTimer !== undefined) window.clearTimeout(retryTimer);
+    };
   }, []);
 
   useEffect(() => {
@@ -95,6 +126,29 @@ export default function VideoView() {
   const busy = !!job && !job.done;
   const pct = job && job.total_steps ? (job.step / job.total_steps) * 100 : 0;
 
+  // A machine under the floor is told so once, rather than failing the same
+  // way on every combination of length and size it tries.
+  if (budget?.video && !budget.video.runnable) {
+    return (
+      <div className="h-full flex items-center justify-center p-8">
+        <div className="max-w-md text-center">
+          <Film size={28} className="mx-auto mb-4 text-[var(--text-faint)]" />
+          <h2 className="text-sm mb-2">Video needs more memory than this Mac has</h2>
+          <p className="text-[11px] text-[var(--text-faint)] leading-relaxed">
+            {budget.video.reason} A single job can use about{' '}
+            {budget.video.budget_gb} GB here, and the shortest draft clip needs
+            more than that before it renders a frame.
+          </p>
+          <p className="text-[11px] text-[var(--text-faint)] leading-relaxed mt-3">
+            Image, Music and Voice are unaffected — they run in a fraction of
+            the memory. Video models are held whole while they denoise, so
+            there is no smaller setting that would make this one fit.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="h-full flex">
       <div className="w-[320px] shrink-0 border-r border-[var(--border-soft)] overflow-y-auto p-4 flex flex-col gap-5">
@@ -105,7 +159,7 @@ export default function VideoView() {
             className="mt-1.5 w-full flex items-center justify-between text-xs px-3 py-2 rounded-lg bg-[var(--bg-inset)] hover:bg-[var(--bg-inset)]/70 transition"
           >
             <span className={model ? '' : 'text-[var(--text-faint)]'}>
-              {model ? model.name : 'No video model installed'}
+              {model ? model.name : libraryLoading ? 'Finding video models…' : 'No video model installed'}
             </span>
             <ChevronDown size={13} className="text-[var(--text-faint)]" />
           </button>
@@ -160,14 +214,15 @@ export default function VideoView() {
                   size.label === s.label ? 'bg-[var(--bg-raised)] text-white' : 'bg-[var(--bg-inset)] text-[var(--text-faint)] hover:text-[var(--text-dim)]'
                 }`}
               >
-                {s.label}
+                <span className="block">{s.label}</span>
+                <span className="block text-[9px] opacity-60 mt-0.5">{s.tier}</span>
               </button>
             ))}
           </div>
           <p className="mt-1.5 text-[10px] text-[var(--text-faint)] leading-relaxed">
-            Resolution is the expensive axis, not length: a 10s clip needs about
-            1 GB more than a 4s one. Past ~10s the model drifts, having been trained
-            on shorter clips, so quality gives out before memory does.
+            960×544 is the sharp everyday preset; 704×480 is the faster balance.
+            Max detail is slower but still guarded by the live memory check. Past
+            ~10s the model can drift, so quality gives out before memory does.
           </p>
         </div>
 
@@ -198,7 +253,7 @@ export default function VideoView() {
           <input
             value={negative}
             onChange={(e) => setNegative(e.target.value)}
-            placeholder="blurry, distorted, watermark"
+            placeholder={QUALITY_NEGATIVE}
             className="mt-1.5 w-full bg-[var(--bg-inset)] rounded-lg px-2.5 py-2 text-xs outline-none placeholder:text-[var(--text-faint)]"
           />
         </div>
@@ -256,6 +311,11 @@ export default function VideoView() {
             placeholder="A slow drone shot over a foggy pine forest at dawn, mist moving between the trees…"
             className="mt-1.5 w-full h-24 bg-[var(--bg-inset)] rounded-lg px-3 py-3 text-sm outline-none resize-none leading-relaxed placeholder:text-[var(--text-faint)]"
           />
+          <p className="mt-2 text-[10px] text-[var(--text-faint)] leading-relaxed">
+            Describe one continuous shot in chronological order: camera movement,
+            main subject, action, then scene details. Crowded scenes are harder for
+            this 2B model, so keep important actions explicit.
+          </p>
         </div>
 
         <div className="flex-1 min-h-0 px-6 pb-6 flex items-center justify-center">
@@ -300,7 +360,9 @@ export default function VideoView() {
             </div>
           ) : (
             <p className="text-sm text-[var(--text-faint)]">
-              {models.length ? 'Describe a shot and generate.' : 'No video model installed.'}
+              {models.length
+                ? 'Describe a shot and generate.'
+                : libraryLoading ? 'Finding video models…' : 'No video model installed.'}
             </p>
           )}
         </div>
