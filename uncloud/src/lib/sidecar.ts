@@ -166,10 +166,14 @@ export interface ChatChunk {
   text: string;
 }
 
-export async function* streamChat(messages: ChatMessage[]): AsyncGenerator<ChatChunk> {
+export async function* streamChat(
+  messages: ChatMessage[], signal?: AbortSignal,
+): AsyncGenerator<ChatChunk> {
   const url = `${await baseUrl()}/api/chat`;
   const headers = { ...(await authHeaders()), 'Content-Type': 'application/json' };
-  const resp = await fetch(url, { method: 'POST', headers, body: JSON.stringify({ messages }) });
+  const resp = await fetch(url, {
+    method: 'POST', headers, body: JSON.stringify({ messages }), signal,
+  });
   if (!resp.ok || !resp.body) throw new Error(`Chat failed: ${resp.status}`);
 
   const reader = resp.body.getReader();
@@ -568,7 +572,9 @@ export const CHAT_IMAGE_SYSTEM_PROMPT =
   'sketch, a diagram, a visual example — write [[image: a detailed description ' +
   'of the picture]] on its own line. It is rendered as a small preview beside ' +
   'your reply. Use it sparingly, and never for something a sentence explains ' +
-  'better. Keep writing normally around it.';
+  'better. Keep writing normally around it. Answer directly and finish your ' +
+  'answer in this turn. Never narrate that you are waiting, preparing, or about ' +
+  'to answer.';
 
 /**
  * A fast, deliberately low-fidelity render for thinking with, not a finished
@@ -615,6 +621,9 @@ export interface VideoOptions {
   default_fps: number;
   default_width: number;
   default_height: number;
+  default_steps: number;
+  default_guidance: number;
+  default_negative_prompt: string;
   max_pixels: number;
 }
 
@@ -694,6 +703,17 @@ export interface MemoryBudget {
   estimate?: { tokens: number; weights_gb: number; sequence_gb: number; total_gb: number };
   fits?: boolean;
   tight?: boolean;
+  /** Whether this machine can run video at all, independent of the job asked
+   *  for. Below the floor every setting fails identically, which reads as a
+   *  broken feature rather than a machine that is too small. */
+  video?: {
+    runnable: boolean;
+    budget_gb: number;
+    weights_gb?: number;
+    reason?: string;
+    longest_frames_at_min_size?: number;
+    largest_size_at_min_frames?: [number, number];
+  };
 }
 
 /** What a job will cost against what the machine can give. Asked before
