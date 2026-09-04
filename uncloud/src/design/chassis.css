@@ -396,6 +396,38 @@
 .composer-send:hover:not(:disabled) { background: var(--accent-hover); }
 .composer-send:disabled { opacity: 0.3; cursor: not-allowed; }
 
+/* ----------------------------------------------------------------- forms
+ * The small set a properties panel needs. Here rather than in either app,
+ * because the editor is shared and a number field that is styled in one
+ * product and bare in the other is the drift this file exists to prevent. */
+.field { display: flex; flex-direction: column; gap: var(--space-2); }
+.field > .label { font-size: var(--text-sm); font-weight: 500; color: var(--text-2); }
+
+.input {
+  font: inherit;
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  min-height: 34px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text);
+  transition: border-color var(--duration-fast) var(--ease);
+}
+.input::placeholder { color: var(--text-3); }
+.input:hover { border-color: var(--text-3); }
+.input:focus { outline: none; border-color: var(--accent); }
+/* A colour well should look like the colour, not like a text box. */
+.input[type="color"] { padding: 2px; height: 34px; cursor: pointer; }
+
+.thumb {
+  width: 100%; aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
+  display: block;
+}
+
 /* --------------------------------------------------------- reading column
  * The same width as the composer, so the first answer arrives directly above
  * where the question was typed and nothing shifts sideways. */
