@@ -92,6 +92,20 @@ export default function AgentView() {
       setError('Connection to Uncloud engine lost');
       setPhase('error');
     };
+    // A clean close fires onclose, NOT onerror. Without this the view sat in
+    // "planning" for ever with no spinner and no message, because nothing
+    // moved it out of that state — which is how a dropped socket became a
+    // blank screen.
+    ws.onclose = () => {
+      setPhase((current) => {
+        if (current === 'planning' || current === 'running') {
+          setError('The engine stopped before the plan finished. '
+                   + 'It may have run out of memory loading the planning model.');
+          return 'error';
+        }
+        return current;
+      });
+    };
   }
 
   const orderedTasks = graph ? Object.values(graph.tasks) : [];
@@ -163,7 +177,29 @@ export default function AgentView() {
           </div>
         )}
 
-        {graph && (
+        {/* A plan with no steps rendered as an empty page: the model returned
+            nothing usable and the interface said nothing at all. Whatever else
+            is true, the user asked for something and deserves an answer. */}
+        {graph && orderedTasks.length === 0 && phase !== 'planning' && (
+          <div className="max-w-2xl card p-4 flex flex-col gap-2">
+            <div className="flex items-center gap-2 text-sm text-amber-400">
+              <XCircle size={14} /> No plan came back
+            </div>
+            <p className="text-xs text-[var(--text-dim)] leading-relaxed">
+              The planning model did not produce any steps for this goal. That
+              usually means the goal needs a tool Uncloud does not have, or the
+              model is too small to plan it. Uncloud can search and read the
+              web, read and write files, run shell commands and inspect a
+              browser's console — it cannot drive another application's
+              interface.
+            </p>
+            <p className="text-xs text-[var(--text-faint)]">
+              Try a smaller, more concrete goal, or a larger planning model.
+            </p>
+          </div>
+        )}
+
+        {graph && orderedTasks.length > 0 && (
           <div className="max-w-2xl flex flex-col gap-3">
             {orderedTasks.map((task) => (
               <div key={task.id} className="card p-4 flex gap-3">
