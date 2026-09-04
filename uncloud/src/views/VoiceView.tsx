@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import Panes from '../components/Panes';
 import VoiceTools from './VoiceTools';
 import NarrationView from './NarrationView';
 
@@ -31,8 +32,14 @@ export default function VoiceView() {
         ))}
       </div>
       <div className="flex-1 min-h-0">
-        {tab === 'narrate' && <NarrationView />}
-        {tab === 'tools' && <VoiceTools />}
+        <Panes
+          active={tab}
+          className="h-full"
+          panes={[
+            { id: 'narrate', render: () => <NarrationView /> },
+            { id: 'tools', render: () => <VoiceTools /> },
+          ]}
+        />
       </div>
     </div>
   );

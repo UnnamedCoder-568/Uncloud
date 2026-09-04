@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import Panes from '../components/Panes';
 import ImageGenerate from './ImageGenerate';
 import ProductStudio from './ProductStudio';
 import ImageEdit from './ImageEdit';
@@ -35,10 +36,16 @@ export default function ImageView() {
       </div>
 
       <div className="flex-1 min-h-0">
-        {tab === 'generate' && <ImageGenerate />}
-        {tab === 'product' && <ProductStudio />}
-        {tab === 'edit' && <ImageEdit />}
-        {tab === 'characters' && <CharactersView />}
+        <Panes
+          active={tab}
+          className="h-full"
+          panes={[
+            { id: 'generate', render: () => <ImageGenerate /> },
+            { id: 'product', render: () => <ProductStudio /> },
+            { id: 'edit', render: () => <ImageEdit /> },
+            { id: 'characters', render: () => <CharactersView /> },
+          ]}
+        />
       </div>
     </div>
   );
