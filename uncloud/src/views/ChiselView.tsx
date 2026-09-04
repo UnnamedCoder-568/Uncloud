@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { CheckCircle2, XCircle, Loader2, Circle, Send, ShieldAlert, Cpu } from 'lucide-react';
+import { CheckCircle2, XCircle, Loader2, Circle, Send, ShieldAlert, Cpu, Square, MessagesSquare } from 'lucide-react';
 import { agentSocket, getLibrary, startEngine, engineStatus } from '../lib/sidecar';
 import type { LocalModel } from '../lib/sidecar';
 import Dictate from '../components/Dictate';
 import { useSettings } from '../lib/useSettings';
+import { onHandoffSignal, takeHandoff } from '../lib/handoff';
 
 interface AgentTask {
   id: string;
@@ -21,7 +22,7 @@ interface AgentGraph {
   start_node_ids: string[];
 }
 
-export default function AgentView() {
+export default function ChiselView() {
   const [goal, setGoal] = useState('');
   const [graph, setGraph] = useState<AgentGraph | null>(null);
   const [phase, setPhase] = useState<'idle' | 'planning' | 'running' | 'done' | 'error'>('idle');
@@ -29,6 +30,14 @@ export default function AgentView() {
   const settings = useSettings();
   const deviceAccess = settings?.agent_device_access ?? true;
   const wsRef = useRef<WebSocket | null>(null);
+  //: Whether the last close was asked for. A close the user requested
+  //  must not be reported as the engine having died.
+  const stopped = useRef(false);
+  //: The conversation a handed-over goal came from, held in a ref rather than
+  //  state: it is read once when the socket opens and never rendered, so
+  //  putting it in state would only cost a re-render per handoff.
+  const contextRef = useRef<{ role: string; content: string }[]>([]);
+  const [handedOver, setHandedOver] = useState(0);
 
   // The agent plans with whichever text model the engine has loaded. That was
   // invisible here, so an unloaded engine looked like a broken agent.
@@ -57,10 +66,12 @@ export default function AgentView() {
     }
   }
 
-  async function run() {
-    if (!goal.trim() || phase === 'planning' || phase === 'running') return;
+  async function run(override?: string) {
+    const target = (override ?? goal).trim();
+    if (!target || phase === 'planning' || phase === 'running') return;
     setError(null);
     setGraph(null);
+    stopped.current = false;
     setPhase('planning');
     const ws = await agentSocket();
     wsRef.current = ws;
@@ -69,7 +80,12 @@ export default function AgentView() {
     // "connection lost" overwrites whatever the engine actually said — a failed
     // task, or "no text model is loaded".
     let spoke = false;
-    ws.onopen = () => ws.send(JSON.stringify({ goal: goal.trim() }));
+    ws.onopen = () => ws.send(JSON.stringify({
+      goal: target,
+      // The conversation this was handed over from, when it was. Background
+      // for the planner, so it does not plan from one sentence in isolation.
+      context: contextRef.current,
+    }));
     ws.onmessage = (ev) => {
       spoke = true;
       const msg = JSON.parse(ev.data);
@@ -99,6 +115,9 @@ export default function AgentView() {
     ws.onclose = () => {
       setPhase((current) => {
         if (current === 'planning' || current === 'running') {
+          // A close the user asked for is not a fault, and must not be
+          // reported as one.
+          if (stopped.current) return 'idle';
           setError('The engine stopped before the plan finished. '
                    + 'It may have run out of memory loading the planning model.');
           return 'error';
@@ -108,14 +127,51 @@ export default function AgentView() {
     };
   }
 
+  /** Stop the run.
+   *
+   *  A plan can take minutes, and a plan going the wrong way is obvious long
+   *  before it finishes. Without this the only way out was to close the
+   *  window, which loses the whole conversation with it.
+   */
+  function stop() {
+    stopped.current = true;
+    try { wsRef.current?.close(); } catch { /* already gone */ }
+    wsRef.current = null;
+    setPhase('idle');
+    setError(null);
+  }
+
+  const busy = phase === 'planning' || phase === 'running';
+  //: A conversation handed over from Chat. The goal goes in the field so it
+  //  is visible and editable, the conversation rides along as background, and
+  //  the work starts — the point of handing over is not to arrive at a filled
+  //  form and have to press a button.
+  useEffect(() => {
+    const claim = () => {
+      const handoff = takeHandoff();
+      if (!handoff) return;
+      setGoal(handoff.goal);
+      contextRef.current = handoff.context;
+      setHandedOver(handoff.context.length);
+      void run(handoff.goal);
+    };
+    // On mount as well as on the signal: the first handoff is what CREATES
+    // this view, so the signal fires before there is anything here to hear it.
+    claim();
+    return onHandoffSignal(claim);
+    // run is redefined every render, and depending on it would resubscribe on
+    // every keystroke; the subscription must outlive that.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const orderedTasks = graph ? Object.values(graph.tasks) : [];
 
   return (
     <div className="h-full flex flex-col">
       <header className="px-6 pt-5 pb-4 border-b border-[var(--border-soft)]">
-        <h1 className="text-2xl font-semibold mb-1">Agent</h1>
+        <h1 className="text-2xl font-semibold mb-1">Chisel</h1>
         <p className="text-xs text-[var(--text-faint)]">
-          Give Uncloud a goal — it plans a task graph with your local model and executes it with real tools.
+          Give it a goal — it plans the work with your local model and carries it out with real tools. Hand a conversation over from Chat and it picks up where you left off.
         </p>
         {!deviceAccess && (
           <div className="flex items-center gap-1.5 text-[11px] text-amber-400/90 mt-2">
@@ -226,6 +282,23 @@ export default function AgentView() {
       </div>
 
       <div className="p-4 border-t border-[var(--border-soft)]">
+        {/* What came across from Chat. Silent context is untrustworthy
+            context: the plan will read differently because of it, so the fact
+            that it is there has to be visible, and droppable. */}
+        {handedOver > 0 && (
+          <div className="max-w-2xl mx-auto mb-2 flex items-center gap-2 text-[11px] text-[var(--text-faint)]">
+            <MessagesSquare size={12} />
+            <span>
+              Carrying {handedOver} {handedOver === 1 ? 'message' : 'messages'} from Chat as background
+            </span>
+            <button
+              className="underline underline-offset-2 hover:text-[var(--text-dim)]"
+              onClick={() => { contextRef.current = []; setHandedOver(0); }}
+            >
+              drop
+            </button>
+          </div>
+        )}
         <div className="max-w-2xl mx-auto flex items-end gap-2 card px-3 py-2 focus-within:border-[#3a3a42]">
           <textarea
             value={goal}
@@ -245,12 +318,19 @@ export default function AgentView() {
             onText={(t) => setGoal((v) => (v ? v.trimEnd() + ' ' + t : t))}
             className="mb-0.5"
           />
+          {/* One button, as in Chat: send while idle, stop while working. A
+              separate stop button is dead weight for most of its life and is
+              never where the hand already is. */}
           <button
-            onClick={run}
-            disabled={!goal.trim() || phase === 'planning' || phase === 'running'}
+            // Wrapped: passing `run` directly hands React's click event in as
+            // the goal override, and the goal becomes a SyntheticEvent.
+            onClick={() => (busy ? stop() : run())}
+            disabled={!busy && !goal.trim()}
+            title={busy ? 'Stop' : 'Start'}
+            aria-label={busy ? 'Stop' : 'Start'}
             className="w-8 h-8 rounded-full btn-accent flex items-center justify-center disabled:opacity-30 transition shrink-0"
           >
-            <Send size={14} />
+            {busy ? <Square size={11} fill="currentColor" /> : <Send size={14} />}
           </button>
         </div>
       </div>

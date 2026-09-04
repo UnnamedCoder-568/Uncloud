@@ -977,13 +977,20 @@ async def agent_ws(websocket: WebSocket) -> None:
     await websocket.accept()
     try:
         raw = await websocket.receive_text()
-        goal = json.loads(raw).get("goal", "")
+        payload = json.loads(raw)
+        goal = payload.get("goal", "")
+        # A conversation handed over from Chat, so the plan is made knowing
+        # what was already discussed rather than from one sentence in
+        # isolation. Optional: a goal typed here directly has none.
+        context = payload.get("context") or None
+        if not isinstance(context, list):
+            context = None
         if not goal:
             await websocket.send_json({"type": "error", "message": "Empty goal"})
             return
 
         await websocket.send_json({"type": "planning"})
-        graph: ExecutionGraph = await orchestrator.plan(goal)
+        graph: ExecutionGraph = await orchestrator.plan(goal, context)
 
         async def on_update(g: ExecutionGraph) -> None:
             await websocket.send_json({"type": "graph", "graph": g.to_dict()})

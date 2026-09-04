@@ -61,7 +61,7 @@ const SECTIONS: Section[] = [
     ],
   },
   {
-    id: 'agent', icon: Workflow, title: 'Agent', lead:
+    id: 'chisel', icon: Workflow, title: 'Chisel', lead:
       'Give it a goal; it plans the steps and carries them out with real tools.',
     points: [
       { term: 'What it can reach', body: 'Files, a shell, web search and reading, a real browser it can click and type in, image generation, and vision when a suitable model is loaded.' },
@@ -78,8 +78,8 @@ const SECTIONS: Section[] = [
     points: [
       { term: 'Models folder', body: 'Change it any time. Uncloud rescans and picks up whatever is there.' },
       { term: 'Hugging Face token', body: 'Optional. Speeds up downloads and unlocks gated models such as FLUX.2.' },
-      { term: 'Agent device access', body: 'Off by default. Turning it on lets the agent run shell commands anywhere on your machine.' },
-      { term: 'Agent tools', body: 'Which groups of tools the agent can see. Left automatic it follows the loaded model\u2019s size, which is usually what you want.' },
+      { term: 'Chisel device access', body: 'Off by default. Turning it on lets Chisel run shell commands anywhere on your machine.' },
+      { term: 'Chisel tools', body: 'Which groups of tools Chisel can see. Left automatic it follows the loaded model\u2019s size, which is usually what you want.' },
       { term: 'Keep this machine awake', body: 'Stops the machine sleeping while a job runs. Worth turning on before a long narration \u2014 otherwise the display times out and the job is suspended half-finished.' },
     ],
   },
@@ -140,7 +140,7 @@ export default function GuideView() {
               ['Generated output', '~/.uncloud/outputs/'],
               ['Saved characters', '~/.uncloud/characters/'],
               ['Saved voices', '~/.uncloud/voices/'],
-              ['Agent workspace', '~/.uncloud/workspace/'],
+              ['Chisel workspace', '~/.uncloud/workspace/'],
               ['Skills', '~/.uncloud/skills/'],
               ['Settings', '~/.uncloud/settings.json'],
             ].map(([k, v]) => (

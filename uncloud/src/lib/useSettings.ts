@@ -8,7 +8,7 @@ import type { Settings } from './sidecar';
  * Views in Uncloud mount once and stay mounted, so anything read in a
  * `useEffect(..., [])` is a snapshot of whenever the app started. Settings are
  * edited on a different screen, which meant a toggle could be on in Settings
- * and still read as off everywhere else — Agent mode kept warning that it was
+ * and still read as off everywhere else — Chisel kept warning that it was
  * sandboxed after full device access had been granted.
  *
  * Re-reads when the window regains focus, which covers switching to Settings

@@ -3,10 +3,11 @@ import Sidebar from './components/Sidebar';
 import type { View } from './components/Sidebar';
 import TitleBar, { NavControls, TitleBarSlot } from './components/TitleBar';
 import Panes from './components/Panes';
+import { onHandoffSignal } from './lib/handoff';
 import Onboarding from './views/Onboarding';
 import ChatView from './views/ChatView';
 import ModelsView from './views/ModelsView';
-import AgentView from './views/AgentView';
+import ChiselView from './views/ChiselView';
 import SettingsView from './views/SettingsView';
 import ImageView from './views/ImageView';
 import VoiceView from './views/VoiceView';
@@ -23,7 +24,7 @@ import Wordmark from './components/Wordmark';
 const PANES: { id: View; render: () => React.ReactElement }[] = [
   { id: 'chat', render: () => <ChatView /> },
   { id: 'models', render: () => <ModelsView /> },
-  { id: 'agent', render: () => <AgentView /> },
+  { id: 'chisel', render: () => <ChiselView /> },
   { id: 'image', render: () => <ImageView /> },
   { id: 'video', render: () => <VideoView /> },
   { id: 'music', render: () => <MusicView /> },
@@ -64,6 +65,12 @@ export default function App() {
       return { stack, at: stack.length - 1 };
     });
   }, []);
+
+  // Handing a conversation to Chisel takes you there. Filling a field on a
+  // screen the user is not looking at is indistinguishable from nothing having
+  // happened. It goes through the nav stack like any other move, so Back
+  // returns to the conversation.
+  useEffect(() => onHandoffSignal(() => setView('chisel')), [setView]);
 
   const goBack = useCallback(
     () => setNav((n) => (n.at > 0 ? { ...n, at: n.at - 1 } : n)), []);

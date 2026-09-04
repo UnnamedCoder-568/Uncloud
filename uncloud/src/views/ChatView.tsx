@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { ChevronDown, ArrowUp, Square, Mic, Volume2, VolumeX, Loader2 } from 'lucide-react';
+import { ChevronDown, ArrowUp, Square, Mic, Volume2, VolumeX, Loader2, Hammer } from 'lucide-react';
 import { TitleBarPortal } from '../components/TitleBar';
 import { Cog } from '../components/Wordmark';
+import Markdown from '../components/Markdown';
+import { fromConversation, sendToChisel } from '../lib/handoff';
 import { getLibrary, startEngine, engineStatus, streamChat, transcribeAudio, speakText, IMAGE_MARKER, CHAT_IMAGE_SYSTEM_PROMPT, quickImagePreview} from '../lib/sidecar';
 import type { LocalModel, ChatMessage } from '../lib/sidecar';
 
@@ -255,6 +257,21 @@ export default function ChatView() {
             <span>Speak</span>
           </button>
 
+          {/* Hand the conversation to Chisel. Only once there is something to
+              hand over, and never while the model is still writing — the last
+              message is what becomes the goal, and half of it is not a goal. */}
+          {messages.some((m) => m.role === 'user') && (
+            <button
+              onClick={() => sendToChisel(fromConversation(messages))}
+              disabled={generating}
+              title="Continue this in Chisel, carrying the conversation"
+              className="pill"
+            >
+              <Hammer size={15} />
+              <span>Chisel</span>
+            </button>
+          )}
+
           <div className="composer-spacer" />
 
           <button
@@ -360,16 +377,22 @@ export default function ChatView() {
                     </div>
                   </details>
                 )}
-                <div
-                  className={
-                    m.role === 'user'
-                      ? 'bg-[var(--bg-raised)] border border-[var(--border)] rounded-2xl rounded-br-sm px-4 py-2.5 text-sm'
-                      : 'text-sm text-[var(--text)] whitespace-pre-wrap leading-relaxed px-1'
-                  }
-                >
-                  {m.content.replace(IMAGE_MARKER, '').trimEnd()
-                    || (m.reasoning ? null : <span className="spinner" />)}
-                </div>
+                {/* The user's own words go through verbatim: they typed
+                    them, and reinterpreting an asterisk they meant literally
+                    would be presumptuous. The model's answer is markdown,
+                    because that is what it wrote whether or not anything was
+                    rendering it. */}
+                {m.role === 'user' ? (
+                  <div className="bg-[var(--bg-raised)] border border-[var(--border)] rounded-2xl rounded-br-sm px-4 py-2.5 text-sm whitespace-pre-wrap">
+                    {m.content.replace(IMAGE_MARKER, '').trimEnd()}
+                  </div>
+                ) : (
+                  <div className="text-sm text-[var(--text)] px-1">
+                    {m.content.replace(IMAGE_MARKER, '').trimEnd()
+                      ? <Markdown>{m.content.replace(IMAGE_MARKER, '').trimEnd()}</Markdown>
+                      : (m.reasoning ? null : <span className="spinner" />)}
+                  </div>
+                )}
                 {(previews[i] || []).map((p, k) => (
                   <div key={k} className="mt-2 max-w-[280px]">
                     {p.url ? (
