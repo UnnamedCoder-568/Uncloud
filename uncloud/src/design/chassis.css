@@ -334,7 +334,10 @@
   border: 0; outline: none; resize: none;
   background: transparent;
   color: var(--text);
-  font: inherit; font-size: var(--text-md);
+  /* The same size as the conversation above it. It was --text-md, two pixels
+     larger than every message, which reads as the field being a different
+     kind of thing rather than as the next line of the same conversation. */
+  font: inherit; font-size: var(--text-base);
   line-height: 1.5;
   padding: var(--space-2) var(--space-1);
   max-height: 40vh;   /* beyond this it scrolls; growth must not evict the work */

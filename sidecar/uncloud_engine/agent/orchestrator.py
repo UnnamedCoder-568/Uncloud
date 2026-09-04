@@ -117,8 +117,45 @@ def _resolve_refs(args: dict[str, Any], graph: ExecutionGraph) -> dict[str, Any]
     return {k: sub(v) for k, v in args.items()}
 
 
+#: How much of a handed-over conversation to carry into planning.
+#:
+#: A long chat would otherwise crowd out the tool list in a small model's
+#: context window, and the planner would start inventing tools because it could
+#: no longer see the real ones. The tail is what matters: the work being asked
+#: for is at the end of the conversation, not the beginning.
+CONTEXT_BUDGET_CHARS = 6000
+
+
+def _context_block(context: list[dict] | None) -> str:
+    """The conversation a goal was handed over from, as background.
+
+    Marked as background explicitly. Without that the planner reads a
+    transcript as a series of new instructions and plans the whole
+    conversation again rather than the one thing that was asked for.
+    """
+    if not context:
+        return ""
+    lines: list[str] = []
+    for turn in context:
+        role = str(turn.get("role", "")).strip()
+        content = str(turn.get("content", "")).strip()
+        if not content or role not in ("user", "assistant"):
+            continue
+        who = "User" if role == "user" else "Assistant"
+        lines.append(f"{who}: {content}")
+
+    text = "\n\n".join(lines)
+    if len(text) > CONTEXT_BUDGET_CHARS:
+        text = "…\n\n" + text[-CONTEXT_BUDGET_CHARS:]
+    return (
+        "\n\nBACKGROUND — the conversation this was handed over from. It is "
+        "context for understanding the goal, not a list of things to do. Plan "
+        "only for the goal above.\n\n" + text
+    )
+
+
 class Orchestrator:
-    async def plan(self, goal: str) -> ExecutionGraph:
+    async def plan(self, goal: str, context: list[dict] | None = None) -> ExecutionGraph:
         if not engine_manager.active:
             raise RuntimeError("No text model is loaded. Start one from the Chat tab first.")
 
@@ -132,7 +169,7 @@ class Orchestrator:
                     json={
                         "messages": [
                             {"role": "system", "content": system},
-                            {"role": "user", "content": goal},
+                            {"role": "user", "content": goal + _context_block(context)},
                         ],
                         "temperature": 0.2,
                         "stream": False,

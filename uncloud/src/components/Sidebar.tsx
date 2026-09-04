@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 
 export type View =
-  | 'chat' | 'models' | 'agent' | 'image' | 'video' | 'music' | 'voice'
+  | 'chat' | 'models' | 'chisel' | 'image' | 'video' | 'music' | 'voice'
   | 'outputs' | 'guide' | 'settings';
 
 type Icon = React.ComponentType<{ size?: number; strokeWidth?: number }>;
@@ -26,7 +26,7 @@ const GROUPS: { label?: string; items: { id: View; label: string; icon: Icon }[]
     items: [
       { id: 'chat', label: 'Chat', icon: MessageSquare },
       { id: 'models', label: 'Models', icon: Boxes },
-      { id: 'agent', label: 'Agent', icon: Workflow },
+      { id: 'chisel', label: 'Chisel', icon: Workflow },
     ],
   },
   {

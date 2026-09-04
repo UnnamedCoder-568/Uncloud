@@ -78,7 +78,7 @@ export default function SettingsView() {
   async function toggleDeviceAccess() {
     if (!settings) return;
     const next = !settings.agent_device_access;
-    if (next && !confirm('Agent Mode will be able to run shell commands and read/write anywhere on this Mac, not just its workspace folder. Continue?')) {
+    if (next && !confirm('Chisel will be able to run shell commands and read/write anywhere on this Mac, not just its workspace folder. Continue?')) {
       return;
     }
     await setDeviceAccess(next);
@@ -216,9 +216,9 @@ export default function SettingsView() {
         <section className="card p-4">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-sm mb-1">Agent full device access</h2>
+              <h2 className="text-sm mb-1">Chisel full device access</h2>
               <p className="text-[11px] text-[var(--text-faint)] max-w-sm">
-                Off by default: Agent Mode's shell and filesystem tools are scoped to
+                Off by default: Chisel's shell and filesystem tools are scoped to
                 <code className="font-mono"> ~/.otto/workspace</code>. Turning this on lets the agent
                 touch your whole Mac when you give it a goal.
               </p>
@@ -256,7 +256,7 @@ export default function SettingsView() {
           <section className="card p-4">
             <div className="flex items-start justify-between gap-4 mb-3">
               <div>
-                <h2 className="text-sm mb-1">Agent tools</h2>
+                <h2 className="text-sm mb-1">Chisel tools</h2>
                 <p className="text-[11px] text-[var(--text-faint)] max-w-sm">
                   Every tool's description goes into the planner's prompt, so a smaller
                   model plans better against fewer of them. Left automatic, the set is
