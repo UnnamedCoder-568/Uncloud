@@ -130,6 +130,10 @@ class EngineManager:
         return {
             "running": True, "model_path": self.active.model_path,
             "engine": self.active.engine, "port": self.active.port,
+            # So the interface can offer image attachment against a model that
+            # can actually receive one, and say why when it cannot — rather
+            # than accepting the picture and having the model ignore it.
+            "supports_vision": self.supports_vision,
         }
 
 
