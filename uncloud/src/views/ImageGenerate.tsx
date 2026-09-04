@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ChevronDown, Loader2, Shuffle, SlidersHorizontal, Sparkles, UserRound, UserRoundPlus } from 'lucide-react';
 import { getLibrary, generateImage, editImage, getImageJob, fetchImageBlobUrl,
          listCharacters, saveCharacter } from '../lib/sidecar';
 import Dictate from '../components/Dictate';
 import SaveActions from '../components/SaveActions';
 import type { LocalModel, ImageJob, Character } from '../lib/sidecar';
+import { onCharacterListChange } from '../lib/characters-changed';
 
 // Models that carry their own settings win: a distilled checkpoint run at the
 // 25-step default is a minute of work for a picture it makes in four.
@@ -98,8 +99,15 @@ export default function ImageGenerate() {
   const encoderApplies =
     !!encoder && (model?.engine === 'diffusers' || model?.engine === 'flux2-profile');
 
-  const loadCharacters = () => listCharacters().then(setCharacters).catch(() => undefined);
-  useEffect(() => { loadCharacters(); }, []);
+  const loadCharacters = useCallback(
+    () => listCharacters().then(setCharacters).catch(() => undefined), []);
+  useEffect(() => {
+    loadCharacters();
+    // Saved in the Characters tab, chosen here. Without this the picker only
+    // caught up after a restart, which made the feature look broken to anyone
+    // who used it in the obvious order.
+    return onCharacterListChange(loadCharacters);
+  }, [loadCharacters]);
 
   // Identity carries far more strongly from a reference image than from a
   // description, but only a model that can edit from a reference can use one.

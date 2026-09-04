@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ImagePlus, Loader2, Plus, Trash2, UserRound, X } from 'lucide-react';
 import { listCharacters, saveCharacter, deleteCharacter, uploadImage, characterReferenceUrl } from '../lib/sidecar';
+import { characterListChanged } from '../lib/characters-changed';
 import Dictate from '../components/Dictate';
 import type { Character } from '../lib/sidecar';
 
@@ -59,6 +60,7 @@ export default function CharactersView() {
       await saveCharacter({ name: name.trim(), description: description.trim(), reference_path: refPath });
       reset();
       await refresh();
+      characterListChanged();
     } catch (e) {
       alert(`Save failed: ${e}`);
     } finally {
@@ -71,6 +73,7 @@ export default function CharactersView() {
     await deleteCharacter(slug);
     setThumbs((t) => { const n = { ...t }; delete n[slug]; return n; });
     refresh();
+    characterListChanged();
   }
 
   return (
