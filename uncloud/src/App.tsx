@@ -108,8 +108,12 @@ export default function App() {
   const handleEngineReady = useCallback(() => setEngineUp(true), []);
 
   const splash = (
-    <div className="h-screen w-screen flex items-center justify-center">
-      <Wordmark size={40} spinning />
+    <div className="h-screen w-screen flex items-center justify-center dot-ground">
+      {/* The one hero moment the application has: a glow behind the mark
+          while the engine comes up, and nothing else. */}
+      <span className="glow">
+        <Wordmark size={40} spinning />
+      </span>
     </div>
   );
 

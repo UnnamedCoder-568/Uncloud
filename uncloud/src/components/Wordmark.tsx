@@ -135,7 +135,12 @@ export default function Wordmark({
 
   return (
     <span
-      className={`inline-flex items-center select-none ${className}`}
+      //: The gradient is clipped to the text of the WORD, not of each letter.
+      //  Per-glyph it would repeat the whole amber-to-rose sweep six times over
+      //  and read as noise; across the word it reads as one mark, and matches
+      //  the cog sitting in the middle of it. The cog is an SVG with its own
+      //  fill, so text-fill-color leaves it alone.
+      className={`inline-flex items-center select-none grad-text ${className}`}
       style={{ fontSize: size, lineHeight: 1 }}
       role="img"
       aria-label="Uncloud"
