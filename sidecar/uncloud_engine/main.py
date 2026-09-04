@@ -978,7 +978,7 @@ class ConversationBody(BaseModel):
 
 
 @app.get("/api/conversations", dependencies=[Depends(require_token)])
-def list_conversations() -> dict:
+def list_conversations() -> dict:  # noqa: D401
     """Every saved conversation, newest first.
 
     `unreadable` is reported rather than hidden. A conversation the user
@@ -986,7 +986,10 @@ def list_conversations() -> dict:
     damaged — and it is the symptom of a key that changed, which they would
     otherwise have no way to notice.
     """
-    result = conversations_store.listing()
+    try:
+        result = conversations_store.listing()
+    except conversations_store.EncryptionUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     return {"conversations": result.conversations, "unreadable": result.unreadable,
             "secure": result.secure, "backend": result.backend}
 
