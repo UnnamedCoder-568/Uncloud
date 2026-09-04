@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Sidebar from './components/Sidebar';
 import type { View } from './components/Sidebar';
 import TitleBar, { NavControls, TitleBarSlot } from './components/TitleBar';
+import Panes from './components/Panes';
 import Onboarding from './views/Onboarding';
 import ChatView from './views/ChatView';
 import ModelsView from './views/ModelsView';
@@ -44,7 +45,6 @@ export default function App() {
   const [engineUp, setEngineUp] = useState<boolean | null>(null);
   const [ready, setReady] = useState(false);
   const [onboarded, setOnboarded] = useState(false);
-  const [visited, setVisited] = useState<Set<View>>(() => new Set<View>(['chat']));
   const [engineError, setEngineError] = useState<string | null>(null);
   const [railOpen, setRailOpen] = useState(loadRailOpen);
   const [slot, setSlot] = useState<HTMLDivElement | null>(null);
@@ -105,10 +105,6 @@ export default function App() {
       .catch((e) => setEngineError(String(e)));
   }, [engineUp]);
 
-  useEffect(() => {
-    setVisited((v) => (v.has(view) ? v : new Set(v).add(view)));
-  }, [view]);
-
   const handleEngineReady = useCallback(() => setEngineUp(true), []);
 
   const splash = (
@@ -150,20 +146,16 @@ export default function App() {
           {!railOpen && controls}
           <div ref={setSlot} className="flex items-center gap-1 flex-1 min-w-0" />
         </TitleBar>
-        {PANES.map(({ id, render }) =>
-          // Mounted on first visit and kept mounted after. Unmounting on every
-          // tab change threw away whatever was in the view — a prompt being
-          // written, options set, a generation still running — which made
-          // switching tabs mid-job destructive.
-          visited.has(id) ? (
-            <div key={id} className={view === id ? 'flex-1 min-h-0' : 'hidden'}>
-              {/* Only the visible pane may write to the title bar. */}
-              <TitleBarSlot value={view === id ? slot : null}>
-                {render()}
-              </TitleBarSlot>
-            </div>
-          ) : null,
-        )}
+        <Panes
+          active={view}
+          panes={PANES}
+          className="flex-1 min-h-0"
+          // Only the visible pane may write to the title bar. Portalled content
+          // is not inside the pane, so `hidden` would not stop it.
+          wrap={(pane, isActive) => (
+            <TitleBarSlot value={isActive ? slot : null}>{pane}</TitleBarSlot>
+          )}
+        />
       </main>
     </div>
   );
