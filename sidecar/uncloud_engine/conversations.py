@@ -89,8 +89,31 @@ def _path(conversation_id: str) -> Path:
     return DIR / f"{conversation_id}.enc"
 
 
+class EncryptionUnavailable(RuntimeError):
+    """The crypto library is not installed in this environment.
+
+    Possible after an update on a machine that was offline when the new
+    dependency would have been fetched. The engine still starts and everything
+    else still works — conversations are the one thing that cannot, and saying
+    so plainly is better than a stack trace or, worse, quietly writing them in
+    the clear.
+    """
+
+
+def _aesgcm():
+    try:
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    except ImportError as exc:  # pragma: no cover - environment-dependent
+        raise EncryptionUnavailable(
+            "Conversations are encrypted, and the library that does it is not "
+            "installed. Reconnect to the internet and reopen Uncloud — it "
+            "finishes setting itself up on launch."
+        ) from exc
+    return AESGCM
+
+
 def _encrypt(payload: dict) -> bytes:
-    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    AESGCM = _aesgcm()
 
     nonce = secrets.token_bytes(NONCE_BYTES)
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -101,7 +124,7 @@ def _encrypt(payload: dict) -> bytes:
 
 
 def _decrypt(raw: bytes) -> dict:
-    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    AESGCM = _aesgcm()
 
     if not raw.startswith(MAGIC):
         raise ValueError("not an Uncloud conversation file")
@@ -201,5 +224,5 @@ def create(messages: list[dict] | None = None,
                         model_path=model_path)
 
 
-__all__ = ["Conversation", "KeyUnavailable", "create", "delete", "listing",
-           "load", "save", "title_from"]
+__all__ = ["Conversation", "EncryptionUnavailable", "KeyUnavailable", "create",
+           "delete", "listing", "load", "save", "title_from"]

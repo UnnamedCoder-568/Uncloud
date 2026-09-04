@@ -259,8 +259,35 @@ pub fn install_engine(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Refresh the installed engine from the one in this bundle.
+///
+/// Runs on every launch, not only from the setup screen. Without it an update
+/// shipped a new application around an engine installed months ago: the window
+/// was new, every fix behind an engine change was not, and nothing said so.
+/// The symptom is a feature that is plainly in the release and plainly absent
+/// from the running app.
+///
+/// Failure is not fatal. A copy that cannot be made — a permissions problem, a
+/// full disk — leaves the previous engine in place, which still works. Refusing
+/// to start would turn a stale engine into no engine.
+fn refresh_engine(app: &AppHandle) {
+    if dev_sidecar_dir().is_some() {
+        return; // a live checkout is the source of truth; never overwrite it
+    }
+    let Some(bundled) = bundled_engine(app) else { return };
+    let target = engine_home();
+    if !target.join("pyproject.toml").is_file() {
+        return; // nothing installed yet — setup will do the first install
+    }
+    if let Err(e) = copy_dir_all(&bundled, &target) {
+        eprintln!("could not refresh the engine from the bundle: {e}");
+    }
+}
+
 /// Spawn the engine and block until it prints its handshake line.
 pub fn spawn_sidecar(app: &AppHandle) -> Result<(Child, SidecarInfo), String> {
+    // Before resolving, so the engine about to run is this build's.
+    refresh_engine(app);
     let dir = resolve_engine_dir(app)
         .ok_or_else(|| "The Uncloud engine is not installed yet.".to_string())?;
     let uv = find_uv(app).ok_or_else(|| {
