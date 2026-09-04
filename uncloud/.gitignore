@@ -22,3 +22,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Vendored uv binaries (~50 MB each), staged per platform at build time by
+# scripts/stage_uv.sh. The README beside them is tracked; the binaries are not.
+src-tauri/binaries/uv
+src-tauri/binaries/uv-aarch64
+src-tauri/binaries/uv-x86_64
