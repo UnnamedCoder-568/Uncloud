@@ -218,8 +218,11 @@ export default function ChatView() {
               send(input, autoSpeak);
             }
           }}
-          placeholder={activeModel ? 'Ask anything' : 'Load a model to start'}
-          disabled={!activeModel}
+          placeholder={activeModel ? 'Ask anything' : 'Ask anything — pick a model above to send'}
+          // Deliberately NOT disabled. Writing a question while a model is
+          // still loading is normal; a field that refuses input reads as a
+          // broken application rather than as a precondition. Only sending is
+          // gated.
           rows={1}
           className="composer-input"
         />

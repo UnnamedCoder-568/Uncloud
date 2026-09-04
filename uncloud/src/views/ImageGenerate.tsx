@@ -313,8 +313,11 @@ export default function ImageGenerate() {
               <textarea
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
-                placeholder={model ? 'A cabin in the woods at dusk, cinematic lighting…' : 'Install an image model first'}
-                disabled={!model}
+                placeholder={model
+                  ? 'A cabin in the woods at dusk, cinematic lighting…'
+                  : 'Describe your image — install a model from Models to render it'}
+                // Not disabled: a prompt is worth writing before the model that
+                // will render it exists. Only the render button is gated.
                 rows={2}
                 className="flex-1 bg-transparent outline-none resize-none text-sm py-1 placeholder:text-[var(--text-faint)]"
               />
