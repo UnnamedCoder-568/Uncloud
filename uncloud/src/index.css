@@ -74,11 +74,17 @@
   --accent-hover: #FBBF24;
   --accent-on:    #1F1500;
 
-  /* The two-stop mark. Reserved for the wordmark and the one hero moment per
-     screen; it is not UI chrome. A gradient on a button reads as a demo. */
-  --accent-2:    #DC2626;
+  /* The two-stop mark, in the Magic UI register.
+   *
+   * Still reserved for the wordmark and the one hero moment per screen rather
+   * than for chrome: a gradient on every button stops meaning anything. The
+   * red was lightened to a rose, because gradient TYPE has to stay legible
+   * along its whole length and #DC2626 was 3.3:1 against the ground — fine as
+   * a border, not as a word. */
+  --accent-2:    #FB7185;   /* 5.98:1 on --bg — AA */
   --accent-grad: linear-gradient(135deg, var(--accent), var(--accent-2));
   --grad:        linear-gradient(90deg, var(--accent), var(--accent-2));
+  --accent-glow: 0 0 40px -8px color-mix(in srgb, var(--accent) 55%, transparent);
 
   --sans:    'Inter', system-ui, sans-serif;
   --mono:    'JetBrains Mono', ui-monospace, Menlo, monospace;

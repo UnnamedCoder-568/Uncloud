@@ -450,3 +450,135 @@
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+
+/* ============================================================== highlights
+ * The Magic UI register: gradient type, lit borders, a sweep across a
+ * surface, a soft glow behind one thing that matters.
+ *
+ * Only the MECHANISM is here. Every one of these reads `--accent` and
+ * `--accent-2`, which each product defines for itself, so the two apps share
+ * the technique and not the colour — the same arrangement as the rest of the
+ * chassis.
+ *
+ * These are opt-in classes rather than styling applied to `.btn` or `.card`.
+ * Applied to everything, a gradient stops meaning anything and the interface
+ * reads as a demo rather than as a tool; applied to the wordmark and the one
+ * hero moment on a screen, it reads as care. Use them sparingly.
+ */
+
+/* Type that carries the brand gradient. Falls back to the flat accent where
+   background-clip: text is unavailable, rather than to invisible text. */
+.grad-text {
+  color: var(--accent);
+  background-image: linear-gradient(100deg, var(--accent), var(--accent-2, var(--accent)));
+  background-clip: text;
+  -webkit-background-clip: text;
+}
+@supports (-webkit-background-clip: text) or (background-clip: text) {
+  .grad-text { color: transparent; -webkit-text-fill-color: transparent; }
+}
+
+/* A hairline border in the brand gradient, and a light travelling round it.
+ *
+ * Both are drawn as a ring in an ::after that sits ABOVE the element's own
+ * background, not as a background on the element itself. That matters: a
+ * background-based gradient border is silently defeated by any later rule
+ * setting `background` — `.card` does exactly that — and the failure is a
+ * plain grey border that looks deliberate. A ring cannot be overwritten by a
+ * background, so these work on anything.
+ *
+ * The mask keeps only the 1px frame: two full-size layers composited so the
+ * content box is cut out of the border box.
+ */
+.grad-border, .beam { position: relative; }
+.grad-border::after, .beam::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  padding: 1px;
+  border-radius: inherit;
+  pointer-events: none;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  -webkit-mask-composite: xor;
+}
+.grad-border::after {
+  background: linear-gradient(135deg, var(--accent), var(--accent-2, var(--accent)));
+}
+/* The conic gradient rotates, which is what makes the light follow the
+   corners instead of sliding along a straight edge. */
+.beam::after {
+  background: conic-gradient(from var(--beam-angle, 0deg),
+              transparent 0turn 0.72turn,
+              var(--accent) 0.86turn,
+              var(--accent-2, var(--accent)) 0.94turn,
+              transparent 1turn);
+  animation: beam-spin 4s linear infinite;
+}
+@property --beam-angle {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+@keyframes beam-spin { to { --beam-angle: 360deg; } }
+
+/* A sweep of light across a surface, on hover. */
+.shine { position: relative; overflow: hidden; }
+.shine::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(100deg, transparent 20%,
+              color-mix(in srgb, var(--accent) 22%, transparent) 50%, transparent 80%);
+  pointer-events: none;
+}
+.shine:hover::after { animation: shine-sweep 900ms ease-out; }
+@keyframes shine-sweep { to { transform: translateX(100%); } }
+
+/* A soft coloured light behind one element.
+ *
+ * Sized in absolute pixels rather than as a percentage of the element: -20% of
+ * a short wide card is a few pixels top and bottom, which is not a glow, and
+ * the same rule then behaves differently on every element it is used on. */
+.glow { position: relative; isolation: isolate; }
+.glow::before {
+  content: '';
+  position: absolute;
+  inset: -32px;
+  z-index: -1;
+  border-radius: inherit;
+  background: radial-gradient(closest-side,
+              color-mix(in srgb, var(--accent) 55%, transparent) 0%,
+              color-mix(in srgb, var(--accent-2, var(--accent)) 30%, transparent) 55%,
+              transparent 100%);
+  filter: blur(34px);
+  opacity: 0.85;
+  pointer-events: none;
+}
+
+/* Patterned grounds, faded out at the edges so they never reach a border and
+   read as a texture rather than as a table. */
+.dot-ground {
+  background-image: radial-gradient(var(--border-strong) 1px, transparent 1px);
+  background-size: 18px 18px;
+  mask-image: radial-gradient(70% 60% at 50% 40%, #000 20%, transparent 100%);
+  -webkit-mask-image: radial-gradient(70% 60% at 50% 40%, #000 20%, transparent 100%);
+}
+.grid-ground {
+  background-image:
+    linear-gradient(to right, var(--border) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--border) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: radial-gradient(70% 60% at 50% 40%, #000 10%, transparent 100%);
+  -webkit-mask-image: radial-gradient(70% 60% at 50% 40%, #000 10%, transparent 100%);
+}
+
+/* Nothing above is load-bearing, so all of it stops for anyone who has asked
+   for less movement. A travelling light is exactly what that setting is for. */
+@media (prefers-reduced-motion: reduce) {
+  .beam::after { animation: none; }
+  .shine:hover::after { animation: none; }
+}
