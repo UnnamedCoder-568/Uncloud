@@ -703,33 +703,35 @@ TOOL_GROUPS: dict[str, dict] = {
     },
 }
 
-# Chosen by model size on disk, as a rough stand-in for how much planning the
-# model can carry. Deliberately conservative: a confused plan wastes far more
-# time than a missing tool, and the user can always switch a group on.
-_AUTO_TIERS = [
-    (8.0,  ["files", "shell", "web", "skills"]),
-    (20.0, ["files", "shell", "web", "skills", "memory", "browser", "vision", "video"]),
-]
 _AUTO_FULL = list(TOOL_GROUPS)
 
 
 def auto_groups(model_path: str | None) -> list[str]:
-    """Pick a tool set from the loaded model's size on disk."""
-    size_gb = 0.0
-    if model_path:
-        p = Path(model_path)
-        try:
-            if p.is_file():
-                size_gb = p.stat().st_size / (1024 ** 3)
-            elif p.is_dir():
-                size_gb = sum(
-                    f.stat().st_size for f in p.rglob("*") if f.is_file()
-                ) / (1024 ** 3)
-        except OSError:
-            size_gb = 0.0
-    for ceiling, groups in _AUTO_TIERS:
-        if size_gb and size_gb < ceiling:
-            return list(groups)
+    """Every tool, for every model.
+
+    This used to withhold tool groups below a size threshold — under 8 GB got
+    four groups, under 20 GB got eight, and only above that did a model see
+    everything. The reasoning was that a small model plans badly with a long
+    tool list.
+
+    It was the wrong call, and wrong in both directions. Size is not ability:
+    it handed Vision to a 12 GB text-only model that cannot see, and withheld
+    the browser from a sharp 7B one that could have driven it. It also froze
+    the product against the future — every model released from now on is
+    better at its size than the one that set the threshold, and a capability
+    withheld by a number written today is a capability no new model can ever
+    reach.
+
+    So: if a model has the ability to use something, let it. A model that
+    plans badly with a long tool list produces a bad plan, which is visible,
+    recoverable, and the user's to judge. A capability silently unavailable is
+    none of those things.
+
+    The user can still narrow this by hand in Settings — that is a choice they
+    make, not one made for them. `model_path` is kept in the signature because
+    the caller has it and a future version may report what a model declares it
+    can do; it is deliberately not consulted to guess.
+    """
     return list(_AUTO_FULL)
 
 

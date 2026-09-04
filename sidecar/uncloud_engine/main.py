@@ -5,6 +5,7 @@ import json
 import re
 import secrets
 import sys
+import time
 import uuid
 from pathlib import Path
 from typing import Any
@@ -19,6 +20,7 @@ from .agent.orchestrator import orchestrator
 from .agent.tools import TOOL_SPECS
 from .catalog import get_catalog, get_entry
 from .chat import build_chat_payload
+from . import conversations as conversations_store
 from .config import settings
 from .downloader import download_manager
 from .engines import engine_manager
@@ -966,6 +968,88 @@ def list_voices() -> list[str]:
 @app.get("/api/tools", dependencies=[Depends(require_token)])
 def tools() -> list[dict]:
     return TOOL_SPECS
+
+
+# ----------------------------------------------------------- conversations
+class ConversationBody(BaseModel):
+    messages: list[dict] = []
+    title: str | None = None
+    model_path: str | None = None
+
+
+@app.get("/api/conversations", dependencies=[Depends(require_token)])
+def list_conversations() -> dict:
+    """Every saved conversation, newest first.
+
+    `unreadable` is reported rather than hidden. A conversation the user
+    remembers, silently absent from the list, is worse than one shown as
+    damaged — and it is the symptom of a key that changed, which they would
+    otherwise have no way to notice.
+    """
+    result = conversations_store.listing()
+    return {"conversations": result.conversations, "unreadable": result.unreadable,
+            "secure": result.secure, "backend": result.backend}
+
+
+@app.post("/api/conversations", dependencies=[Depends(require_token)])
+def create_conversation(body: ConversationBody) -> dict:
+    conversation = conversations_store.create(body.messages, body.model_path)
+    if body.title:
+        conversation.title = body.title
+    return conversations_store.save(conversation).to_dict()
+
+
+@app.get("/api/conversations/{conversation_id}", dependencies=[Depends(require_token)])
+def read_conversation(conversation_id: str) -> dict:
+    try:
+        conversation = conversations_store.load(conversation_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Not a conversation id")
+    except Exception as exc:  # noqa: BLE001 - a damaged file is not a crash
+        raise HTTPException(
+            status_code=422,
+            detail="This conversation could not be decrypted. It was written "
+                   "with a different key, or the file has been altered.") from exc
+    if conversation is None:
+        raise HTTPException(status_code=404, detail="No such conversation")
+    return conversation.to_dict()
+
+
+@app.put("/api/conversations/{conversation_id}", dependencies=[Depends(require_token)])
+def write_conversation(conversation_id: str, body: ConversationBody) -> dict:
+    """Save, creating the file if this is the first write.
+
+    Deliberately an upsert. The alternative is the client having to create
+    before it can save, and a failed create silently costing the conversation
+    the user is in the middle of.
+    """
+    try:
+        existing = conversations_store.load(conversation_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Not a conversation id")
+    except Exception:  # noqa: BLE001 - overwrite a file we cannot read
+        existing = None
+
+    if existing is None:
+        conversation = conversations_store.Conversation(
+            id=conversation_id, title=body.title or "",
+            created=time.time(), updated=time.time(),
+            messages=body.messages, model_path=body.model_path)
+    else:
+        existing.messages = body.messages
+        existing.model_path = body.model_path or existing.model_path
+        if body.title:
+            existing.title = body.title
+        conversation = existing
+    return conversations_store.save(conversation).to_dict()
+
+
+@app.delete("/api/conversations/{conversation_id}", dependencies=[Depends(require_token)])
+def remove_conversation(conversation_id: str) -> dict:
+    try:
+        return {"deleted": conversations_store.delete(conversation_id)}
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Not a conversation id")
 
 
 # ------------------------------------------------------------------- agent

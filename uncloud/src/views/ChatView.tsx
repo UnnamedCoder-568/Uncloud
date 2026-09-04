@@ -1,11 +1,23 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { ChevronDown, ArrowUp, Square, Mic, Volume2, VolumeX, Loader2, Hammer } from 'lucide-react';
+import { ChevronDown, ArrowUp, Square, Mic, Volume2, VolumeX, Loader2, Hammer, ImagePlus, PanelRight, Plus, X } from 'lucide-react';
 import { TitleBarPortal } from '../components/TitleBar';
 import { Cog } from '../components/Wordmark';
 import Markdown from '../components/Markdown';
 import { fromConversation, sendToChisel } from '../lib/handoff';
-import { getLibrary, startEngine, engineStatus, streamChat, transcribeAudio, speakText, IMAGE_MARKER, CHAT_IMAGE_SYSTEM_PROMPT, quickImagePreview} from '../lib/sidecar';
-import type { LocalModel, ChatMessage } from '../lib/sidecar';
+import Conversations from '../components/Conversations';
+import { getLibrary, startEngine, engineStatus, streamChat, transcribeAudio, speakText, IMAGE_MARKER, CHAT_IMAGE_SYSTEM_PROMPT, quickImagePreview,
+  listConversations, readConversation, writeConversation, deleteConversation } from '../lib/sidecar';
+import type { LocalModel, ChatMessage, ConversationList } from '../lib/sidecar';
+
+/** A conversation id: sixteen hex characters, which is what the engine accepts
+ *  as a filename. `crypto.randomUUID` needs a secure context and is not
+ *  guaranteed everywhere this window can run; `getRandomValues` is, and a
+ *  silent failure here would be a conversation that never saves. */
+function newConversationId(): string {
+  const bytes = new Uint8Array(8);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+}
 
 export default function ChatView() {
   const [models, setModels] = useState<LocalModel[]>([]);
@@ -13,6 +25,16 @@ export default function ChatView() {
   const [loadingModel, setLoadingModel] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  //: Which saved conversation this is. Made on the first send rather than on
+  //  arrival, so opening Chat and changing your mind does not litter the list
+  //  with empty conversations.
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [saved, setSaved] = useState<ConversationList | null>(null);
+  //: Pictures staged for the next message. Data URLs, so a file the user
+  //  moves or deletes afterwards does not empty the conversation later.
+  const [attached, setAttached] = useState<string[]>([]);
+  const [visionOk, setVisionOk] = useState(false);
   const [input, setInput] = useState('');
   const [generating, setGenerating] = useState(false);
   const chatAbort = useRef<AbortController | null>(null);
@@ -91,10 +113,89 @@ export default function ChatView() {
     }
   }
 
+  const refreshSaved = useCallback(
+    () => listConversations().then(setSaved).catch(() => {}), []);
+  useEffect(() => { refreshSaved(); }, [refreshSaved]);
+
+  /** Write the conversation to disk.
+   *
+   *  Called after each reply rather than on a timer or at quit: a crash, a
+   *  force-quit and a flat battery all skip anything scheduled for later, and
+   *  those are exactly the moments this exists for.
+   */
+  const persist = useCallback(async (id: string, turns: ChatMessage[]) => {
+    if (!turns.length) return;
+    try {
+      await writeConversation(id, { messages: turns, model_path: activeModel?.path ?? null });
+      refreshSaved();
+    } catch {
+      // Saving is not the user's job to supervise. A failure here must not
+      // interrupt a conversation that is otherwise working.
+    }
+  }, [activeModel, refreshSaved]);
+
+  const startNew = useCallback(() => {
+    setMessages([]);
+    setConversationId(null);
+    setAttached([]);
+    setInput('');
+  }, []);
+
+  const openSaved = useCallback(async (id: string) => {
+    try {
+      const conversation = await readConversation(id);
+      setMessages(conversation.messages);
+      setConversationId(conversation.id);
+      setAttached([]);
+    } catch {
+      // A conversation that will not decrypt is already reported in the list;
+      // failing to open it must not blank the one on screen.
+    }
+  }, []);
+
+  const removeSaved = useCallback(async (id: string) => {
+    await deleteConversation(id).catch(() => {});
+    if (id === conversationId) startNew();
+    refreshSaved();
+  }, [conversationId, startNew, refreshSaved]);
+
+  /** Whether the loaded model can receive a picture at all. */
+  useEffect(() => {
+    let cancelled = false;
+    engineStatus()
+      .then((st) => { if (!cancelled) setVisionOk(!!st.supports_vision); })
+      .catch(() => { if (!cancelled) setVisionOk(false); });
+    return () => { cancelled = true; };
+  }, [activeModel]);
+
+  const attachImages = useCallback(() => {
+    const picker = document.createElement('input');
+    picker.type = 'file';
+    picker.accept = 'image/*';
+    picker.multiple = true;
+    picker.onchange = () => {
+      for (const file of Array.from(picker.files ?? [])) {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const url = String(reader.result || '');
+          if (url.startsWith('data:image/')) setAttached((a) => [...a, url]);
+        };
+        reader.readAsDataURL(file);
+      }
+    };
+    picker.click();
+  }, []);
+
   async function send(text: string, speakReply: boolean) {
-    if (!text.trim() || !activeModel || generating) return;
-    const next = [...messages, { role: 'user', content: text.trim() } as ChatMessage];
+    // A picture on its own is a perfectly good question — "what is this?" is
+    // implied — so an empty box with an attachment still sends.
+    if ((!text.trim() && !attached.length) || !activeModel || generating) return;
+    const images = attached;
+    const next = [...messages, {
+      role: 'user', content: text.trim(), ...(images.length ? { images } : {}),
+    } as ChatMessage];
     setMessages(next);
+    setAttached([]);
     setInput('');
     setGenerating(true);
     setMessages((m) => [...m, { role: 'assistant', content: '' }]);
@@ -126,6 +227,13 @@ export default function ChatView() {
       // Fire and forget: the reply is already readable, and a preview
       // takes seconds during which the user should not be blocked.
       void renderPreviews(assistantIndex, full);
+
+      // Saved now the exchange is complete. The id is minted on the first
+      // save rather than when the view opens, so opening Chat and changing
+      // your mind does not leave an empty conversation in the list.
+      const id = conversationId ?? newConversationId();
+      if (!conversationId) setConversationId(id);
+      void persist(id, [...next, { role: 'assistant', content: full } as ChatMessage]);
 
       if (speakReply && full.trim()) {
         setSpeaking(true);
@@ -210,6 +318,27 @@ export default function ChatView() {
   const composer = (
     <div className="composer-inner">
       <div className="composer-card">
+        {/* What is going with the next message. Shown before sending, and
+            removable: attaching the wrong screenshot is easy and noticing
+            after the model has answered is too late. */}
+        {attached.length > 0 && (
+          <div className="flex flex-wrap gap-2 px-1 pb-2">
+            {attached.map((url, i) => (
+              <div key={i} className="relative">
+                <img src={url} alt="" className="h-14 w-14 object-cover rounded-lg
+                                                 border border-[var(--border)]" />
+                <button
+                  className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-[var(--bg-inset)]
+                             border border-[var(--border)] flex items-center justify-center"
+                  title="Remove"
+                  onClick={() => setAttached((a) => a.filter((_, k) => k !== i))}
+                >
+                  <X size={9} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
         <textarea
           ref={field}
           value={input}
@@ -245,6 +374,22 @@ export default function ChatView() {
             </button>
           )}
 
+          {/* Attaching a picture. Offered whatever the model, and refused with
+              a reason when it cannot see — hiding the button would leave
+              somebody hunting for a feature that is present. */}
+          <button
+            onClick={attachImages}
+            disabled={!activeModel || !visionOk}
+            title={visionOk
+              ? 'Attach an image for the model to look at'
+              : 'This model is text-only and cannot see images. Load a vision model '
+                + '(its name usually says VL or Vision) from the Models tab.'}
+            aria-label="Attach an image"
+            className="pill pill-icon"
+          >
+            <ImagePlus size={15} />
+          </button>
+
           {/* Speaking replies is a property of the next message, so it belongs
               beside the field rather than up in the window chrome. */}
           <button
@@ -276,7 +421,7 @@ export default function ChatView() {
 
           <button
             onClick={generating ? stopGenerating : () => send(input, autoSpeak)}
-            disabled={!activeModel || (!generating && !input.trim())}
+            disabled={!activeModel || (!generating && !input.trim() && !attached.length)}
             title={generating ? 'Stop response' : 'Send'}
             aria-label={generating ? 'Stop response' : 'Send'}
             className="composer-send"
@@ -289,7 +434,7 @@ export default function ChatView() {
   );
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full flex flex-col relative">
       {/* The model in play is the window's context, so it lives in the title
           bar rather than in a header of this view's own. */}
       <TitleBarPortal>
@@ -343,6 +488,18 @@ export default function ChatView() {
             </div>
           )}
         </div>
+
+        {/* Starting again, and going back to something. Both belong in the
+            window chrome: they are about WHICH conversation, not about the
+            one on screen. */}
+        <button className="tb-btn" onClick={startNew} title="New conversation"
+                aria-label="New conversation">
+          <Plus size={15} />
+        </button>
+        <button className="tb-btn" onClick={() => setDrawerOpen(true)}
+                title="Saved conversations" aria-label="Saved conversations">
+          <PanelRight size={15} />
+        </button>
       </TitleBarPortal>
 
       {empty ? (
@@ -383,8 +540,20 @@ export default function ChatView() {
                     because that is what it wrote whether or not anything was
                     rendering it. */}
                 {m.role === 'user' ? (
-                  <div className="bg-[var(--bg-raised)] border border-[var(--border)] rounded-2xl rounded-br-sm px-4 py-2.5 text-sm whitespace-pre-wrap">
-                    {m.content.replace(IMAGE_MARKER, '').trimEnd()}
+                  <div className="bg-[var(--bg-raised)] border border-[var(--border)] rounded-2xl rounded-br-sm px-4 py-2.5 text-sm">
+                    {/* What was actually sent, kept with the turn. Without it
+                        a reopened conversation reads as an answer to nothing. */}
+                    {!!m.images?.length && (
+                      <div className="flex flex-wrap gap-2 mb-2">
+                        {m.images.map((url, k) => (
+                          <img key={k} src={url} alt="" className="max-h-40 rounded-lg
+                                                                   border border-[var(--border)]" />
+                        ))}
+                      </div>
+                    )}
+                    <div className="whitespace-pre-wrap">
+                      {m.content.replace(IMAGE_MARKER, '').trimEnd()}
+                    </div>
                   </div>
                 ) : (
                   <div className="text-sm text-[var(--text)] px-1">
@@ -422,6 +591,16 @@ export default function ChatView() {
           <div className="composer composer-docked">{composer}</div>
         </>
       )}
+
+      <Conversations
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        list={saved}
+        activeId={conversationId}
+        onOpen={openSaved}
+        onNew={startNew}
+        onDelete={removeSaved}
+      />
 
       <audio ref={audioRef} className="hidden" />
     </div>

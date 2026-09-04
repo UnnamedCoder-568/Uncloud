@@ -111,6 +111,10 @@ export interface EngineStatus {
   model_path?: string;
   engine?: string;
   port?: number;
+  /** Whether the loaded model has an image encoder. A text-only model has no
+   *  way to receive pixels, so attaching one has to be refused rather than
+   *  accepted and silently ignored. */
+  supports_vision?: boolean;
 }
 
 export async function getSettings() {
@@ -158,6 +162,57 @@ export interface ChatMessage {
   content: string;
   /** A reasoning model's working, streamed before the answer. */
   reasoning?: string;
+  /** Pictures attached to this turn, as data URLs. Held beside the text
+   *  rather than inside it so the conversation stays readable, the thumbnails
+   *  can be shown, and the wire format is built at send time. */
+  images?: string[];
+}
+
+// ------------------------------------------------------------ conversations
+
+export interface ConversationSummary {
+  id: string;
+  title: string;
+  created: number;
+  updated: number;
+  messages: number;
+  model_path?: string | null;
+}
+
+export interface Conversation extends Omit<ConversationSummary, 'messages'> {
+  messages: ChatMessage[];
+}
+
+export interface ConversationList {
+  conversations: ConversationSummary[];
+  /** Files that exist and could not be decrypted. Shown rather than hidden:
+   *  it is the only symptom of a key that changed. */
+  unreadable: number;
+  /** Whether the key is in the OS keychain rather than a file beside the data. */
+  secure: boolean;
+  backend: string;
+}
+
+export async function listConversations() {
+  return api<ConversationList>('/api/conversations');
+}
+
+export async function readConversation(id: string) {
+  return api<Conversation>(`/api/conversations/${id}`);
+}
+
+export async function writeConversation(
+  id: string,
+  body: { messages: ChatMessage[]; title?: string; model_path?: string | null },
+) {
+  return api<Conversation>(`/api/conversations/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(body),
+  });
+}
+
+export async function deleteConversation(id: string) {
+  return api<{ deleted: boolean }>(`/api/conversations/${id}`, { method: 'DELETE' });
 }
 
 /** A streamed chunk: the answer itself, or the model thinking out loud. */
@@ -166,13 +221,35 @@ export interface ChatChunk {
   text: string;
 }
 
+/** The wire form of a turn.
+ *
+ *  A message with pictures becomes the content ARRAY that vision models
+ *  expect; one without stays a plain string, because a text-only server given
+ *  an array of one text part will often reject it outright. `reasoning` and
+ *  `images` are ours and are dropped here — sending them back would put the
+ *  model's own working into its next prompt as though the user had said it.
+ */
+export function wireMessage(message: ChatMessage) {
+  if (!message.images?.length) {
+    return { role: message.role, content: message.content };
+  }
+  return {
+    role: message.role,
+    content: [
+      { type: 'text', text: message.content },
+      ...message.images.map((url) => ({ type: 'image_url', image_url: { url } })),
+    ],
+  };
+}
+
 export async function* streamChat(
   messages: ChatMessage[], signal?: AbortSignal,
 ): AsyncGenerator<ChatChunk> {
   const url = `${await baseUrl()}/api/chat`;
   const headers = { ...(await authHeaders()), 'Content-Type': 'application/json' };
   const resp = await fetch(url, {
-    method: 'POST', headers, body: JSON.stringify({ messages }), signal,
+    method: 'POST', headers,
+    body: JSON.stringify({ messages: messages.map(wireMessage) }), signal,
   });
   if (!resp.ok || !resp.body) throw new Error(`Chat failed: ${resp.status}`);
 
