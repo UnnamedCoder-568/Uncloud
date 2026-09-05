@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { ChevronDown, ArrowUp, Square, Mic, Volume2, VolumeX, Loader2, Hammer, ImagePlus, PanelRight, Plus, X, Globe } from 'lucide-react';
+import { ChevronDown, ArrowUp, Square, Mic, Volume2, VolumeX, Loader2, Hammer, ImagePlus, PanelRight, Plus, X, Globe,
+  Image as ImageIcon, ImageOff } from 'lucide-react';
 import { TitleBarPortal } from '../components/TitleBar';
 import { Cog } from '../components/Wordmark';
 import Markdown from '../components/Markdown';
@@ -52,6 +53,18 @@ export default function ChatView() {
   const [recording, setRecording] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
   const [autoSpeak, setAutoSpeak] = useState(false);
+  //: Whether replies may include pictures. Off by default: an image on every
+  //  answer costs seconds of the machine per message and answers nothing that
+  //  a sentence did not. Remembered, because it is a preference about how
+  //  replies read rather than a property of one message.
+  const [pictures, setPictures] = useState(() => {
+    try { return localStorage.getItem('uncloud.chat.pictures') === 'on'; }
+    catch { return false; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('uncloud.chat.pictures', pictures ? 'on' : 'off'); }
+    catch { /* a browser refusing storage is not worth an error */ }
+  }, [pictures]);
   const [speaking, setSpeaking] = useState(false);
   const mediaRecorder = useRef<MediaRecorder | null>(null);
   const chunks = useRef<Blob[]>([]);
@@ -98,6 +111,10 @@ export default function ChatView() {
   >({});
 
   async function renderPreviews(index: number, reply: string) {
+    // The switch holds regardless of what the model wrote. A model told not to
+    // draw will still occasionally draw, and the user's setting has to win
+    // that argument rather than merely take part in it.
+    if (!pictures) return;
     const prompts = [...reply.matchAll(IMAGE_MARKER)]
       .map((mm) => mm[1].trim())
       .slice(0, 2);
@@ -234,7 +251,7 @@ export default function ChatView() {
       for (let round = 0; ; round++) {
         full = '';
         for await (const chunk of streamChat(
-          [{ role: 'system', content: chatSystemPrompt() }, ...sent],
+          [{ role: 'system', content: chatSystemPrompt({ pictures }) }, ...sent],
           controller.signal,
         )) {
           if (chunk.kind === 'text') full += chunk.text;
@@ -248,7 +265,11 @@ export default function ChatView() {
           });
         }
 
-        const wanted = findLookups(full);
+        // With pictures off, a model that asks for one anyway is simply not
+        // given one — the switch has to hold whatever the model does with the
+        // prompt, or it is not a switch.
+        const wanted = findLookups(full)
+          .filter((l) => pictures || l.kind !== 'pictures');
         if (!wanted.length) break;
 
         // A model that searches, reads, and searches again is working. One
@@ -498,6 +519,20 @@ export default function ChatView() {
             className="pill pill-icon"
           >
             <ImagePlus size={15} />
+          </button>
+
+          {/* Whether replies may include pictures. Beside Speak because it is
+              the same kind of setting: how the next answer arrives, not what
+              is in it. */}
+          <button
+            onClick={() => setPictures((v) => !v)}
+            title={pictures
+              ? 'Pictures in replies: on — the model may add images'
+              : 'Pictures in replies: off'}
+            className={pictures ? 'pill pill-on' : 'pill'}
+          >
+            {pictures ? <ImageIcon size={15} /> : <ImageOff size={15} />}
+            <span>Pictures</span>
           </button>
 
           {/* Speaking replies is a property of the next message, so it belongs

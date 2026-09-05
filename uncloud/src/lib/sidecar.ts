@@ -684,50 +684,74 @@ export async function webImages(query: string) {
  *  training is two years stale — asked about anything current it answers
  *  confidently from memory, because from the inside there is nothing to
  *  suggest otherwise. Told the date, the same weights hedge, and reach for a
- *  search. The capability was always there; what was missing was the ground
- *  to stand on.
+ *  search.
+ *
+ *  ORDER MATTERS, more than it should. A small model treats the first
+ *  instruction as the loudest, and this prompt used to open with "You can show
+ *  a picture" — so it drew one for nearly every reply, including questions
+ *  about episode numbers where a picture answers nothing. "Use it sparingly"
+ *  was one clause against three sentences of encouragement, and it lost.
+ *  Answering comes first now, and the picture capability comes last and is
+ *  only mentioned when it is switched on.
  */
-export function chatSystemPrompt(now: Date = new Date()): string {
+export function chatSystemPrompt(
+  { now = new Date(), pictures = false }: { now?: Date; pictures?: boolean } = {},
+): string {
   const today = now.toLocaleDateString(undefined, {
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
   });
-  return (
+
+  const parts = [
     `Today is ${today}. The user is on a Mac, running Uncloud, which keeps `
     + 'everything local. Your training finished well before today — assume '
     + 'anything time-sensitive you remember is out of date, and check rather '
-    + 'than guess.\n\n'
-    + CHAT_IMAGE_SYSTEM_PROMPT
-  );
-}
+    + 'than guess.',
 
-export const CHAT_IMAGE_SYSTEM_PROMPT =
-  'You can show a picture. When an image would genuinely help the user — a ' +
-  'sketch, a diagram, a visual example — write [[image: a detailed description ' +
-  'of the picture]] on its own line. It is rendered as a small preview beside ' +
-  'your reply. Use it sparingly, and never for something a sentence explains ' +
-  'better. Keep writing normally around it. Answer directly and finish your ' +
-  'answer in this turn. Never narrate that you are waiting, preparing, or about ' +
-  'to answer.\n\n' +
-  // Chat can reach the web, through the same written-marker mechanism as the
-  // image preview. Not a tool-calling protocol: local servers vary in whether
-  // they support one, and a feature that works on a third of the models a
-  // customer might install is worse than one that works everywhere.
-  'You can look things up on the web. To search, write [[search: your query]] ' +
-  'on its own line. To read a specific page, write [[read: https://…]] on its ' +
-  'own line. Then STOP and write nothing else — the results are fetched and ' +
-  'given to you, and you answer in the next turn.\n' +
-  'To SHOW the user real pictures of something — a place, a person, a product, ' +
-  'a scene from a film — write [[pictures: what to show]] on its own line. ' +
-  'Thumbnails from the web are placed there. Use this when a real photograph ' +
-  'is what helps, and [[image: …]] when an invented illustration is. Neither ' +
-  'when a sentence does the job.\n' +
-  'Look something up whenever the answer depends on current information: ' +
-  'anything recent, any release or version, prices, news, dates, or anything ' +
-  'you are unsure about. Your training has a cutoff and the world has moved ' +
-  'since; guessing from memory about something current is the main way you ' +
-  'will be wrong. Do not look up things that do not change.\n' +
-  'When you answer from what was fetched, say so. When you answer from memory ' +
-  'about something that may have changed, say that too.';
+    'Answer directly and finish your answer in this turn. Never narrate that '
+    + 'you are waiting, preparing, or about to answer.',
+
+    // The web, through the same written-marker mechanism as the image preview.
+    // Not a tool-calling protocol: local servers vary in whether they support
+    // one, and a feature that works on a third of the models a customer might
+    // install is worse than one that works everywhere.
+    'You can look things up on the web. To search, write [[search: your query]] '
+    + 'on its own line. To read a specific page, write [[read: https://…]] on '
+    + 'its own line. Then STOP and write nothing else — the results are fetched '
+    + 'and given to you, and you answer in the next turn.\n'
+    + 'Look something up whenever the answer depends on current information: '
+    + 'anything recent, any release or version, prices, news, dates, or '
+    + 'anything you are unsure about. Your training has a cutoff and the world '
+    + 'has moved since; guessing from memory about something current is the '
+    + 'main way you will be wrong. This includes questions about films, books '
+    + 'and television — episode numbers and titles are exactly the kind of '
+    + 'detail that is easy to reconstruct wrongly and easy to check.\n'
+    + 'When you answer from what was fetched, say so. When you answer from '
+    + 'memory about something that may have changed, say that too.',
+  ];
+
+  //: Only described when the user has asked for it. A capability a model is
+  //  told about is a capability it will use, so the reliable way not to get a
+  //  picture with every reply is not to mention pictures.
+  if (pictures) {
+    parts.push(
+      'You may add a picture, but the default is not to. Most answers are '
+      + 'better without one, and a picture that merely decorates an answer '
+      + 'wastes the reader\'s time and several seconds of their machine.\n'
+      + 'To show real photographs — a place, a person, a product, a real scene '
+      + '— write [[pictures: what to show]] on its own line; thumbnails from '
+      + 'the web are placed there.\n'
+      + 'To draw something that does not exist — a diagram, a sketch, an '
+      + 'invented scene — write [[image: a detailed description]] on its own '
+      + 'line.\n'
+      + 'Do neither when the question is about a fact, a number, a name, a '
+      + 'date, an episode, code, or anything a sentence answers. Ask yourself '
+      + 'whether the reader would be worse off without it; if not, leave it '
+      + 'out.',
+    );
+  }
+
+  return parts.join('\n\n');
+}
 
 /**
  * A fast, deliberately low-fidelity render for thinking with, not a finished
