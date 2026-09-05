@@ -657,6 +657,35 @@ export async function setAgentToolGroups(groups: string[] | null) {
  */
 export const IMAGE_MARKER = /\[\[image:\s*([^\]\n]{3,400})\]\]/gi;
 
+/** Set up one narration engine, streaming its log.
+ *
+ *  Streamed because building the environment takes minutes, and a window that
+ *  says nothing for minutes is indistinguishable from one that has hung.
+ */
+export async function* installNarrationEngine(
+  engine: string,
+): AsyncGenerator<{ line?: string; error?: string; done?: boolean }> {
+  const url = `${await baseUrl()}/api/narration/install`;
+  const headers = { ...(await authHeaders()), 'Content-Type': 'application/json' };
+  const resp = await fetch(url, { method: 'POST', headers, body: JSON.stringify({ engine }) });
+  if (!resp.ok || !resp.body) throw new Error(`Setup failed: ${resp.status}`);
+
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = '';
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    const lines = buf.split('\n');
+    buf = lines.pop() || '';
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue;
+      try { yield JSON.parse(line.slice(6)); } catch { /* partial chunk */ }
+    }
+  }
+}
+
 export async function webSearch(query: string) {
   return apiPost<{ results: string }>('/api/web/search', { query });
 }

@@ -852,6 +852,52 @@ def narration_options(engine: str = Query(default="realtime")) -> dict:
     }
 
 
+class NarrationInstallBody(BaseModel):
+    engine: str = "realtime"
+
+
+@app.post("/api/narration/install", dependencies=[Depends(require_token)])
+async def narration_install(body: NarrationInstallBody) -> StreamingResponse:
+    """Set up one narration engine, streaming the log.
+
+    Streamed rather than awaited, because building the environment takes
+    minutes and a progress bar that says nothing for minutes is
+    indistinguishable from a hang. The same reasoning as the first-run engine
+    install, which already works this way.
+    """
+    name = body.engine
+    if name not in narration_engine_mod.ENGINES:
+        raise HTTPException(status_code=400, detail=f"No engine called {name!r}")
+
+    queue: asyncio.Queue = asyncio.Queue()
+    loop = asyncio.get_running_loop()
+
+    def on_line(line: str) -> None:
+        loop.call_soon_threadsafe(queue.put_nowait, line)
+
+    def run() -> None:
+        try:
+            narration_engine_mod.install_engine(name, on_line)
+            loop.call_soon_threadsafe(queue.put_nowait, "__done__")
+        except Exception as exc:  # noqa: BLE001 - reported to the user, not raised
+            loop.call_soon_threadsafe(queue.put_nowait, f"__error__{exc}")
+
+    async def stream():
+        task = loop.run_in_executor(None, run)
+        while True:
+            line = await queue.get()
+            if line == "__done__":
+                yield 'data: {"done": true}\n\n'
+                break
+            if line.startswith("__error__"):
+                yield f"data: {json.dumps({'error': line[len('__error__'):]})}\n\n"
+                break
+            yield f"data: {json.dumps({'line': line})}\n\n"
+        await task
+
+    return StreamingResponse(stream(), media_type="text/event-stream")
+
+
 class NarrationBody(BaseModel):
     model_dir: str
     text: str

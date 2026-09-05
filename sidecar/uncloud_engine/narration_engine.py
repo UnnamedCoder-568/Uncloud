@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import shutil
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -44,6 +45,63 @@ ENGINES = {
 }
 
 VIBEVOICE_VENV = ENGINES["realtime"]["python"].parent.parent
+
+#: What each engine needs installed into its own environment.
+#:
+#: These were written down in INSTALL.md, where the application cannot reach
+#: them: the interface said "not installed. Expected an interpreter at …" and
+#: left the user holding a path. A capability that ships with the product and
+#: can only be enabled by typing two shell commands found in a document is not
+#: shipped, it is described.
+REQUIREMENTS = {
+    "realtime": "vibevoice @ git+https://github.com/microsoft/VibeVoice",
+    "quality": "vibevoice @ git+https://github.com/vibevoice-community/VibeVoice",
+}
+
+
+def install_engine(name: str, on_line=None) -> None:
+    """Create the environment for one narration engine.
+
+    Two steps, both `uv`: make the interpreter, then install the package. The
+    output is streamed rather than collected, because this takes minutes and a
+    window that says nothing for minutes is indistinguishable from one that has
+    hung.
+    """
+    import subprocess
+
+    spec = ENGINES.get(name)
+    if spec is None:
+        raise ValueError(f"No narration engine called {name!r}")
+    requirement = REQUIREMENTS[name]
+    venv = Path(spec["python"]).parent.parent
+
+    uv = shutil.which("uv") or "uv"
+    steps = [
+        [uv, "venv", str(venv), "--python", "3.12"],
+        [uv, "pip", "install", "--python", str(venv), requirement],
+    ]
+
+    def say(line: str) -> None:
+        if on_line:
+            on_line(line)
+
+    for step in steps:
+        say(f"$ {' '.join(step)}")
+        process = subprocess.Popen(
+            step, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+            cwd=str(_SIDE),
+        )
+        for line in process.stdout or []:
+            say(line.rstrip())
+        if process.wait() != 0:
+            raise RuntimeError(
+                f"Could not set up {spec['label']}. The last command failed; the "
+                f"log above says why.")
+
+    if not engine_available(name):
+        raise RuntimeError(
+            f"{spec['label']} finished installing but its interpreter is still "
+            f"not at {spec['python']}.")
 
 
 from .power import keep_awake
