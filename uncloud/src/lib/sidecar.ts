@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+import { ThinkingSplitter } from './thinking';
 
 export interface SidecarInfo {
   port: number;
@@ -256,6 +257,11 @@ export async function* streamChat(
   const reader = resp.body.getReader();
   const decoder = new TextDecoder();
   let buf = '';
+  // Some models write their reasoning into the answer as <think> tags rather
+  // than into `reasoning_content`. Unsplit, the reader gets several paragraphs
+  // of the model talking to itself — in which it may contradict the answer
+  // that follows — before reaching the answer.
+  const splitter = new ThinkingSplitter();
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
@@ -265,7 +271,9 @@ export async function* streamChat(
     for (const line of lines) {
       if (!line.startsWith('data: ')) continue;
       const data = line.slice(6).trim();
-      if (data === '[DONE]') return;
+      // Anything the splitter was holding back — a reply that ended on a
+      // dangling angle bracket, or mid-thought — belongs to the user.
+      if (data === '[DONE]') { yield* splitter.flush(); return; }
       try {
         const json = JSON.parse(data);
         const d = json.choices?.[0]?.delta;
@@ -274,7 +282,7 @@ export async function* streamChat(
         // hundred tokens and looked like it had hung.
         const thinking = d?.reasoning_content ?? d?.reasoning;
         if (thinking) yield { kind: 'thinking', text: thinking };
-        if (d?.content) yield { kind: 'text', text: d.content };
+        if (d?.content) yield* splitter.push(d.content);
       } catch {
         // ignore partial/malformed chunk
       }

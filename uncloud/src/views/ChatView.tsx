@@ -5,6 +5,7 @@ import { Cog } from '../components/Wordmark';
 import Markdown from '../components/Markdown';
 import { fromConversation, sendToChisel } from '../lib/handoff';
 import Conversations from '../components/Conversations';
+import { splitThinking } from '../lib/thinking';
 import { getLibrary, startEngine, engineStatus, streamChat, transcribeAudio, speakText, IMAGE_MARKER, CHAT_IMAGE_SYSTEM_PROMPT, quickImagePreview,
   listConversations, readConversation, writeConversation, deleteConversation } from '../lib/sidecar';
 import type { LocalModel, ChatMessage, ConversationList } from '../lib/sidecar';
@@ -144,7 +145,14 @@ export default function ChatView() {
   const openSaved = useCallback(async (id: string) => {
     try {
       const conversation = await readConversation(id);
-      setMessages(conversation.messages);
+      // Stored as the model wrote it, tags and all. Splitting on load rather
+      // than on save keeps the file a faithful record of the reply, and means
+      // a conversation saved before this existed opens correctly too.
+      setMessages(conversation.messages.map((m) => {
+        if (m.role !== 'assistant' || m.reasoning) return m;
+        const { thinking, answer } = splitThinking(m.content);
+        return thinking ? { ...m, content: answer, reasoning: thinking } : m;
+      }));
       setConversationId(conversation.id);
       setAttached([]);
     } catch {
