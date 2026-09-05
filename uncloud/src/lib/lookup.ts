@@ -16,7 +16,7 @@
  */
 
 export interface Lookup {
-  kind: 'search' | 'read';
+  kind: 'search' | 'read' | 'pictures';
   /** A query, or a URL. */
   argument: string;
 }
@@ -24,14 +24,17 @@ export interface Lookup {
 //: Tolerant on purpose. Models produce `[[search: x]]`, `[[ search : x ]]`,
 //  `[[Search: x]]` and occasionally wrap the whole thing in backticks; all of
 //  those mean the same thing and none of them should be a missed lookup.
-const MARKER = /\[\[\s*(search|read)\s*:\s*([^\]]+?)\s*\]\]/gi;
+const MARKER = /\[\[\s*(search|read|pictures|images)\s*:\s*([^\]]+?)\s*\]\]/gi;
 
 /** Every lookup a reply asks for, in order, without duplicates. */
 export function findLookups(text: string): Lookup[] {
   const found: Lookup[] = [];
   const seen = new Set<string>();
   for (const match of text.matchAll(MARKER)) {
-    const kind = match[1].toLowerCase() as 'search' | 'read';
+    const raw = match[1].toLowerCase();
+    // `images` is what models reach for about as often as `pictures`, and a
+    // near miss here is a lookup that silently never happens.
+    const kind = (raw === 'images' ? 'pictures' : raw) as Lookup['kind'];
     const argument = match[2].trim();
     if (!argument) continue;
     const key = `${kind}:${argument.toLowerCase()}`;
@@ -60,9 +63,9 @@ export function stripLookups(text: string): string {
 /** What a lookup is called while it runs. Shown to the user, so it says what
  *  is happening to their machine's network connection in plain words. */
 export function describe(lookup: Lookup): string {
-  return lookup.kind === 'search'
-    ? `Searching the web for “${lookup.argument}”`
-    : `Reading ${lookup.argument}`;
+  if (lookup.kind === 'search') return `Searching the web for “${lookup.argument}”`;
+  if (lookup.kind === 'pictures') return `Finding pictures of “${lookup.argument}”`;
+  return `Reading ${lookup.argument}`;
 }
 
 /** How many rounds of looking up one question may take.
@@ -83,7 +86,9 @@ export function resultsTurn(parts: { lookup: Lookup; text: string }[]): string {
   const body = parts.map(({ lookup, text }) => {
     const heading = lookup.kind === 'search'
       ? `Search results for "${lookup.argument}"`
-      : `Contents of ${lookup.argument}`;
+      : lookup.kind === 'pictures'
+        ? `Pictures of "${lookup.argument}"`
+        : `Contents of ${lookup.argument}`;
     // Bounded: a long page would otherwise crowd the question out of a small
     // model's context window, and the answer would drift off the point.
     const clipped = text.length > 6000 ? `${text.slice(0, 6000)}\n…(truncated)` : text;

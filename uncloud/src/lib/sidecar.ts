@@ -167,6 +167,11 @@ export interface ChatMessage {
    *  rather than inside it so the conversation stays readable, the thumbnails
    *  can be shown, and the wire format is built at send time. */
   images?: string[];
+  /** Thumbnails the model asked to show from the web. Shown to the reader and
+   *  never sent back to the model — it cannot see them, and describing them to
+   *  it as though it could is how a model ends up discussing a picture it has
+   *  no access to. */
+  found?: WebImage[];
 }
 
 // ------------------------------------------------------------ conversations
@@ -660,6 +665,18 @@ export async function webRead(url: string) {
   return apiPost<{ text: string }>('/api/web/read', { url });
 }
 
+export interface WebImage {
+  /** Served by the search engine, not the origin site — so showing one does
+   *  not announce the user to whichever site happens to host the picture. */
+  thumbnail: string;
+  source: string;
+  title: string;
+}
+
+export async function webImages(query: string) {
+  return apiPost<{ images: WebImage[] }>('/api/web/images', { query });
+}
+
 /** What the model is told before anything the user says.
  *
  *  Built per turn rather than fixed, because the most useful thing in it is
@@ -699,6 +716,11 @@ export const CHAT_IMAGE_SYSTEM_PROMPT =
   'on its own line. To read a specific page, write [[read: https://…]] on its ' +
   'own line. Then STOP and write nothing else — the results are fetched and ' +
   'given to you, and you answer in the next turn.\n' +
+  'To SHOW the user real pictures of something — a place, a person, a product, ' +
+  'a scene from a film — write [[pictures: what to show]] on its own line. ' +
+  'Thumbnails from the web are placed there. Use this when a real photograph ' +
+  'is what helps, and [[image: …]] when an invented illustration is. Neither ' +
+  'when a sentence does the job.\n' +
   'Look something up whenever the answer depends on current information: ' +
   'anything recent, any release or version, prices, news, dates, or anything ' +
   'you are unsure about. Your training has a cutoff and the world has moved ' +
@@ -720,6 +742,13 @@ export async function quickImagePreview(prompt: string): Promise<string> {
     steps: 6,
     width: 512,
     height: 512,
+    // Which mflux entry point runs this checkpoint, and which base to
+    // configure it as. Omitting them fell back to the FLUX.1 default, so every
+    // FLUX.2 model failed here looking for `text_encoder_2` — a component
+    // FLUX.1 has and FLUX.2 does not. The Image tab always passed these; this
+    // path never did, so the same model worked there and failed here.
+    mflux_cli: img.mflux_cli ?? undefined,
+    mflux_base: img.mflux_base ?? undefined,
   });
 
   for (let i = 0; i < 900; i++) {

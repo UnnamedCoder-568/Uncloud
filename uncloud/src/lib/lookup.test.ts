@@ -69,3 +69,26 @@ describe('results turn', () => {
     expect(turn).toContain('truncated');
   });
 });
+
+describe('picture lookups', () => {
+  it('finds the pictures marker', () => {
+    expect(findLookups('[[pictures: Frieren anime]]'))
+      .toEqual([{ kind: 'pictures', argument: 'Frieren anime' }]);
+  });
+
+  it('accepts "images" as the same thing', () => {
+    // Models reach for this spelling about as often, and a near miss here is
+    // a lookup that silently never happens.
+    expect(findLookups('[[images: a red car]]')[0].kind).toBe('pictures');
+  });
+
+  it('strips a pictures marker from the answer', () => {
+    expect(stripLookups('Here it is.\n\n[[pictures: x]]')).toBe('Here it is.');
+  });
+
+  it('does not confuse an image-generation marker for a web lookup', () => {
+    // [[image: …]] is the local generator and is handled elsewhere; picking it
+    // up here would send every generated illustration to a search engine.
+    expect(findLookups('[[image: an invented illustration]]')).toEqual([]);
+  });
+});
