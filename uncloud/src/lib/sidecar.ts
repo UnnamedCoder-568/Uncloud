@@ -652,6 +652,37 @@ export async function setAgentToolGroups(groups: string[] | null) {
  */
 export const IMAGE_MARKER = /\[\[image:\s*([^\]\n]{3,400})\]\]/gi;
 
+export async function webSearch(query: string) {
+  return apiPost<{ results: string }>('/api/web/search', { query });
+}
+
+export async function webRead(url: string) {
+  return apiPost<{ text: string }>('/api/web/read', { url });
+}
+
+/** What the model is told before anything the user says.
+ *
+ *  Built per turn rather than fixed, because the most useful thing in it is
+ *  the date. A model with no idea what today is cannot tell that its own
+ *  training is two years stale — asked about anything current it answers
+ *  confidently from memory, because from the inside there is nothing to
+ *  suggest otherwise. Told the date, the same weights hedge, and reach for a
+ *  search. The capability was always there; what was missing was the ground
+ *  to stand on.
+ */
+export function chatSystemPrompt(now: Date = new Date()): string {
+  const today = now.toLocaleDateString(undefined, {
+    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+  });
+  return (
+    `Today is ${today}. The user is on a Mac, running Uncloud, which keeps `
+    + 'everything local. Your training finished well before today — assume '
+    + 'anything time-sensitive you remember is out of date, and check rather '
+    + 'than guess.\n\n'
+    + CHAT_IMAGE_SYSTEM_PROMPT
+  );
+}
+
 export const CHAT_IMAGE_SYSTEM_PROMPT =
   'You can show a picture. When an image would genuinely help the user — a ' +
   'sketch, a diagram, a visual example — write [[image: a detailed description ' +
@@ -660,17 +691,21 @@ export const CHAT_IMAGE_SYSTEM_PROMPT =
   'better. Keep writing normally around it. Answer directly and finish your ' +
   'answer in this turn. Never narrate that you are waiting, preparing, or about ' +
   'to answer.\n\n' +
-  // Chat has no tools. Without being told, a model asked to "check online"
-  // answers from memory in the same confident voice it uses for anything else
-  // — and a stale answer presented as a fresh lookup is worse than a refusal,
-  // because nothing about it looks wrong.
-  'You have no internet access in this conversation and cannot browse, search ' +
-  'or fetch anything. If the user asks you to look something up, check a ' +
-  'website, or find current information, say plainly that you cannot from here ' +
-  'and that the Chisel tab can — it has web search, page reading and a real ' +
-  'browser. Then answer from what you already know, and say clearly that it ' +
-  'comes from training and may be out of date. Never imply you have checked ' +
-  'anything.';
+  // Chat can reach the web, through the same written-marker mechanism as the
+  // image preview. Not a tool-calling protocol: local servers vary in whether
+  // they support one, and a feature that works on a third of the models a
+  // customer might install is worse than one that works everywhere.
+  'You can look things up on the web. To search, write [[search: your query]] ' +
+  'on its own line. To read a specific page, write [[read: https://…]] on its ' +
+  'own line. Then STOP and write nothing else — the results are fetched and ' +
+  'given to you, and you answer in the next turn.\n' +
+  'Look something up whenever the answer depends on current information: ' +
+  'anything recent, any release or version, prices, news, dates, or anything ' +
+  'you are unsure about. Your training has a cutoff and the world has moved ' +
+  'since; guessing from memory about something current is the main way you ' +
+  'will be wrong. Do not look up things that do not change.\n' +
+  'When you answer from what was fetched, say so. When you answer from memory ' +
+  'about something that may have changed, say that too.';
 
 /**
  * A fast, deliberately low-fidelity render for thinking with, not a finished

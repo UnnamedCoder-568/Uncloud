@@ -970,6 +970,49 @@ def tools() -> list[dict]:
     return TOOL_SPECS
 
 
+# --------------------------------------------------------------------- web
+class SearchBody(BaseModel):
+    query: str
+
+
+class ReadBody(BaseModel):
+    url: str
+
+
+@app.post("/api/web/search", dependencies=[Depends(require_token)])
+async def web_search(body: SearchBody) -> dict:
+    """Search the web, for Chat as well as Chisel.
+
+    The same DuckDuckGo lookup the agent has always had, reachable over HTTP so
+    a plain conversation can use it too. It needs no API key and no account,
+    which is what makes it fit an application that is otherwise offline: the
+    request goes out only when the user's question needs it.
+    """
+    from .agent.tools import _web_search
+
+    try:
+        return {"results": await _web_search(body.query.strip())}
+    except Exception as exc:  # noqa: BLE001 - a failed lookup is not a crash
+        raise HTTPException(status_code=502,
+                            detail=f"The search did not work: {exc}") from exc
+
+
+@app.post("/api/web/read", dependencies=[Depends(require_token)])
+async def web_read(body: ReadBody) -> dict:
+    """Fetch a page as readable prose.
+
+    Extracted rather than raw: HTML markup would burn most of a local model's
+    context window on things it cannot use.
+    """
+    from .agent.tools import _web_read
+
+    try:
+        return {"text": await _web_read(body.url.strip())}
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502,
+                            detail=f"That page could not be read: {exc}") from exc
+
+
 # ----------------------------------------------------------- conversations
 class ConversationBody(BaseModel):
     messages: list[dict] = []
