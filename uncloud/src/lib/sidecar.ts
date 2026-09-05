@@ -571,6 +571,50 @@ export async function transcribeAudio(modelPath: string, blob: Blob, filename = 
   return data.text as string;
 }
 
+/** The voices kokoro ships with, as a person would choose between them.
+ *
+ *  `bm_` and `bf_` are British, `am_` and `af_` American. Offered by manner
+ *  rather than by filename, because "bm_george" tells nobody anything.
+ */
+export const VOICES = [
+  { id: 'bm_george', label: 'George — British, measured' },
+  { id: 'bm_lewis', label: 'Lewis — British, warm' },
+  { id: 'bf_emma', label: 'Emma — British, clear' },
+  { id: 'am_adam', label: 'Adam — American, even' },
+  { id: 'am_michael', label: 'Michael — American, warm' },
+  { id: 'af_heart', label: 'Heart — American, soft' },
+  { id: 'af_bella', label: 'Bella — American, bright' },
+  { id: 'af_nicole', label: 'Nicole — American, calm' },
+  { id: 'af_sarah', label: 'Sarah — American, neutral' },
+];
+
+/** Optional manner for spoken replies.
+ *
+ *  A house style, not an impersonation: it changes how the assistant writes,
+ *  not whose voice comes out. The voice itself is one of the ones above.
+ */
+export const MANNERS: { id: string; label: string; prompt: string }[] = [
+  { id: 'plain', label: 'Plain', prompt: '' },
+  {
+    id: 'butler',
+    label: 'Understated butler',
+    prompt:
+      'Speak like a composed British house assistant. Brief and precise; lead '
+      + 'with the answer, then at most one line of detail. Dry rather than '
+      + 'jokey, never chatty, never effusive. Address the user as "sir" only '
+      + 'when it falls naturally, not every turn. Say plainly when something '
+      + 'cannot be done or is not known. You are being read aloud, so avoid '
+      + 'lists, markdown and anything that depends on being seen.',
+  },
+  {
+    id: 'brief',
+    label: 'Brief',
+    prompt:
+      'You are being read aloud. Answer in one or two sentences. No lists, no '
+      + 'markdown, no headings — none of it survives being spoken.',
+  },
+];
+
 export async function speakText(text: string, voice = 'af_heart', speed = 1.0): Promise<string> {
   const url = `${await baseUrl()}/api/voice/speak`;
   const headers = { ...(await authHeaders()), 'Content-Type': 'application/json' };
@@ -724,8 +768,8 @@ export async function webImages(query: string) {
  *  only mentioned when it is switched on.
  */
 export function chatSystemPrompt(
-  { now = new Date(), pictures = false, web = true }:
-    { now?: Date; pictures?: boolean; web?: boolean } = {},
+  { now = new Date(), pictures = false, web = true, manner = '' }:
+    { now?: Date; pictures?: boolean; web?: boolean; manner?: string } = {},
 ): string {
   const today = now.toLocaleDateString(undefined, {
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
@@ -796,6 +840,11 @@ export function chatSystemPrompt(
       + 'out.',
     );
   }
+
+  //: Last, so it colours the answer rather than competing with what the
+  //  answer has to contain.
+  const style = MANNERS.find((m) => m.id === manner)?.prompt;
+  if (style) parts.push(style);
 
   return parts.join('\n\n');
 }

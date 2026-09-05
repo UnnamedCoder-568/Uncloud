@@ -1,16 +1,18 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ChevronDown, ArrowUp, Square, Mic, Volume2, VolumeX, Loader2, Hammer, ImagePlus, PanelRight, Plus, X, Globe,
-  Image as ImageIcon, ImageOff, GlobeLock } from 'lucide-react';
+  Image as ImageIcon, ImageOff, GlobeLock, AudioLines, MessagesSquare,
+  Settings2 } from 'lucide-react';
 import { TitleBarPortal } from '../components/TitleBar';
 import { Cog } from '../components/Wordmark';
 import Markdown from '../components/Markdown';
 import { fromConversation, sendToChisel } from '../lib/handoff';
 import Conversations from '../components/Conversations';
 import { splitThinking } from '../lib/thinking';
+import { Conversation } from '../lib/converse';
 import { MAX_ROUNDS, describe, findLookups, resultsTurn, stripLookups } from '../lib/lookup';
 import { getLibrary, startEngine, engineStatus, streamChat, transcribeAudio, speakText, IMAGE_MARKER, chatSystemPrompt, quickImagePreview,
   listConversations, readConversation, writeConversation, deleteConversation,
-  webSearch, webRead, webImages } from '../lib/sidecar';
+  webSearch, webRead, webImages, VOICES, MANNERS } from '../lib/sidecar';
 import type { LocalModel, ChatMessage, ConversationList, WebImage } from '../lib/sidecar';
 
 /** A conversation id: sixteen hex characters, which is what the engine accepts
@@ -66,6 +68,38 @@ export default function ChatView() {
   //  from a memory years out of date — but SWITCHABLE, and visible, because
   //  this is the one thing in an otherwise local application that sends the
   //  user's words to somebody else's server.
+  //: Which voice reads replies, and in what manner. Remembered: both are
+  //  preferences about how the assistant sounds, not properties of a message.
+  const [voice, setVoice] = useState(() => {
+    try { return localStorage.getItem('uncloud.chat.voice') || 'bm_george'; }
+    catch { return 'bm_george'; }
+  });
+  const [manner, setManner] = useState(() => {
+    try { return localStorage.getItem('uncloud.chat.manner') || 'plain'; }
+    catch { return 'plain'; }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem('uncloud.chat.voice', voice);
+      localStorage.setItem('uncloud.chat.manner', manner);
+    } catch { /* a browser refusing storage is not worth an error */ }
+  }, [voice, manner]);
+
+  //: Hands-free conversation. Held in a ref because it owns a microphone and
+  //  an audio graph, and both have to be released on unmount whatever else
+  //  happens.
+  const conversation = useRef<Conversation | null>(null);
+  //: The loop is built once and lives across renders, while `send` closes over
+  //  state that changes every keystroke. The ref is what keeps the loop calling
+  //  the CURRENT send rather than the one that existed when it started.
+  const sendRef = useRef<(text: string, speak: boolean) => Promise<void>>(
+    async () => {});
+  const [conversing, setConversing] = useState(false);
+  //: The conversation loop has no transcript of its own to fail into — a
+  //  microphone that was refused has to say so somewhere.
+  const [lastError, setLastError] = useState<string | null>(null);
+  const [heard, setHeard] = useState<'listening' | 'hearing' | 'thinking' | 'speaking' | 'off'>('off');
+
   const [web, setWeb] = useState(() => {
     try { return localStorage.getItem('uncloud.chat.web') !== 'off'; }
     catch { return true; }
@@ -150,6 +184,48 @@ export default function ChatView() {
       }
     }
   }
+
+  /** Start or stop hands-free conversation.
+   *
+   *  Speaking is forced on while it runs — a conversation where the reply is
+   *  only written is not a conversation, and having to notice a separate
+   *  toggle to hear it would be a trap.
+   */
+  const toggleConversation = useCallback(async () => {
+    if (conversation.current?.active) {
+      conversation.current.stop();
+      conversation.current = null;
+      setConversing(false);
+      return;
+    }
+    const loop = new Conversation({
+      onState: setHeard,
+      onError: (message) => { setLastError(message); setConversing(false); },
+      onUtterance: async (audio) => {
+        // The same speech-to-text model dictation already uses; the loop is
+        // a different way of reaching it, not a second engine.
+        if (!sttModel) return;
+        const said = await transcribeAudio(sttModel.path, audio, 'turn.webm');
+        if (!said.trim()) return;
+        // Spoken aloud, and the reply is spoken back — which is what makes
+        // this a conversation rather than dictation into a text box.
+        await sendRef.current(said, true);
+      },
+    });
+    conversation.current = loop;
+    setConversing(true);
+    setAutoSpeak(true);
+    await loop.start();
+  }, []);
+
+  // The microphone must not outlive the view. Nothing else releases it, and a
+  // recording indicator that stays lit is alarming and correct to be alarmed by.
+  useEffect(() => () => {
+    conversation.current?.stop();
+    conversation.current = null;
+  }, []);
+
+  useEffect(() => { sendRef.current = send; });
 
   const refreshSaved = useCallback(
     () => listConversations().then(setSaved).catch(() => {}), []);
@@ -264,7 +340,7 @@ export default function ChatView() {
       for (let round = 0; ; round++) {
         full = '';
         for await (const chunk of streamChat(
-          [{ role: 'system', content: chatSystemPrompt({ pictures, web }) }, ...sent],
+          [{ role: 'system', content: chatSystemPrompt({ pictures, web, manner }) }, ...sent],
           controller.signal,
         )) {
           if (chunk.kind === 'text') full += chunk.text;
@@ -386,10 +462,22 @@ export default function ChatView() {
       if (speakReply && full.trim()) {
         setSpeaking(true);
         try {
-          const url = await speakText(full.trim());
+          const url = await speakText(full.trim(), voice);
           if (audioRef.current) {
             audioRef.current.src = url;
-            await audioRef.current.play();
+            // Deaf while it talks, or the reply becomes the next question and
+            // it converses with itself until stopped.
+            conversation.current?.setSpeaking(true);
+            try {
+              await audioRef.current.play();
+              await new Promise<void>((resolve) => {
+                const done = () => resolve();
+                audioRef.current!.onended = done;
+                audioRef.current!.onerror = done;
+              });
+            } finally {
+              conversation.current?.setSpeaking(false);
+            }
           }
         } finally {
           setSpeaking(false);
@@ -578,6 +666,67 @@ export default function ChatView() {
               : autoSpeak ? <Volume2 size={15} /> : <VolumeX size={15} />}
             <span>Speak</span>
           </button>
+
+          {/* Hands-free. The state is written out rather than left to a colour,
+              because "is it listening to me right now" is the one question a
+              voice interface must never leave ambiguous. */}
+          {sttModel && (
+            <button
+              onClick={toggleConversation}
+              disabled={!activeModel}
+              title={conversing
+                ? 'Stop the conversation'
+                : 'Talk instead of typing — it listens, answers aloud, and listens again'}
+              className={conversing ? 'pill pill-on' : 'pill'}
+              style={conversing ? { color: 'var(--accent)' } : undefined}
+            >
+              {conversing ? <AudioLines size={15} className="animate-pulse" />
+                : <MessagesSquare size={15} />}
+              <span>
+                {!conversing ? 'Converse'
+                  : heard === 'hearing' ? 'Listening…'
+                  : heard === 'thinking' ? 'Thinking…'
+                  : heard === 'speaking' ? 'Speaking…'
+                  : 'Your turn'}
+              </span>
+            </button>
+          )}
+
+          {/* Voice and manner. Behind a menu: they are set once and then left
+              alone, and a row of pickers would crowd the things used every
+              message. */}
+          <details className="relative">
+            <summary className="pill list-none cursor-pointer select-none"
+                     title="How replies sound">
+              <Settings2 size={14} /><span>Voice</span>
+            </summary>
+            <div className="absolute bottom-full mb-2 left-0 z-40 card p-2
+                            flex flex-col gap-3" style={{ minWidth: 240 }}>
+              <label className="field">
+                <span className="label" style={{ fontSize: 11 }}>Voice</span>
+                <select className="input" value={voice}
+                        onChange={(e) => setVoice(e.target.value)}>
+                  {VOICES.map((v) => (
+                    <option key={v.id} value={v.id}>{v.label}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span className="label" style={{ fontSize: 11 }}>Manner</span>
+                <select className="input" value={manner}
+                        onChange={(e) => setManner(e.target.value)}>
+                  {MANNERS.map((m) => (
+                    <option key={m.id} value={m.id}>{m.label}</option>
+                  ))}
+                </select>
+              </label>
+              <p className="faint" style={{ fontSize: 10, lineHeight: 1.5 }}>
+                Manner changes how the assistant writes, so it reads well aloud —
+                short sentences, no lists or markdown. The voice is one of the
+                nine that ship with the app.
+              </p>
+            </div>
+          </details>
 
           {/* Hand the conversation to Chisel. Only once there is something to
               hand over, and never while the model is still writing — the last
@@ -838,6 +987,19 @@ export default function ChatView() {
 
           <div className="composer composer-docked">{composer}</div>
         </>
+      )}
+
+      {/* The conversation loop has nowhere else to report a refused
+          microphone, and silence would read as the feature not working. */}
+      {lastError && (
+        <div className="absolute bottom-24 left-1/2 -translate-x-1/2 z-20 max-w-md
+                        card px-3 py-2 text-[11px] text-[var(--text-dim)]
+                        flex items-start gap-2">
+          <span className="flex-1">{lastError}</span>
+          <button className="tb-btn" onClick={() => setLastError(null)} title="Dismiss">
+            <X size={12} />
+          </button>
+        </div>
       )}
 
       <Conversations
