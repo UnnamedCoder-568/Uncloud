@@ -801,11 +801,20 @@ export default function ChatView() {
                       // component name — dropped into the middle of an answer
                       // about something else entirely. The detail belongs in a
                       // tooltip, not in the conversation.
-                      <div className="text-[11px] text-[var(--text-faint)] px-1"
-                           title={p.error}>
-                        The picture could not be made. Check this model in the
-                        Image tab.
-                      </div>
+                      // Short by default, and openable. The raw exception in
+                      // the transcript was noise; the raw exception NOWHERE was
+                      // worse — a failure nobody can diagnose, including the
+                      // person who wrote it.
+                      <details className="text-[11px] text-[var(--text-faint)] px-1">
+                        <summary className="cursor-pointer select-none hover:text-[var(--text-dim)]">
+                          The picture could not be made — why?
+                        </summary>
+                        <div className="mt-1 font-mono text-[10px] text-[var(--text-dim)]
+                                        whitespace-pre-wrap break-words border-l
+                                        border-[var(--border-soft)] pl-2">
+                          {p.error}
+                        </div>
+                      </details>
                     ) : (
                       <div className="h-[140px] rounded-lg bg-[var(--bg-inset)] flex items-center justify-center">
                         <span className="spinner" />
