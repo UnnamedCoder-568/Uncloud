@@ -43,3 +43,23 @@ describe('system prompt', () => {
     expect(chatSystemPrompt({ pictures: true })).toContain('the default is not to');
   });
 });
+
+describe('the web switch', () => {
+  it('describes the capability when it is on', () => {
+    expect(chatSystemPrompt({ web: true })).toContain('[[search:');
+  });
+
+  it('says plainly that it is offline when it is off', () => {
+    // A model that does not know it cannot check will answer questions about
+    // the present from memory in the same confident voice it uses for
+    // arithmetic. Silence here is how the iOS answer happened.
+    const prompt = chatSystemPrompt({ web: false });
+    expect(prompt).not.toContain('[[search:');
+    expect(prompt).toContain('no internet access');
+    expect(prompt).toContain('Never imply you have checked anything');
+  });
+
+  it('is on unless asked otherwise', () => {
+    expect(chatSystemPrompt()).toContain('[[search:');
+  });
+});

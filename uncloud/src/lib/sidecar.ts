@@ -695,7 +695,8 @@ export async function webImages(query: string) {
  *  only mentioned when it is switched on.
  */
 export function chatSystemPrompt(
-  { now = new Date(), pictures = false }: { now?: Date; pictures?: boolean } = {},
+  { now = new Date(), pictures = false, web = true }:
+    { now?: Date; pictures?: boolean; web?: boolean } = {},
 ): string {
   const today = now.toLocaleDateString(undefined, {
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
@@ -710,6 +711,14 @@ export function chatSystemPrompt(
     'Answer directly and finish your answer in this turn. Never narrate that '
     + 'you are waiting, preparing, or about to answer.',
 
+  ];
+
+  // Described only when it is switched on, and its ABSENCE described when it
+  // is off — a model that does not know it is offline answers questions about
+  // the present from memory in the same confident voice it uses for
+  // arithmetic, which is how the iOS answer happened.
+  if (web) {
+    parts.push(
     // The web, through the same written-marker mechanism as the image preview.
     // Not a tool-calling protocol: local servers vary in whether they support
     // one, and a feature that works on a third of the models a customer might
@@ -727,7 +736,16 @@ export function chatSystemPrompt(
     + 'detail that is easy to reconstruct wrongly and easy to check.\n'
     + 'When you answer from what was fetched, say so. When you answer from '
     + 'memory about something that may have changed, say that too.',
-  ];
+    );
+  } else {
+    parts.push(
+      'You have no internet access in this conversation and cannot look '
+      + 'anything up. If the user asks you to check something online, say '
+      + 'plainly that you cannot — they can switch the web on beside the '
+      + 'message box, or use Chisel. Answer from what you know, and say when '
+      + 'it may be out of date. Never imply you have checked anything.',
+    );
+  }
 
   //: Only described when the user has asked for it. A capability a model is
   //  told about is a capability it will use, so the reliable way not to get a
