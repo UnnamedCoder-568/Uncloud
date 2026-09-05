@@ -32,10 +32,34 @@ def transcribe(model_path: str, audio_path: str) -> str:
 
 
 def _get_kokoro_pipeline():
-    if "pipeline" not in _kokoro:
-        from kokoro import KPipeline
+    """The speech pipeline, preferring what is already on this machine.
 
+    Kokoro resolves its weights by Hugging Face repo id, and huggingface_hub
+    contacts the hub even when every file is already cached. On a machine with
+    no connection that check fails and speech fails with it — for a 313MB model
+    sitting on the disk, in an application whose whole promise is that it does
+    not need the internet.
+
+    So: cache first, and only reach out if something is genuinely missing. That
+    keeps the first run downloading as it must, and every later run working on
+    an aeroplane.
+    """
+    if "pipeline" in _kokoro:
+        return _kokoro["pipeline"]
+
+    from kokoro import KPipeline
+
+    import huggingface_hub.constants as hub
+
+    was_offline = hub.HF_HUB_OFFLINE
+    hub.HF_HUB_OFFLINE = True
+    try:
         _kokoro["pipeline"] = KPipeline(lang_code="a", repo_id="hexgrad/Kokoro-82M")
+    except Exception:  # noqa: BLE001 - not cached yet; fetch it properly
+        hub.HF_HUB_OFFLINE = was_offline
+        _kokoro["pipeline"] = KPipeline(lang_code="a", repo_id="hexgrad/Kokoro-82M")
+    finally:
+        hub.HF_HUB_OFFLINE = was_offline
     return _kokoro["pipeline"]
 
 
