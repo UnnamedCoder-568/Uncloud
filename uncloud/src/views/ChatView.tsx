@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { ChevronDown, ArrowUp, Square, Mic, Volume2, VolumeX, Loader2, Hammer, ImagePlus, PanelRight, Plus, X } from 'lucide-react';
+import { ChevronDown, ArrowUp, Square, Mic, Volume2, VolumeX, Loader2, Hammer, ImagePlus, PanelRight, Plus, X, Globe } from 'lucide-react';
 import { TitleBarPortal } from '../components/TitleBar';
 import { Cog } from '../components/Wordmark';
 import Markdown from '../components/Markdown';
 import { fromConversation, sendToChisel } from '../lib/handoff';
 import Conversations from '../components/Conversations';
 import { splitThinking } from '../lib/thinking';
-import { getLibrary, startEngine, engineStatus, streamChat, transcribeAudio, speakText, IMAGE_MARKER, CHAT_IMAGE_SYSTEM_PROMPT, quickImagePreview,
-  listConversations, readConversation, writeConversation, deleteConversation } from '../lib/sidecar';
+import { MAX_ROUNDS, describe, findLookups, resultsTurn, stripLookups } from '../lib/lookup';
+import { getLibrary, startEngine, engineStatus, streamChat, transcribeAudio, speakText, IMAGE_MARKER, chatSystemPrompt, quickImagePreview,
+  listConversations, readConversation, writeConversation, deleteConversation,
+  webSearch, webRead } from '../lib/sidecar';
 import type { LocalModel, ChatMessage, ConversationList } from '../lib/sidecar';
 
 /** A conversation id: sixteen hex characters, which is what the engine accepts
@@ -36,6 +38,11 @@ export default function ChatView() {
   //  moves or deletes afterwards does not empty the conversation later.
   const [attached, setAttached] = useState<string[]>([]);
   const [visionOk, setVisionOk] = useState(false);
+  //: What is being fetched right now, and what has been. A conversation that
+  //  reaches the internet has to say so while it happens — this is the one
+  //  thing in an otherwise offline application that leaves the machine.
+  const [looking, setLooking] = useState<string[]>([]);
+  const [consulted, setConsulted] = useState<string[]>([]);
   const [input, setInput] = useState('');
   const [generating, setGenerating] = useState(false);
   const chatAbort = useRef<AbortController | null>(null);
@@ -205,6 +212,8 @@ export default function ChatView() {
     setMessages(next);
     setAttached([]);
     setInput('');
+    setConsulted([]);
+    setLooking([]);
     setGenerating(true);
     setMessages((m) => [...m, { role: 'assistant', content: '' }]);
     let full = '';
@@ -217,21 +226,89 @@ export default function ChatView() {
         await startEngine(activeModel.path, activeModel.engine);
       }
       const assistantIndex = next.length;
-      const withSystem: ChatMessage[] = [
-        { role: 'system', content: CHAT_IMAGE_SYSTEM_PROMPT },
-        ...next,
-      ];
-      for await (const chunk of streamChat(withSystem, controller.signal)) {
-        if (chunk.kind === 'text') full += chunk.text;
+      //: The turns actually sent. It grows when the model asks to look
+      //  something up, so its own request and the results are both in context
+      //  for the answer that follows.
+      let sent: ChatMessage[] = [...next];
+
+      for (let round = 0; ; round++) {
+        full = '';
+        for await (const chunk of streamChat(
+          [{ role: 'system', content: chatSystemPrompt() }, ...sent],
+          controller.signal,
+        )) {
+          if (chunk.kind === 'text') full += chunk.text;
+          setMessages((m) => {
+            const copy = [...m];
+            const prev = copy[copy.length - 1];
+            copy[copy.length - 1] = chunk.kind === 'thinking'
+              ? { ...prev, reasoning: (prev.reasoning ?? '') + chunk.text }
+              : { ...prev, content: prev.content + chunk.text };
+            return copy;
+          });
+        }
+
+        const wanted = findLookups(full);
+        if (!wanted.length) break;
+
+        // A model that searches, reads, and searches again is working. One
+        // that searches for ever is not, and without a ceiling it would do so
+        // while the user watched.
+        if (round >= MAX_ROUNDS - 1) {
+          setMessages((m) => {
+            const copy = [...m];
+            const prev = copy[copy.length - 1];
+            copy[copy.length - 1] = {
+              ...prev,
+              content: `${stripLookups(prev.content)}\n\n_Stopped after `
+                + `${MAX_ROUNDS} lookups without an answer._`,
+            };
+            return copy;
+          });
+          break;
+        }
+
+        // What is happening to their network connection, in plain words and
+        // before it happens.
+        setLooking(wanted.map(describe));
+        const fetched = await Promise.all(wanted.map(async (lookup) => {
+          try {
+            const text = lookup.kind === 'search'
+              ? (await webSearch(lookup.argument)).results
+              : (await webRead(lookup.argument)).text;
+            return { lookup, text };
+          } catch (e) {
+            // A failed lookup is reported to the MODEL, not swallowed, so it
+            // can say the search did not work rather than inventing an answer.
+            return { lookup, text: `This lookup failed: ${
+              e instanceof Error ? e.message : String(e)}` };
+          }
+        }));
+        setLooking([]);
+        setConsulted((c) => [...c, ...wanted.map((l) => l.argument)]);
+
+        // The request stays in the transcript the model sees — without it the
+        // results arrive as an answer to nothing.
+        sent = [
+          ...sent,
+          { role: 'assistant', content: full },
+          { role: 'user', content: resultsTurn(fetched) },
+        ];
         setMessages((m) => {
           const copy = [...m];
-          const prev = copy[copy.length - 1];
-          copy[copy.length - 1] = chunk.kind === 'thinking'
-            ? { ...prev, reasoning: (prev.reasoning ?? '') + chunk.text }
-            : { ...prev, content: prev.content + chunk.text };
+          copy[copy.length - 1] = { ...copy[copy.length - 1], content: '' };
           return copy;
         });
       }
+
+      // The markers were an instruction to the application, not part of the
+      // answer. Left in, the user reads the plumbing.
+      full = stripLookups(full);
+      setMessages((m) => {
+        const copy = [...m];
+        copy[copy.length - 1] = { ...copy[copy.length - 1], content: full };
+        return copy;
+      });
       // Fire and forget: the reply is already readable, and a preview
       // takes seconds during which the user should not be blocked.
       void renderPreviews(assistantIndex, full);
@@ -570,6 +647,30 @@ export default function ChatView() {
                       : (m.reasoning ? null : <span className="spinner" />)}
                   </div>
                 )}
+                {/* Reaching the internet is the one thing this application
+                    does that leaves the machine, so it is announced while it
+                    happens rather than inferred afterwards. */}
+                {m.role === 'assistant' && i === messages.length - 1
+                  && looking.length > 0 && (
+                  <div className="mt-2 flex flex-col gap-1">
+                    {looking.map((what, k) => (
+                      <div key={k} className="flex items-center gap-2 text-[11px]
+                                              text-[var(--text-dim)] px-1">
+                        <Globe size={12} className="animate-pulse" />
+                        <span>{what}…</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {m.role === 'assistant' && i === messages.length - 1
+                  && !looking.length && consulted.length > 0 && (
+                  <div className="mt-2 flex items-center gap-1.5 text-[11px]
+                                  text-[var(--text-faint)] px-1 flex-wrap">
+                    <Globe size={11} />
+                    <span>Looked up: {consulted.join(' · ')}</span>
+                  </div>
+                )}
+
                 {(previews[i] || []).map((p, k) => (
                   <div key={k} className="mt-2 max-w-[280px]">
                     {p.url ? (
