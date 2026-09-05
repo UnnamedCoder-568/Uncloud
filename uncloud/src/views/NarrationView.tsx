@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Loader2, Mic2, Download, ChevronDown } from 'lucide-react';
 import {
   getNarrationOptions, generateNarration, getNarrationJob, narrationAudioUrl, getLibrary,
+  installNarrationEngine,
 } from '../lib/sidecar';
 import Dictate from '../components/Dictate';
 import type { NarrationOptions, NarrationJob, LocalModel } from '../lib/sidecar';
@@ -25,6 +26,32 @@ export default function NarrationView() {
 
   const [job, setJob] = useState<NarrationJob | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
+
+  //: Which engine is being set up, and what its log has said. Held here rather
+  //  than in the panel, so the log survives the panel disappearing the moment
+  //  the install succeeds and the engine stops being missing.
+  const [setting, setSetting] = useState<string | null>(null);
+  const [log, setLog] = useState<string[]>([]);
+  const [setupError, setSetupError] = useState<string | null>(null);
+
+  async function setUp(name: string) {
+    setSetting(name);
+    setLog([]);
+    setSetupError(null);
+    try {
+      for await (const event of installNarrationEngine(name)) {
+        if (event.line) setLog((l) => [...l, event.line!]);
+        if (event.error) setSetupError(event.error);
+      }
+      // Re-read rather than assuming: the install reports success only when
+      // the interpreter is actually there, and this is what the buttons key off.
+      setOptions(await getNarrationOptions(engine));
+    } catch (e) {
+      setSetupError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSetting(null);
+    }
+  }
 
   useEffect(() => {
     getNarrationOptions(engine).then((o) => {
@@ -126,6 +153,43 @@ export default function NarrationView() {
           <p className="mt-1.5 text-[10px] text-[var(--text-faint)]">
             {options?.engines?.find((e) => e.id === engine)?.note}
           </p>
+
+          {/* An engine that ships with the product but can only be enabled by
+              typing two commands from a document is not shipped, it is
+              described. Each missing one gets a button. */}
+          {(options?.engines ?? []).filter((e) => !e.installed).map((e) => (
+            <div key={e.id} className="mt-2 rounded-lg border border-[var(--border)]
+                                       bg-[var(--bg-inset)] p-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[11px] text-[var(--text-dim)]">
+                  {e.label} is not set up yet
+                </span>
+                <button
+                  onClick={() => setUp(e.id)}
+                  disabled={!!setting}
+                  className="text-[11px] px-2.5 py-1 rounded-md btn-accent disabled:opacity-40"
+                >
+                  {setting === e.id ? 'Setting up…' : 'Set up'}
+                </button>
+              </div>
+              <p className="mt-1 text-[10px] text-[var(--text-faint)] leading-relaxed">
+                It runs in its own environment — VibeVoice pins library versions
+                the main engine cannot use. A few hundred megabytes, once, and it
+                needs the internet for this step.
+              </p>
+              {setting === e.id && !!log.length && (
+                <pre className="mt-2 max-h-32 overflow-y-auto text-[10px] font-mono
+                                text-[var(--text-faint)] whitespace-pre-wrap">
+                  {log.slice(-40).join('\n')}
+                </pre>
+              )}
+              {setupError && setting !== e.id && (
+                <p className="mt-2 text-[10px] text-rose-400 whitespace-pre-wrap">
+                  {setupError}
+                </p>
+              )}
+            </div>
+          ))}
         </div>
 
         <div>
