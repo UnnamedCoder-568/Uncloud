@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ChevronDown, ArrowUp, Square, Mic, Volume2, VolumeX, Loader2, Hammer, ImagePlus, PanelRight, Plus, X, Globe,
-  Image as ImageIcon, ImageOff } from 'lucide-react';
+  Image as ImageIcon, ImageOff, GlobeLock } from 'lucide-react';
 import { TitleBarPortal } from '../components/TitleBar';
 import { Cog } from '../components/Wordmark';
 import Markdown from '../components/Markdown';
@@ -61,6 +61,19 @@ export default function ChatView() {
     try { return localStorage.getItem('uncloud.chat.pictures') === 'on'; }
     catch { return false; }
   });
+  //: Whether this conversation may reach the internet. On by default because
+  //  a model that cannot check anything answers questions about the present
+  //  from a memory years out of date — but SWITCHABLE, and visible, because
+  //  this is the one thing in an otherwise local application that sends the
+  //  user's words to somebody else's server.
+  const [web, setWeb] = useState(() => {
+    try { return localStorage.getItem('uncloud.chat.web') !== 'off'; }
+    catch { return true; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('uncloud.chat.web', web ? 'on' : 'off'); }
+    catch { /* a browser refusing storage is not worth an error */ }
+  }, [web]);
   useEffect(() => {
     try { localStorage.setItem('uncloud.chat.pictures', pictures ? 'on' : 'off'); }
     catch { /* a browser refusing storage is not worth an error */ }
@@ -251,7 +264,7 @@ export default function ChatView() {
       for (let round = 0; ; round++) {
         full = '';
         for await (const chunk of streamChat(
-          [{ role: 'system', content: chatSystemPrompt({ pictures }) }, ...sent],
+          [{ role: 'system', content: chatSystemPrompt({ pictures, web }) }, ...sent],
           controller.signal,
         )) {
           if (chunk.kind === 'text') full += chunk.text;
@@ -268,8 +281,12 @@ export default function ChatView() {
         // With pictures off, a model that asks for one anyway is simply not
         // given one — the switch has to hold whatever the model does with the
         // prompt, or it is not a switch.
-        const wanted = findLookups(full)
-          .filter((l) => pictures || l.kind !== 'pictures');
+        // Both switches hold whatever the model wrote. A model told it is
+        // offline will occasionally ask to search anyway, and the setting has
+        // to win that argument rather than merely take part in it.
+        const wanted = web
+          ? findLookups(full).filter((l) => pictures || l.kind !== 'pictures')
+          : [];
         if (!wanted.length) break;
 
         // A model that searches, reads, and searches again is working. One
@@ -519,6 +536,21 @@ export default function ChatView() {
             className="pill pill-icon"
           >
             <ImagePlus size={15} />
+          </button>
+
+          {/* The only control here that governs the network. Labelled plainly,
+              because "local-first" is the promise this application makes and
+              an exception to it should be visible rather than discovered. */}
+          <button
+            onClick={() => setWeb((v) => !v)}
+            title={web
+              ? 'Web lookups: on — search queries are sent to DuckDuckGo when '
+                + 'the model asks to look something up. Nothing else leaves this Mac.'
+              : 'Web lookups: off — nothing leaves this Mac'}
+            className={web ? 'pill pill-on' : 'pill'}
+          >
+            {web ? <Globe size={15} /> : <GlobeLock size={15} />}
+            <span>Web</span>
           </button>
 
           {/* Whether replies may include pictures. Beside Speak because it is
