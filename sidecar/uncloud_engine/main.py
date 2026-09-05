@@ -997,6 +997,60 @@ async def web_search(body: SearchBody) -> dict:
                             detail=f"The search did not work: {exc}") from exc
 
 
+@app.post("/api/web/images", dependencies=[Depends(require_token)])
+async def web_images(body: SearchBody) -> dict:
+    """Find pictures on the web, for showing examples.
+
+    DuckDuckGo's image endpoint, which needs a token it hands out on the plain
+    search page first. No API key and no account, which is what keeps this
+    usable in an application that is otherwise offline.
+
+    Only the thumbnail URLs are returned. They are served by the search engine
+    rather than by the origin site, so displaying one does not announce the
+    user to whichever site happens to host the picture.
+    """
+    import re
+    from urllib.parse import quote
+
+    import httpx
+
+    query = body.query.strip()
+    if not query:
+        raise HTTPException(status_code=400, detail="Empty query")
+
+    headers = {"User-Agent": "Mozilla/5.0 (compatible; Uncloud/0.1)"}
+    try:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=25,
+                                     headers=headers) as client:
+            page = await client.get(f"https://duckduckgo.com/?q={quote(query)}&iax=images&ia=images")
+            token = re.search(r"vqd=[\"']?([\d-]+)", page.text)
+            if not token:
+                return {"images": []}
+            resp = await client.get(
+                "https://duckduckgo.com/i.js",
+                params={"l": "us-en", "o": "json", "q": query,
+                        "vqd": token.group(1), "f": ",,,", "p": "1"},
+                headers={**headers, "Referer": "https://duckduckgo.com/"},
+            )
+            resp.raise_for_status()
+            payload = resp.json()
+    except Exception as exc:  # noqa: BLE001 - a failed lookup is not a crash
+        raise HTTPException(status_code=502,
+                            detail=f"The image search did not work: {exc}") from exc
+
+    images = []
+    for item in (payload.get("results") or [])[:8]:
+        thumbnail = item.get("thumbnail")
+        if not thumbnail:
+            continue
+        images.append({
+            "thumbnail": thumbnail,
+            "source": item.get("url") or item.get("image") or "",
+            "title": (item.get("title") or "").strip(),
+        })
+    return {"images": images}
+
+
 @app.post("/api/web/read", dependencies=[Depends(require_token)])
 async def web_read(body: ReadBody) -> dict:
     """Fetch a page as readable prose.

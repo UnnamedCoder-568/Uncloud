@@ -9,8 +9,8 @@ import { splitThinking } from '../lib/thinking';
 import { MAX_ROUNDS, describe, findLookups, resultsTurn, stripLookups } from '../lib/lookup';
 import { getLibrary, startEngine, engineStatus, streamChat, transcribeAudio, speakText, IMAGE_MARKER, chatSystemPrompt, quickImagePreview,
   listConversations, readConversation, writeConversation, deleteConversation,
-  webSearch, webRead } from '../lib/sidecar';
-import type { LocalModel, ChatMessage, ConversationList } from '../lib/sidecar';
+  webSearch, webRead, webImages } from '../lib/sidecar';
+import type { LocalModel, ChatMessage, ConversationList, WebImage } from '../lib/sidecar';
 
 /** A conversation id: sixteen hex characters, which is what the engine accepts
  *  as a filename. `crypto.randomUUID` needs a secure context and is not
@@ -271,8 +271,25 @@ export default function ChatView() {
         // What is happening to their network connection, in plain words and
         // before it happens.
         setLooking(wanted.map(describe));
+        const shown: WebImage[] = [];
         const fetched = await Promise.all(wanted.map(async (lookup) => {
           try {
+            if (lookup.kind === 'pictures') {
+              const { images } = await webImages(lookup.argument);
+              shown.push(...images);
+              // The model is told they were shown, not what is in them. It
+              // cannot see them, and describing them to it as though it could
+              // is how a model ends up confidently discussing a picture it has
+              // no access to.
+              return {
+                lookup,
+                text: images.length
+                  ? `${images.length} pictures are now displayed to the user. `
+                    + 'Refer to them naturally; do not describe their contents, '
+                    + 'because you cannot see them.'
+                  : 'No pictures were found. Say so.',
+              };
+            }
             const text = lookup.kind === 'search'
               ? (await webSearch(lookup.argument)).results
               : (await webRead(lookup.argument)).text;
@@ -286,6 +303,14 @@ export default function ChatView() {
         }));
         setLooking([]);
         setConsulted((c) => [...c, ...wanted.map((l) => l.argument)]);
+        if (shown.length) {
+          setMessages((m) => {
+            const copy = [...m];
+            const prev = copy[copy.length - 1];
+            copy[copy.length - 1] = { ...prev, found: [...(prev.found ?? []), ...shown] };
+            return copy;
+          });
+        }
 
         // The request stays in the transcript the model sees — without it the
         // results arrive as an answer to nothing.
@@ -671,6 +696,30 @@ export default function ChatView() {
                   </div>
                 )}
 
+                {/* Pictures from the web. A strip rather than a grid: they
+                    are examples beside an answer, not the answer. Each links
+                    to where it came from, because a thumbnail with no
+                    provenance is just an assertion. */}
+                {!!m.found?.length && (
+                  <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
+                    {m.found.map((img, k) => (
+                      <a key={k} href={img.source} target="_blank" rel="noopener noreferrer"
+                         title={img.title || img.source}
+                         className="shrink-0">
+                        <img
+                          src={img.thumbnail}
+                          alt={img.title}
+                          loading="lazy"
+                          referrerPolicy="no-referrer"
+                          className="h-28 w-28 object-cover rounded-lg border
+                                     border-[var(--border)] hover:border-[var(--accent)]
+                                     transition"
+                        />
+                      </a>
+                    ))}
+                  </div>
+                )}
+
                 {(previews[i] || []).map((p, k) => (
                   <div key={k} className="mt-2 max-w-[280px]">
                     {p.url ? (
@@ -680,16 +729,30 @@ export default function ChatView() {
                         className="w-full rounded-lg border border-[var(--border)]"
                       />
                     ) : p.error ? (
-                      <div className="text-[11px] text-rose-400 px-1">{p.error}</div>
+                      // Short, and in the user's terms. What was here was the
+                      // raw loader exception — file paths and a missing
+                      // component name — dropped into the middle of an answer
+                      // about something else entirely. The detail belongs in a
+                      // tooltip, not in the conversation.
+                      <div className="text-[11px] text-[var(--text-faint)] px-1"
+                           title={p.error}>
+                        The picture could not be made. Check this model in the
+                        Image tab.
+                      </div>
                     ) : (
                       <div className="h-[140px] rounded-lg bg-[var(--bg-inset)] flex items-center justify-center">
                         <span className="spinner" />
                       </div>
                     )}
-                    <p className="mt-1 text-[10px] text-[var(--text-faint)] leading-relaxed px-1">
-                      Quick preview — 6 steps at 512px, for thinking with. Use the Image
-                      tab for anything you intend to keep.
-                    </p>
+                    {/* Only under an actual picture. It was captioning a
+                        failure, explaining the settings of an image that was
+                        never made. */}
+                    {p.url && (
+                      <p className="mt-1 text-[10px] text-[var(--text-faint)] leading-relaxed px-1">
+                        Quick preview — 6 steps at 512px, for thinking with. Use the Image
+                        tab for anything you intend to keep.
+                      </p>
+                    )}
                   </div>
                 ))}
               </div>
