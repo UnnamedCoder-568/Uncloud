@@ -172,6 +172,14 @@ export interface ChatMessage {
    *  it as though it could is how a model ends up discussing a picture it has
    *  no access to. */
   found?: WebImage[];
+  /** Pictures generated for this reply, by the PATH they were written to.
+   *
+   *  A path rather than the image, for two reasons. A conversation file stays
+   *  kilobytes instead of megabytes, and the file it points at is the same one
+   *  the Outputs tab manages — so saving, revealing and deleting all mean the
+   *  same thing wherever you do them. Blob URLs were held in view state only,
+   *  which is why reopening a conversation used to lose every picture in it. */
+  drew?: { prompt: string; path: string }[];
 }
 
 // ------------------------------------------------------------ conversations
@@ -853,7 +861,9 @@ export function chatSystemPrompt(
  * A fast, deliberately low-fidelity render for thinking with, not a finished
  * picture: few steps at 512px so it arrives in seconds rather than minutes.
  */
-export async function quickImagePreview(prompt: string): Promise<string> {
+export async function quickImagePreview(
+  prompt: string,
+): Promise<{ url: string; path: string }> {
   const models = await getLibrary();
   const img = models.find((m) => m.category === 'image' && m.ready);
   if (!img) throw new Error('No image model installed');
@@ -875,7 +885,10 @@ export async function quickImagePreview(prompt: string): Promise<string> {
     const j = await getImageJob(job.id);
     if (j.done) {
       if (j.status === 'error') throw new Error(j.error || 'Generation failed');
-      return fetchImageBlobUrl(job.id);
+      // The path as well as the pixels. The blob URL dies with the window; the
+      // path is what lets a reopened conversation still have its pictures, and
+      // is the same file the Outputs tab manages.
+      return { url: await fetchImageBlobUrl(job.id), path: j.output_path ?? '' };
     }
     await new Promise((r) => setTimeout(r, 1000));
   }

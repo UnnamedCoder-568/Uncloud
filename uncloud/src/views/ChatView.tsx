@@ -12,7 +12,8 @@ import { Conversation } from '../lib/converse';
 import { MAX_ROUNDS, describe, findLookups, resultsTurn, stripLookups } from '../lib/lookup';
 import { getLibrary, startEngine, engineStatus, streamChat, transcribeAudio, speakText, IMAGE_MARKER, chatSystemPrompt, quickImagePreview,
   listConversations, readConversation, writeConversation, deleteConversation,
-  webSearch, webRead, webImages, VOICES, MANNERS } from '../lib/sidecar';
+  webSearch, webRead, webImages, VOICES, MANNERS,
+  outputBlobUrl, revealOutput } from '../lib/sidecar';
 import type { LocalModel, ChatMessage, ConversationList, WebImage } from '../lib/sidecar';
 
 /** A conversation id: sixteen hex characters, which is what the engine accepts
@@ -157,6 +158,28 @@ export default function ChatView() {
     Record<number, { prompt: string; url?: string; error?: string }[]>
   >({});
 
+  /** Load an image the conversation already recorded.
+   *
+   *  Reopening a conversation goes through here, so a picture made yesterday
+   *  reappears rather than the message looking like it never had one.
+   */
+  const loadDrawn = useCallback(async (turns: ChatMessage[]) => {
+    const restored: Record<number, { prompt: string; url?: string; error?: string }[]> = {};
+    await Promise.all(turns.map(async (m, i) => {
+      if (!m.drew?.length) return;
+      restored[i] = await Promise.all(m.drew.map(async (d) => {
+        try {
+          return { prompt: d.prompt, url: await outputBlobUrl(d.path) };
+        } catch {
+          // Deleted from Outputs, or the drive is not mounted. Saying so is
+          // better than a broken image icon with no explanation.
+          return { prompt: d.prompt, error: 'This picture is no longer on disk.' };
+        }
+      }));
+    }));
+    setPreviews(restored);
+  }, []);
+
   async function renderPreviews(index: number, reply: string) {
     // The switch holds regardless of what the model wrote. A model told not to
     // draw will still occasionally draw, and the user's setting has to win
@@ -169,12 +192,25 @@ export default function ChatView() {
     setPreviews((p) => ({ ...p, [index]: prompts.map((prompt) => ({ prompt })) }));
     for (let i = 0; i < prompts.length; i++) {
       try {
-        const url = await quickImagePreview(prompts[i]);
+        const { url, path } = await quickImagePreview(prompts[i]);
         setPreviews((p) => {
           const row = [...(p[index] || [])];
           row[i] = { ...row[i], url };
           return { ...p, [index]: row };
         });
+        // Recorded on the message and saved, so the picture is still there
+        // tomorrow. Previously this lived only in view state and every
+        // reopened conversation lost every picture in it.
+        if (path) {
+          setMessages((m) => {
+            const copy = [...m];
+            const turn = copy[index];
+            if (!turn) return m;
+            copy[index] = { ...turn, drew: [...(turn.drew ?? []), { prompt: prompts[i], path }] };
+            if (conversationId) void persist(conversationId, copy);
+            return copy;
+          });
+        }
       } catch (e) {
         setPreviews((p) => {
           const row = [...(p[index] || [])];
@@ -250,6 +286,7 @@ export default function ChatView() {
 
   const startNew = useCallback(() => {
     setMessages([]);
+    setPreviews({});
     setConversationId(null);
     setAttached([]);
     setInput('');
@@ -261,6 +298,7 @@ export default function ChatView() {
       // Stored as the model wrote it, tags and all. Splitting on load rather
       // than on save keeps the file a faithful record of the reply, and means
       // a conversation saved before this existed opens correctly too.
+      void loadDrawn(conversation.messages);
       setMessages(conversation.messages.map((m) => {
         if (m.role !== 'assistant' || m.reasoning) return m;
         const { thinking, answer } = splitThinking(m.content);
@@ -973,10 +1011,35 @@ export default function ChatView() {
                         failure, explaining the settings of an image that was
                         never made. */}
                     {p.url && (
-                      <p className="mt-1 text-[10px] text-[var(--text-faint)] leading-relaxed px-1">
-                        Quick preview — 6 steps at 512px, for thinking with. Use the Image
-                        tab for anything you intend to keep.
-                      </p>
+                      <div className="mt-1 px-1">
+                        <p className="text-[10px] text-[var(--text-faint)] leading-relaxed">
+                          Quick preview — 6 steps at 512px, for thinking with. Use the
+                          Image tab for anything you intend to keep.
+                        </p>
+                        {/* It is already a file in the Outputs folder — this
+                            is how to get to it, rather than a second copy. */}
+                        {!!m.drew?.[k]?.path && (
+                          <div className="mt-1 flex items-center gap-2">
+                            <button
+                              className="text-[10px] text-[var(--text-faint)] underline
+                                         underline-offset-2 hover:text-[var(--text-dim)]"
+                              onClick={() => revealOutput(m.drew![k].path).catch(() => {})}
+                            >
+                              Show in Finder
+                            </button>
+                            <a
+                              className="text-[10px] text-[var(--text-faint)] underline
+                                         underline-offset-2 hover:text-[var(--text-dim)]"
+                              href={p.url}
+                              download={`uncloud-${(m.drew![k].prompt || 'image')
+                                .slice(0, 40).replace(/[^\w -]/g, '').trim()
+                                .replace(/\s+/g, '-') || 'image'}.png`}
+                            >
+                              Save as…
+                            </a>
+                          </div>
+                        )}
+                      </div>
                     )}
                   </div>
                 ))}
