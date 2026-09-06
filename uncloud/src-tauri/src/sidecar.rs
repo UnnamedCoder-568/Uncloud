@@ -268,8 +268,13 @@ pub fn install_engine(app: &AppHandle) -> Result<(), String> {
     // setup because an optional voice engine did not build would cost the user
     // the whole application to save them a tab.
     for (name, requirement) in [
-        ("vibevoice", "vibevoice @ git+https://github.com/microsoft/VibeVoice"),
-        ("vibevoice-hq", "vibevoice @ git+https://github.com/vibevoice-community/VibeVoice"),
+        // The [streamingtts] extra is what pins transformers to 4.51.3. Without
+        // it the loose constraint resolves to whatever is current, and
+        // VibeVoice's streaming KV-cache patch fails on a layout that changed
+        // after 4.51 — the run reaches generation and then dies on tensor
+        // sizes.
+        ("vibevoice", "vibevoice[streamingtts] @ git+https://github.com/microsoft/VibeVoice"),
+        ("vibevoice-hq", "vibevoice[streamingtts] @ git+https://github.com/vibevoice-community/VibeVoice"),
     ] {
         let venv = dir.join(format!(".venv-{name}"));
         if venv.join("bin").join("python").is_file() {

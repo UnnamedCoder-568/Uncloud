@@ -53,9 +53,15 @@ VIBEVOICE_VENV = ENGINES["realtime"]["python"].parent.parent
 #: left the user holding a path. A capability that ships with the product and
 #: can only be enabled by typing two shell commands found in a document is not
 #: shipped, it is described.
+#: The `streamingtts` extra is not optional in practice — it is what pins
+#: transformers to 4.51.3. Installed without it, the loose `transformers<5.0.0`
+#: constraint resolves to whatever is current, and VibeVoice's streaming
+#: inference patches a KV cache whose layout changed after 4.51: the run gets
+#: as far as generating and dies with "Sizes of tensors must match except in
+#: dimension 2. Expected size 64 but got size 128".
 REQUIREMENTS = {
-    "realtime": "vibevoice @ git+https://github.com/microsoft/VibeVoice",
-    "quality": "vibevoice @ git+https://github.com/vibevoice-community/VibeVoice",
+    "realtime": "vibevoice[streamingtts] @ git+https://github.com/microsoft/VibeVoice",
+    "quality": "vibevoice[streamingtts] @ git+https://github.com/vibevoice-community/VibeVoice",
 }
 
 
@@ -108,6 +114,40 @@ from .config import output_dir_for
 from .power import keep_awake
 
 
+#: What each engine's environment must be holding. VibeVoice's streaming
+#: inference patches a KV cache whose layout changed after transformers 4.51,
+#: so a newer one installs cleanly, runs, and then fails on tensor sizes at
+#: generation — the worst place to find out.
+PINNED = {"transformers": "4.51."}
+
+
+def engine_health(name: str) -> str:
+    """"ok", "missing", or why the environment is wrong.
+
+    An environment built before the pin looks installed and is not usable. It
+    has to be distinguishable, or the interface offers no way out of a state it
+    put the user in.
+    """
+    e = ENGINES.get(name)
+    if not e or not Path(e["python"]).is_file() or not Path(e["runner"]).is_file():
+        return "missing"
+
+    import subprocess
+
+    for package, wanted in PINNED.items():
+        try:
+            found = subprocess.run(
+                [str(e["python"]), "-c",
+                 f"import {package}; print({package}.__version__)"],
+                capture_output=True, text=True, timeout=30).stdout.strip()
+        except Exception:  # noqa: BLE001 - an unreadable environment is a broken one
+            return f"{package} could not be read"
+        if not found.startswith(wanted):
+            return (f"{package} {found} is installed, but this engine needs "
+                    f"{wanted}x — set it up again to correct it")
+    return "ok"
+
+
 def engine_available(name: str) -> bool:
     e = ENGINES.get(name)
     return bool(e and Path(e["python"]).is_file() and Path(e["runner"]).is_file())
@@ -120,7 +160,8 @@ def vibevoice_available() -> bool:
 def available_engines() -> list[dict]:
     return [
         {"id": n, "label": e["label"], "note": e["note"],
-         "voice_kind": e["voice_kind"], "installed": engine_available(n)}
+         "voice_kind": e["voice_kind"], "installed": engine_available(n),
+         "health": engine_health(n)}
         for n, e in ENGINES.items()
     ]
 
