@@ -104,6 +104,7 @@ def install_engine(name: str, on_line=None) -> None:
             f"not at {spec['python']}.")
 
 
+from .config import output_dir_for
 from .power import keep_awake
 
 
