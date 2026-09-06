@@ -468,6 +468,10 @@ export interface NarrationEngineInfo {
   note: string;
   voice_kind: string;
   installed: boolean;
+  /** "ok", "missing", or why this environment cannot be used as it stands.
+   *  An environment built before a version pin looks installed and is not
+   *  usable; without this the interface offers no way out of that state. */
+  health?: string;
 }
 
 export interface NarrationOptions {

@@ -157,19 +157,24 @@ export default function NarrationView() {
           {/* An engine that ships with the product but can only be enabled by
               typing two commands from a document is not shipped, it is
               described. Each missing one gets a button. */}
-          {(options?.engines ?? []).filter((e) => !e.installed).map((e) => (
+          {(options?.engines ?? [])
+            .filter((e) => !e.installed || (e.health && e.health !== 'ok'))
+            .map((e) => (
             <div key={e.id} className="mt-2 rounded-lg border border-[var(--border)]
                                        bg-[var(--bg-inset)] p-2.5">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-[11px] text-[var(--text-dim)]">
-                  {e.label} is not set up yet
+                  {/* An environment built before a version pin looks installed
+                      and is not usable. Saying "not set up" would be a lie the
+                      user could disprove; saying what is wrong lets them act. */}
+                  {!e.installed ? `${e.label} is not set up yet` : `${e.label}: ${e.health}`}
                 </span>
                 <button
                   onClick={() => setUp(e.id)}
                   disabled={!!setting}
                   className="text-[11px] px-2.5 py-1 rounded-md btn-accent disabled:opacity-40"
                 >
-                  {setting === e.id ? 'Setting up…' : 'Set up'}
+                  {setting === e.id ? 'Setting up…' : e.installed ? 'Repair' : 'Set up'}
                 </button>
               </div>
               <p className="mt-1 text-[10px] text-[var(--text-faint)] leading-relaxed">
