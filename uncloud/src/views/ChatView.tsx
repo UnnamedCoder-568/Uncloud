@@ -921,9 +921,38 @@ export default function ChatView() {
                   </div>
                 ) : (
                   <div className="text-sm text-[var(--text)] px-1">
-                    {m.content.replace(IMAGE_MARKER, '').trimEnd()
-                      ? <Markdown>{m.content.replace(IMAGE_MARKER, '').trimEnd()}</Markdown>
-                      : (m.reasoning ? null : <span className="spinner" />)}
+                    {(() => {
+                      const shown = m.content.replace(IMAGE_MARKER, '').trimEnd();
+                      if (shown) return <Markdown>{shown}</Markdown>;
+                      // Still arriving.
+                      if (i === messages.length - 1 && generating && !m.reasoning) {
+                        return <span className="spinner" />;
+                      }
+                      // Nothing left after the markers were taken out: the
+                      // model replied with an instruction and no words. The
+                      // prompt tells it not to, but a prompt is a suggestion —
+                      // and an empty bubble reads as the application losing the
+                      // answer rather than the model never writing one.
+                      // NOT IMAGE_MARKER.test(): it carries the /g flag, and
+                      // test() on a global regex advances lastIndex, so the
+                      // same string alternates true and false between renders.
+                      if (m.drew?.length || m.found?.length
+                          || m.content.includes('[[image:')) {
+                        return (
+                          <span className="text-[var(--text-faint)] italic">
+                            (no words with this one — just the picture)
+                          </span>
+                        );
+                      }
+                      if (m.reasoning) {
+                        return (
+                          <span className="text-[var(--text-faint)] italic">
+                            (it thought, but wrote no answer — open the working above)
+                          </span>
+                        );
+                      }
+                      return null;
+                    })()}
                   </div>
                 )}
                 {/* Reaching the internet is the one thing this application

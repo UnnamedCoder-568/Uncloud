@@ -63,3 +63,23 @@ describe('the web switch', () => {
     expect(chatSystemPrompt()).toContain('[[search:');
   });
 });
+
+describe('pictures never replace the answer', () => {
+  it('tells the model to write words as well', () => {
+    // Its whole reply was "[[image: …]]" and nothing else. The marker is
+    // stripped before display, so the message arrived empty — which reads as
+    // the application losing the answer rather than the model never writing one.
+    const prompt = chatSystemPrompt({ pictures: true });
+    expect(prompt).toContain('ALWAYS WRITE YOUR ANSWER IN WORDS');
+    expect(prompt).toContain('never the answer');
+  });
+
+  it('scopes "stop and write nothing else" to lookups only', () => {
+    // That instruction sat directly above the picture markers, and the model
+    // read it as covering them too.
+    const prompt = chatSystemPrompt({ pictures: true, web: true });
+    const stop = prompt.indexOf('STOP and write nothing else');
+    expect(stop).toBeGreaterThan(-1);
+    expect(prompt.slice(stop, stop + 400)).toContain('never to pictures');
+  });
+});
