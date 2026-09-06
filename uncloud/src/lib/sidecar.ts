@@ -718,6 +718,34 @@ export const IMAGE_MARKER = /\[\[image:\s*([^\]\n]{3,400})\]\]/gi;
  *  Streamed because building the environment takes minutes, and a window that
  *  says nothing for minutes is indistinguishable from one that has hung.
  */
+/** Add a voice from a reference recording.
+ *
+ *  Two steps because the engine keeps them apart: the file is stashed first,
+ *  then named. A failed upload therefore never leaves a voice in the list with
+ *  nothing behind it.
+ *
+ *  The Quality (1.5B) engine conditions on a recording directly. Realtime
+ *  wants a prefilled cache instead, so a voice added this way appears under
+ *  Quality only.
+ */
+export async function uploadVoiceSample(file: File): Promise<string> {
+  const form = new FormData();
+  form.append('file', file, file.name);
+  const url = `${await baseUrl()}/api/narration/voices/upload`;
+  const resp = await fetch(url, { method: 'POST', headers: await authHeaders(), body: form });
+  if (!resp.ok) throw new Error(`Upload failed: ${await resp.text().catch(() => resp.statusText)}`);
+  return (await resp.json()).path as string;
+}
+
+export async function saveNarrationVoice(name: string, sample_path: string, notes = '') {
+  return apiPost<NarrationVoice>('/api/narration/voices', { name, sample_path, notes });
+}
+
+export async function deleteNarrationVoice(slug: string) {
+  return api<{ ok: boolean }>(`/api/narration/voices/${encodeURIComponent(slug)}`,
+                              { method: 'DELETE' });
+}
+
 export async function* installNarrationEngine(
   engine: string,
 ): AsyncGenerator<{ line?: string; error?: string; done?: boolean }> {
