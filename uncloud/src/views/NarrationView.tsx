@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Loader2, Mic2, Download, ChevronDown } from 'lucide-react';
 import {
   getNarrationOptions, generateNarration, getNarrationJob, narrationAudioUrl, getLibrary,
-  installNarrationEngine,
+  installNarrationEngine, uploadVoiceSample, saveNarrationVoice, deleteNarrationVoice,
 } from '../lib/sidecar';
 import Dictate from '../components/Dictate';
 import type { NarrationOptions, NarrationJob, LocalModel } from '../lib/sidecar';
@@ -33,6 +33,57 @@ export default function NarrationView() {
   const [setting, setSetting] = useState<string | null>(null);
   const [log, setLog] = useState<string[]>([]);
   const [setupError, setSetupError] = useState<string | null>(null);
+
+  const [addingVoice, setAddingVoice] = useState(false);
+  const [voiceError, setVoiceError] = useState<string | null>(null);
+
+  //: Only the Quality engine conditions on a recording. Realtime wants a
+  //  prefilled cache, which is not something a user can produce from a file,
+  //  so offering the button there would be offering a failure.
+  const engineTakesRecordings =
+    options?.engines?.find((e) => e.id === engine)?.voice_kind === 'audio';
+  const chosen = options?.voices?.find((v) => v.slug === voice);
+
+  /** Add a voice from a recording the user picks. */
+  async function addVoice() {
+    const picker = document.createElement('input');
+    picker.type = 'file';
+    picker.accept = 'audio/*,.wav,.mp3,.m4a,.flac,.ogg';
+    picker.onchange = async () => {
+      const file = picker.files?.[0];
+      if (!file) return;
+      setAddingVoice(true);
+      setVoiceError(null);
+      try {
+        const path = await uploadVoiceSample(file);
+        // Named from the filename, which is nearly always what the person
+        // called the recording and saves a dialog they would only confirm.
+        const name = file.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').trim();
+        const saved = await saveNarrationVoice(name || 'New voice', path);
+        const fresh = await getNarrationOptions(engine);
+        setOptions(fresh);
+        setVoice(saved.slug);
+      } catch (e) {
+        setVoiceError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setAddingVoice(false);
+      }
+    };
+    picker.click();
+  }
+
+  async function removeVoice() {
+    if (!chosen || chosen.kind !== 'cloned') return;
+    setVoiceError(null);
+    try {
+      await deleteNarrationVoice(chosen.slug);
+      const fresh = await getNarrationOptions(engine);
+      setOptions(fresh);
+      setVoice(fresh.voices[0]?.slug ?? '');
+    } catch (e) {
+      setVoiceError(e instanceof Error ? e.message : String(e));
+    }
+  }
 
   async function setUp(name: string) {
     setSetting(name);
@@ -212,6 +263,40 @@ export default function NarrationView() {
               </option>
             ))}
           </select>
+
+          {/* Adding a voice from a recording. The endpoint existed; there was
+              no way to reach it without the API, which for a feature this
+              central is the same as it not existing. */}
+          {engineTakesRecordings ? (
+            <div className="mt-2 flex items-center gap-2">
+              <button
+                onClick={addVoice}
+                disabled={!!addingVoice}
+                className="text-[11px] px-2 py-1 rounded-md bg-[var(--bg-inset)]
+                           text-[var(--text-dim)] hover:text-white transition
+                           disabled:opacity-40"
+              >
+                {addingVoice ? 'Adding…' : '+ Add a voice'}
+              </button>
+              {chosen?.kind === 'cloned' && (
+                <button
+                  onClick={removeVoice}
+                  className="text-[11px] px-2 py-1 rounded-md text-[var(--text-faint)]
+                             hover:text-rose-400 transition"
+                >
+                  Remove “{chosen.name}”
+                </button>
+              )}
+            </div>
+          ) : (
+            <p className="mt-1.5 text-[10px] text-[var(--text-faint)] leading-relaxed">
+              Adding your own voice needs the Quality (1.5B) engine — it listens
+              to a recording. Realtime uses prepared voices only.
+            </p>
+          )}
+          {voiceError && (
+            <p className="mt-1.5 text-[10px] text-rose-400 whitespace-pre-wrap">{voiceError}</p>
+          )}
         </div>
 
         <div>
