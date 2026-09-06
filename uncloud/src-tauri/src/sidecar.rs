@@ -256,6 +256,48 @@ pub fn install_engine(app: &AppHandle) -> Result<(), String> {
         return Err(format!("`uv sync` exited with status {code}"));
     }
     emit("Dependencies installed.");
+
+    // The optional voice environments, while there is a connection by
+    // definition. VibeVoice pins library versions the main engine cannot use,
+    // so it cannot live in the same environment — but leaving it for later
+    // meant the Voice tab greeted people with a path to an interpreter that
+    // had never been built, and the way to fix it was two commands in a file
+    // they had no reason to read.
+    //
+    // Failure here is NOT fatal. Narration is one feature; refusing to finish
+    // setup because an optional voice engine did not build would cost the user
+    // the whole application to save them a tab.
+    for (name, requirement) in [
+        ("vibevoice", "vibevoice @ git+https://github.com/microsoft/VibeVoice"),
+        ("vibevoice-hq", "vibevoice @ git+https://github.com/vibevoice-community/VibeVoice"),
+    ] {
+        let venv = dir.join(format!(".venv-{name}"));
+        if venv.join("bin").join("python").is_file() {
+            continue;
+        }
+        emit(&format!("Setting up the {name} voice engine…"));
+        let made = Command::new(&uv)
+            .args(["venv", &venv.to_string_lossy(), "--python", "3.12"])
+            .current_dir(&dir)
+            .env("PATH", child_path_env())
+            .env("UV_PYTHON_DOWNLOADS", "automatic")
+            .status();
+        let installed = made.is_ok_and(|c| c.success())
+            && Command::new(&uv)
+                .args(["pip", "install", "--python", &venv.to_string_lossy(), requirement])
+                .current_dir(&dir)
+                .env("PATH", child_path_env())
+                .status()
+                .is_ok_and(|c| c.success());
+        if installed {
+            emit(&format!("The {name} voice engine is ready."));
+        } else {
+            emit(&format!(
+                "The {name} voice engine did not install. Everything else is \
+                 ready; you can set it up later from the Voice tab."
+            ));
+        }
+    }
     Ok(())
 }
 
