@@ -139,9 +139,14 @@ body {
 
 /* The wordmark cog doubles as the loading spinner, so the brand mark earns
    its place twice. */
-@keyframes uncloud-cog { to { transform: rotate(360deg); } }
+/* The mark breathes while the app is working. A cloud spinning would say
+   "machinery"; this says "thinking", which is what is actually happening. */
+@keyframes uncloud-drift {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50%      { transform: scale(1.045); opacity: 0.86; }
+}
 @media (prefers-reduced-motion: reduce) {
-  [style*="uncloud-cog"] { animation: none !important; }
+  [style*="uncloud-drift"] { animation: none !important; }
 }
 
 /* ----------------------------------------------------------------- accents */
