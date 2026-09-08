@@ -330,6 +330,37 @@ def catalog() -> list[dict]:
     return out
 
 
+@app.get("/api/models/profiles", dependencies=[Depends(require_token)])
+def model_profiles() -> list[dict]:
+    """Every model Uncloud knows about, in the shared vocabulary.
+
+    The catalogue and the library keep their own endpoints and their own
+    shapes; this is the view both products can be reasoned about through —
+    capabilities, cost, reasoning control and licence in one description. It
+    touches no weights and loads nothing, so it is cheap enough to ask on
+    every render.
+
+    Installed state comes from the library scan rather than from the download
+    record: what is on disk is the fact that matters, and a download row can
+    outlive the folder it fetched.
+    """
+    from .library import scan_library
+    from .profiles import catalogue_profiles, from_local
+
+    local = scan_library(settings.models_dir)
+    installed = {m.catalog_id for m in local if m.catalog_id}
+    out = [p.to_dict() for p in catalogue_profiles(installed_ids=installed)]
+    seen = {p["id"] for p in out}
+    # Models found on disk that no catalogue entry claims. They are real and
+    # runnable, and leaving them out would make this view disagree with the
+    # Models tab.
+    for model in local:
+        if model.catalog_id in installed or model.id in seen:
+            continue
+        out.append(from_local(model).to_dict())
+    return out
+
+
 @app.get("/api/library", dependencies=[Depends(require_token)])
 def library() -> list[dict]:
     return [m.to_dict() for m in scan_library_cached(settings.models_dir)]

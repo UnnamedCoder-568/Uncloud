@@ -42,11 +42,12 @@
       "debugApplicationIdSuffix": ".debug"
     },
     "resources": {
+      "../../sidecar/README.md": "engine/README.md",
+      "../../sidecar/pyproject.toml": "engine/pyproject.toml",
+      "../../sidecar/scripts/*.py": "engine/scripts/",
       "../../sidecar/uncloud_engine/*.py": "engine/uncloud_engine/",
       "../../sidecar/uncloud_engine/agent/*.py": "engine/uncloud_engine/agent/",
-      "../../sidecar/scripts/*.py": "engine/scripts/",
-      "../../sidecar/pyproject.toml": "engine/pyproject.toml",
-      "../../sidecar/README.md": "engine/README.md",
+      "../../sidecar/uncloud_engine/foundation/*.py": "engine/uncloud_engine/foundation/",
       "../../sidecar/uv.lock": "engine/uv.lock",
       "binaries/uv": "uv"
     },
