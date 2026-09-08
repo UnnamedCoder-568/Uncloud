@@ -3,7 +3,7 @@ import { ChevronDown, ArrowUp, Square, Mic, Volume2, VolumeX, Loader2, Hammer, I
   Image as ImageIcon, ImageOff, GlobeLock, AudioLines, MessagesSquare,
   Settings2 } from 'lucide-react';
 import { TitleBarPortal } from '../components/TitleBar';
-import { Cog } from '../components/Wordmark';
+import { Mark } from '../components/Wordmark';
 import Markdown from '../components/Markdown';
 import { fromConversation, sendToChisel } from '../lib/handoff';
 import Conversations from '../components/Conversations';
@@ -870,7 +870,7 @@ export default function ChatView() {
         /* Nothing to read yet, so the composer IS the page. */
         <div className="composer composer-centred">
           <div className="greeting">
-            <Cog px={32} />
+            <Mark px={38} />
             <span>What are we making?</span>
           </div>
           {composer}
