@@ -1,4 +1,4 @@
-/* The shared chassis — Uncloud and Uncloud Ad Studio.
+/* The shared chassis — Uncloud and Uncloud Studio.
  *
  * THIS FILE IS BYTE-IDENTICAL IN BOTH REPOSITORIES. Verify with md5, not by
  * eye. If you change it here, copy it there in the same commit; a chassis that
@@ -298,7 +298,7 @@
 }
 .composer-docked {
   /* Sticky rather than fixed, so it works both as a flex sibling of a scroll
-     pane (Uncloud's chat) and inside a scrolling page (Ad Studio's studio).
+     pane (Uncloud's chat) and inside a scrolling page (Uncloud Studio's studio).
      In the flex case sticky degrades to static, which is what is wanted. */
   position: sticky;
   bottom: 0;
