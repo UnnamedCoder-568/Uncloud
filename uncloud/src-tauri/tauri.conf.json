@@ -48,6 +48,10 @@
       "../../sidecar/uncloud_engine/*.py": "engine/uncloud_engine/",
       "../../sidecar/uncloud_engine/agent/*.py": "engine/uncloud_engine/agent/",
       "../../sidecar/uncloud_engine/foundation/*.py": "engine/uncloud_engine/foundation/",
+      "../../sidecar/uncloud_engine/legal/*.py": "engine/uncloud_engine/legal/",
+      "../../sidecar/uncloud_engine/legal/documents/*.md": "engine/uncloud_engine/legal/documents/",
+      "../../sidecar/uncloud_engine/legal/documents/*.json": "engine/uncloud_engine/legal/documents/",
+      "../../sidecar/uncloud_engine/legal/product/*.md": "engine/uncloud_engine/legal/product/",
       "../../sidecar/uncloud_engine/training/*.py": "engine/uncloud_engine/training/",
       "../../sidecar/uv.lock": "engine/uv.lock",
       "binaries/uv": "uv"
