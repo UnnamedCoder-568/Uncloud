@@ -465,6 +465,19 @@ class ScopeChoiceBody(BaseModel):
     scopes: list[str] = []
 
 
+class RecipeBody(BaseModel):
+    name: str = ""
+    description: str = ""
+    subject: str = ""
+    #: Each step names exactly one of a capability or a tool.
+    steps: list[dict] = []
+    parameters: dict[str, str] = {}
+
+
+class RunRecipeBody(BaseModel):
+    values: dict[str, str] = {}
+
+
 class McpServerBody(BaseModel):
     id: str
     command: str
@@ -1024,6 +1037,103 @@ def _http_client():
     import httpx
 
     return httpx.Client(timeout=30.0)
+
+
+# ------------------------------------------------------------------- recipes
+@app.get("/api/recipes", dependencies=[Depends(require_token)])
+def recipes_list(subject: str = "") -> list[dict]:
+    """Saved procedures, most trusted first.
+
+    Listed rather than hidden because a recipe influences what happens: one
+    that has quietly become wrong should be findable and editable, not
+    invisible state that somebody has to guess at.
+    """
+    from . import workflows
+
+    return [r.to_dict() for r in workflows.store().list(subject=subject)]
+
+
+@app.get("/api/recipes/{recipe_id}", dependencies=[Depends(require_token)])
+def recipe_read(recipe_id: str) -> dict:
+    from . import workflows
+
+    found = workflows.store().get(recipe_id)
+    if found is None:
+        raise HTTPException(status_code=404, detail="no such recipe")
+    return found.to_dict()
+
+
+@app.post("/api/recipes", dependencies=[Depends(require_token)])
+def recipe_create(body: RecipeBody) -> dict:
+    """Write a recipe, refusing one that could not run.
+
+    Validated at save time rather than at run time: a recipe that fails on its
+    third step has already done two things, and undoing those is not something
+    this layer can offer.
+    """
+    from . import workflows
+
+    try:
+        return workflows.create(
+            name=body.name, description=body.description,
+            subject=body.subject, steps=body.steps,
+            parameters=body.parameters).to_dict()
+    except workflows.RecipeError as exc:
+        raise HTTPException(status_code=400, detail=exc.to_dict()) from exc
+
+
+@app.patch("/api/recipes/{recipe_id}", dependencies=[Depends(require_token)])
+def recipe_update(recipe_id: str, body: RecipeBody) -> dict:
+    from . import workflows
+
+    changes: dict = {}
+    if body.name:
+        changes["name"] = body.name
+    if body.description:
+        changes["description"] = body.description
+    if body.subject:
+        changes["subject"] = body.subject
+    if body.steps:
+        changes["steps"] = body.steps
+        changes["parameters"] = body.parameters
+    try:
+        return workflows.update(recipe_id, changes).to_dict()
+    except workflows.RecipeError as exc:
+        raise HTTPException(status_code=400, detail=exc.to_dict()) from exc
+
+
+@app.delete("/api/recipes/{recipe_id}", dependencies=[Depends(require_token)])
+def recipe_delete(recipe_id: str) -> dict:
+    from . import workflows
+
+    return {"deleted": workflows.store().delete(recipe_id)}
+
+
+@app.post("/api/recipes/{recipe_id}/run", dependencies=[Depends(require_token)])
+async def recipe_run(recipe_id: str, body: RunRecipeBody) -> dict:
+    """Run a recipe's steps in order.
+
+    Every step goes through `run_tool`, so a recipe containing a shell command
+    prompts exactly as a shell command does. A recipe is a shortcut for
+    somebody's fingers, never for the gate — otherwise "save this as a recipe"
+    would be how you escape being asked.
+    """
+    from . import workflows
+    from .core.recipes import record_use
+
+    found = workflows.store().get(recipe_id)
+    if found is None:
+        raise HTTPException(status_code=404, detail="no such recipe")
+    try:
+        outcome = await workflows.run(found, body.values)
+    except workflows.RecipeError as exc:
+        raise HTTPException(status_code=400, detail=exc.to_dict()) from exc
+
+    # Counted whether or not it worked. "Used ten times" is about how often
+    # somebody reaches for it, and a recipe that keeps failing should still
+    # look well-worn rather than untried.
+    workflows.store().save(record_use(found, score=1.0 if outcome.ok else 0.0))
+    return outcome.to_dict()
 
 
 # ----------------------------------------------------------------------- MCP

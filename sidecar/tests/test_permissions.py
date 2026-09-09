@@ -47,9 +47,44 @@ def req(action="fs_write", category=Risk.WRITE, summary="write a file"):
 def test_every_tool_has_a_risk_category() -> None:
     """A tool nobody has classified cannot be governed. Adding one without
     deciding what it can do should be a broken build, not a hole discovered
-    later."""
-    missing = sorted({t["id"] for t in tools.TOOL_SPECS} - set(tools.TOOL_RISK))
+    later.
+
+    The one exception is named rather than implicit: `capability` resolves to
+    an integration action and is governed by that action's category. Giving it
+    a fixed one would mean choosing a category that is wrong for most of what
+    it can become.
+    """
+    missing = (sorted({t["id"] for t in tools.TOOL_SPECS}
+                      - set(tools.TOOL_RISK)
+                      - tools.RESOLVED_AT_CALL_TIME))
     assert not missing, f"these tools have no risk category: {missing}"
+
+
+def test_a_tool_resolved_at_call_time_is_still_governed() -> None:
+    """The exception above is only acceptable because the gate is asked one
+    level down, with better information rather than none."""
+    import asyncio
+
+    from uncloud_engine.core.integrations import IntegrationError, registry
+
+    saved = registry._ASK
+    asked: list[str] = []
+
+    async def refuse(request):
+        asked.append(request.action)
+        raise PermissionError("no")
+
+    registry._ASK = refuse
+    try:
+        # Either the gate refused it, or nothing is connected that could serve
+        # it. Both are acceptable; running silently is not.
+        with pytest.raises((PermissionError, IntegrationError)):
+            asyncio.run(tools.run_tool("capability", {
+                "capability": "storage.file.list", "arguments": {}}))
+    finally:
+        registry._ASK = saved
+    # Either it was asked about, or nothing could serve it — never run silently.
+    assert asked == ["documents.list"] or asked == []
 
 
 def test_the_risk_table_has_no_tools_that_do_not_exist() -> None:

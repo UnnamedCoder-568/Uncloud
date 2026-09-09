@@ -36,6 +36,16 @@ WORKSPACE_DIR.mkdir(parents=True, exist_ok=True)
 # somebody's server. Neither is a local file operation, but "this pressed a
 # button on a website" is a different question from "this fetched a page", and
 # collapsing them would let a policy that permits research also permit acting.
+#: Tools with no fixed category, because they resolve to something that has
+#: one. `capability` becomes an integration action and is governed by THAT
+#: action's risk — giving it a category here would mean picking one, and any
+#: choice would be wrong for most of what it can resolve to.
+#:
+#: Dispatched before the risk lookup in `run_tool`, exactly as a dotted action
+#: id is. Nothing here escapes the gate; it is asked one level down, with
+#: better information.
+RESOLVED_AT_CALL_TIME: frozenset[str] = frozenset({"capability"})
+
 TOOL_RISK: dict[str, Risk] = {
     "shell": Risk.SHELL,
     "app_open": Risk.DEVICE,
@@ -159,6 +169,15 @@ def _summarise(tool_id: str, args: dict[str, Any]) -> tuple[str, dict]:
 
 TOOL_SPECS = [
     {"id": "shell", "name": "Shell", "description": "Run a shell command.", "args": ["command"]},
+    {
+        "id": "capability", "name": "Use a Capability",
+        "description": "Do something through whichever connected integration "
+                       "can. Give a capability such as email.send, "
+                       "spreadsheet.read or code.issue.create, and the "
+                       "arguments that capability takes. Name a provider only "
+                       "if the user asked for a specific one.",
+        "args": ["capability", "arguments", "provider"],
+    },
     {"id": "integrations", "name": "Integrations",
      "description": "List what this computer is connected to — document folders, "
                     "accounts — and which actions each one offers. Use the action "
@@ -387,6 +406,25 @@ async def run_tool(tool_id: str, args: dict[str, Any], *, origin: str = "") -> s
 
         if find_action(tool_id) is not None:
             return await perform(tool_id, args, origin=origin or "agent")
+
+    # Planning in capabilities rather than in provider names. The model asks to
+    # `email.send` and the registry decides whether that is Gmail or Outlook,
+    # which is what stops "if gmail" appearing in planning code the first time
+    # somebody adds a second mail provider.
+    if tool_id == "capability":
+        from ..core.integrations import Capability, perform_capability
+
+        wanted = str(args.get("capability", "")).strip()
+        try:
+            capability = Capability(wanted)
+        except ValueError:
+            known = ", ".join(sorted(c.value for c in Capability))
+            raise ValueError(
+                f"{wanted!r} is not a capability. Known: {known}") from None
+        return await perform_capability(
+            capability, args.get("arguments") or {},
+            provider=str(args.get("provider", "")),
+            origin=origin or "agent")
 
     risk = TOOL_RISK.get(tool_id)
     if risk is None:
@@ -1017,31 +1055,54 @@ async def _video_frames(args: dict[str, Any]) -> str:
 
 
 def _integrations() -> str:
-    """What is connected, and what could be, in the model's terms.
+    """What is connected, what it can do, and what is missing.
 
-    Unbuilt connectors are listed with what they need rather than hidden. A
-    model that knows Google Workspace exists but is not connected can say so;
-    one that has never heard of it invents a reason instead.
+    Written capability-first, because that is how the model should plan: the
+    list of capabilities is the vocabulary for the `capability` tool, and the
+    provider names below it are context rather than instructions.
+
+    Integrations that cannot work are listed with what they need rather than
+    hidden. A model that knows Google Workspace exists but is not connected can
+    say so; one that has never heard of it invents a reason instead.
     """
-    from ..core.integrations import all_integrations
+    from ..core.integrations import all_integrations, capability_map
 
     lines = []
+    routable = capability_map()
+    if routable:
+        lines.append("Capabilities available right now — use the `capability` "
+                     "tool with any of these:")
+        for capability, providers in sorted(routable.items()):
+            lines.append(f"    {capability}  (via {', '.join(providers)})")
+        lines.append("")
+    lines.append("Integrations:")
     for integration in all_integrations(refresh=True):
-        if not integration.available:
+        connection = integration.connection()
+        if connection.state.usable:
+            where = f" ({connection.account})" if connection.account else ""
+            lines.append(f"{integration.name}{where} — connected.")
+            for action in integration.actions:
+                arguments = ", ".join(f"{k}: {v}"
+                                      for k, v in action.parameters.items())
+                lines.append(f"    {action.id}({arguments})"
+                             f"  [{action.capability.value}] — {action.summary}")
+            continue
+
+        # The state matters to the model, because the remedies differ and it
+        # will otherwise tell somebody to sign in to a provider that has no
+        # OAuth client registered yet.
+        if connection.state.value == "not_configured":
+            lines.append(f"{integration.name} — needs configuring before it can "
+                         f"be connected. {integration.needs}")
+        elif connection.state.value == "authentication_required":
+            lines.append(f"{integration.name} — was connected; the sign-in has "
+                         f"expired and needs doing again in Settings.")
+        elif not integration.available:
             lines.append(f"{integration.name} — not available in this build. "
                          f"{integration.needs}")
-            continue
-        if not integration.connected():
-            lines.append(
-                f"{integration.name} — not connected. The user can "
-                + ("choose a folder for it in Settings."
-                   if not integration.needs_credential
-                   else "connect it in Settings."))
-            continue
-        where = f" ({integration.account()})" if integration.account() else ""
-        lines.append(f"{integration.name}{where} — connected.")
-        for action in integration.actions:
-            arguments = ", ".join(f"{k}: {v}"
-                                  for k, v in action.parameters.items())
-            lines.append(f"    {action.id}({arguments}) — {action.summary}")
+        else:
+            lines.append(f"{integration.name} — not connected. The user can "
+                         + ("choose a folder for it in Settings."
+                            if not integration.needs_credential
+                            else "connect it in Settings."))
     return "\n".join(lines)
