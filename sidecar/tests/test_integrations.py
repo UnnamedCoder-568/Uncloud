@@ -19,8 +19,8 @@ from pathlib import Path
 
 import pytest
 
-from uncloud_engine.foundation.permission import Mode, Risk
-from uncloud_engine.integrations import (
+from uncloud_engine.core.permission import Mode, Risk
+from uncloud_engine.core.integrations import (
     Action,
     Change,
     Integration,
@@ -32,7 +32,7 @@ from uncloud_engine.integrations import (
 )
 
 HERE = Path(__file__).resolve().parent
-PACKAGE = HERE.parent / "uncloud_engine" / "integrations"
+PACKAGE = HERE.parent / "uncloud_engine" / "core" / "integrations"
 
 
 # ----------------------------------------------------------------- documents
@@ -274,8 +274,6 @@ def test_the_gate_decides_every_action_however_it_was_reached(recorder,
                                                               monkeypatch) -> None:
     """Connecting an account granted nothing, and a skill calling this inherits
     nothing. The gate is asked at the moment of the action, every time."""
-    from uncloud_engine.agent import approval
-
     integration = recorder(_Recorder(
         preview_returns=Change(summary="Send a note", target="someone")))
     asked: list[str] = []
@@ -284,7 +282,7 @@ def test_the_gate_decides_every_action_however_it_was_reached(recorder,
         asked.append(request.action)
         raise PermissionError("declined")
 
-    monkeypatch.setattr(approval, "decide", refuse)
+    monkeypatch.setattr(registry, "_ASK", refuse)
     with pytest.raises(PermissionError):
         asyncio.run(registry.perform("recorder.send", {},
                                      origin="skill:tidy-inbox"))
@@ -295,8 +293,6 @@ def test_the_gate_decides_every_action_however_it_was_reached(recorder,
 def test_the_approval_shows_the_change_rather_than_the_action_name(recorder,
                                                                    monkeypatch) -> None:
     """'Send the email' is not a decision anybody can make well."""
-    from uncloud_engine.agent import approval
-
     recorder(_Recorder(preview_returns=Change(
         summary="Send 'Invoice 12'", target="ana@example.com",
         reversible=False, body="Please find attached.")))
@@ -306,7 +302,7 @@ def test_the_approval_shows_the_change_rather_than_the_action_name(recorder,
         seen["preview"] = request.preview
         seen["summary"] = request.summary
 
-    monkeypatch.setattr(approval, "decide", capture)
+    monkeypatch.setattr(registry, "_ASK", capture)
     asyncio.run(registry.perform("recorder.send", {}))
     assert "ana@example.com" in seen["preview"]
     assert "cannot be undone" in seen["preview"]
@@ -394,7 +390,7 @@ def test_an_integration_action_called_as_a_tool_still_passes_the_gate(recorder,
     actions arrive there like everything else. They are not in TOOL_RISK — they
     carry their own category — so the check that they are still governed has to
     be explicit."""
-    from uncloud_engine.agent import approval, tools
+    from uncloud_engine.agent import tools
 
     integration = recorder(_Recorder(
         preview_returns=Change(summary="Send a note", target="someone")))
@@ -404,7 +400,7 @@ def test_an_integration_action_called_as_a_tool_still_passes_the_gate(recorder,
         asked.append(request.action)
         raise PermissionError("declined")
 
-    monkeypatch.setattr(approval, "decide", refuse)
+    monkeypatch.setattr(registry, "_ASK", refuse)
     with pytest.raises(PermissionError):
         asyncio.run(tools.run_tool("recorder.send", {}))
     assert asked == ["recorder.send"]
@@ -437,3 +433,16 @@ def test_a_stored_credential_never_appears_in_what_the_model_reads(monkeypatch,
     text = _integrations()
     assert str(tmp_path) in text, "the label is what a person recognises"
     assert "ghp_TOPSECRET123" not in text
+
+
+def test_core_refuses_rather_than_allows_when_no_approver_was_installed(recorder,
+                                                                        monkeypatch) -> None:
+    """The failure this seam could have had. An integration framework whose
+    approval hook was never wired would execute everything silently, and it
+    would look exactly like the system working."""
+    integration = recorder(_Recorder(
+        preview_returns=Change(summary="Send a note", target="someone")))
+    monkeypatch.setattr(registry, "_ASK", None)
+    with pytest.raises(registry.Ungoverned):
+        asyncio.run(registry.perform("recorder.send", {}))
+    assert integration.ran is False

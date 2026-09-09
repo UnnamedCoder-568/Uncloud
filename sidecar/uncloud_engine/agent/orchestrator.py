@@ -8,9 +8,9 @@ from typing import Any
 import httpx
 
 from ..engines import engine_manager
-from ..foundation import Effort, Plan
-from ..foundation import parse as parse_effort
-from ..foundation import translate as translate_effort
+from ..core import Effort, Plan
+from ..core import parse as parse_effort
+from ..core import translate as translate_effort
 from .graph import ExecutionGraph, Task
 from .tools import TOOL_SPECS, run_tool
 

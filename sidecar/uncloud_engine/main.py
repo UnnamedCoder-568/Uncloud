@@ -21,12 +21,14 @@ from .agent.graph import ExecutionGraph
 from .agent.orchestrator import orchestrator
 from .agent.tools import TOOL_SPECS
 from . import profiles as uncloud_profiles
-from .foundation import AuditLog, Denied, Gate, Mode, Risk, dump_policy, load_policy
-from .foundation import Request as PermissionRequest
+from .core import AuditLog, Denied, Gate, Mode, Risk, dump_policy, load_policy
+from .core.integrations import credentials as integration_credentials
+from .core.integrations import registry as integration_registry
+from .core import Request as PermissionRequest
 from .catalog import get_catalog, get_entry
 from .chat import build_chat_payload
 from . import conversations as conversations_store
-from .config import settings
+from .config import CONFIG_DIR, settings
 from .downloader import download_manager
 from .engines import engine_manager
 from .image_engine import image_engine
@@ -74,6 +76,26 @@ gate = Gate(
     on_policy_change=lambda policy: settings.set_permission_policy(dump_policy(policy)),
 )
 agent_tools.install_gate(gate)
+
+async def _approve_integration_action(request: PermissionRequest):
+    """Decide an integration action, or turn it into a 428.
+
+    Deliberately the same path as every other gated action: `gated` raises
+    NeedsApproval, the client renders the prompt, posts the answer and repeats
+    the call. An integration-specific approval system is exactly what the
+    architecture rules forbid.
+    """
+    gated(request.action, request.category, request.summary,
+          preview=request.preview, origin=request.origin)
+    return None
+
+
+# Core owns the rule that every integration action is asked about; it does not
+# own the round trip, which is an HTTP 428 here and something else in another
+# host. Installed at import, so there is no window in which an action could run
+# ungoverned — and Core raises rather than allowing if this never happened.
+integration_registry.install_approver(_approve_integration_action)
+integration_credentials.configure(CONFIG_DIR)
 
 
 class NeedsApproval(HTTPException):
@@ -592,7 +614,7 @@ def effort_levels() -> dict:
     behave identically is worse than saying so: a control that appears to work
     and does nothing teaches people the application is lying to them.
     """
-    from .foundation import describe as describe_effort
+    from .core import describe as describe_effort
 
     return {"selected": settings.effort,
             "levels": describe_effort(_active_profile())}
@@ -600,7 +622,7 @@ def effort_levels() -> dict:
 
 @app.post("/api/effort", dependencies=[Depends(require_token)])
 def set_effort(body: EffortBody) -> dict:
-    from .foundation import parse as parse_effort
+    from .core import parse as parse_effort
 
     settings.set_effort(parse_effort(body.effort).value)
     return effort_levels()
@@ -710,7 +732,7 @@ def legal_state() -> dict:
 @app.get("/api/legal/notices/third-party", dependencies=[Depends(require_token)])
 def third_party_notices(text: bool = False) -> dict:
     """Whose work is included, and under what terms."""
-    from .legal import load_notices, summarise
+    from .core.legal import load_notices, summarise
 
     entries = load_notices()
     return {"summary": summarise(entries),
@@ -758,7 +780,7 @@ def model_licence(model_id: str) -> dict:
     rendered as one.
     """
     from .agreements import ledger
-    from .legal import describe
+    from .core.legal import describe
 
     profile = _profile(model_id)
     if profile is None:
@@ -792,8 +814,8 @@ def integrations_list() -> dict:
     OAuth client you register with Google" and "we do not support that" send
     somebody in completely different directions, and only one of them is true.
     """
-    from .integrations import describe
-    from .integrations import credentials as broker
+    from .core.integrations import describe
+    from .core.integrations import credentials as broker
 
     return {"integrations": describe(),
             # Whether secrets are going into a real keychain. Somebody on a
@@ -806,8 +828,8 @@ def integrations_list() -> dict:
 @app.post("/api/integrations/connect", dependencies=[Depends(require_token)])
 def integrations_connect(body: ConnectBody) -> dict:
     """Connect an integration. The secret goes in and never comes back out."""
-    from .integrations import get
-    from .integrations import credentials as broker
+    from .core.integrations import get
+    from .core.integrations import credentials as broker
 
     integration = get(body.integration_id)
     if integration is None:
@@ -833,7 +855,7 @@ def integrations_connect(body: ConnectBody) -> dict:
 
 @app.post("/api/integrations/disconnect", dependencies=[Depends(require_token)])
 def integrations_disconnect(body: ConnectBody) -> dict:
-    from .integrations import credentials as broker
+    from .core.integrations import credentials as broker
 
     broker.forget(body.integration_id)
     return integrations_list()

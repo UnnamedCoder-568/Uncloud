@@ -17,7 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from .foundation import NOT_BLANK, Dimension, Rubric, Score, Unmeasurable
+from .core import NOT_BLANK, Dimension, Rubric, Score, Unmeasurable
 
 SIZE = Dimension(
     id="size", label="Size", weight=1.0,

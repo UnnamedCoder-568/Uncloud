@@ -26,6 +26,7 @@ at the moment of the action, every time.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import stat
@@ -33,10 +34,24 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..config import CONFIG_DIR
-
 SERVICE = "Uncloud Integrations"
-_FALLBACK = CONFIG_DIR / "integrations.json"
+
+#: Where the fallback index lives. Core does not know which application is
+#: running it, so the product says — `configure()` at start-up. The default is
+#: deliberately a Core-owned directory rather than either product's, so a
+#: misconfigured build writes somewhere harmless and obvious instead of
+#: silently into the wrong application's state.
+_DIRECTORY = Path.home() / ".uncloud-core"
+
+
+def configure(directory: Path | str) -> None:
+    """Point the store at this application's own data directory."""
+    global _DIRECTORY
+    _DIRECTORY = Path(directory)
+
+
+def _fallback_path() -> Path:
+    return _DIRECTORY / "integrations.json"
 
 #: Everything the interface is allowed to know about a stored credential.
 #: Deliberately not the credential.
@@ -76,18 +91,20 @@ def _keyring():
 
 
 def _read_fallback() -> dict:
-    if not _FALLBACK.is_file():
+    path = _fallback_path()
+    if not path.is_file():
         return {}
     try:
-        return json.loads(_FALLBACK.read_text(encoding="utf-8"))
+        return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
 
 
 def _write_fallback(data: dict) -> None:
-    _FALLBACK.parent.mkdir(parents=True, exist_ok=True)
-    _FALLBACK.write_text(json.dumps(data, indent=2), encoding="utf-8")
-    os.chmod(_FALLBACK, stat.S_IRUSR | stat.S_IWUSR)
+    path = _fallback_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)
 
 
 def secure() -> bool:
@@ -174,10 +191,10 @@ def forget(handle: str) -> bool:
     ring = _keyring()
     existed = handle in _index()
     if ring is not None:
-        try:
+        # Absent is the desired end state, so a backend that has never heard of
+        # this handle is a success rather than something to report.
+        with contextlib.suppress(Exception):
             ring.delete_password(SERVICE, handle)
-        except Exception:  # noqa: BLE001 - absent is the desired end state
-            pass
     data = _read_fallback()
     secrets_map = data.get("secrets")
     if isinstance(secrets_map, dict) and handle in secrets_map:

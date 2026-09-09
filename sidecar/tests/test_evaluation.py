@@ -8,7 +8,7 @@ import pytest
 from PIL import Image
 
 from uncloud_engine.evaluation import EVALUATORS, IMAGE, NotBlank
-from uncloud_engine.foundation import NOT_BLANK, Unmeasurable, compare, evaluate
+from uncloud_engine.core import NOT_BLANK, Unmeasurable, compare, evaluate
 
 
 @pytest.fixture

@@ -10,7 +10,7 @@ from __future__ import annotations
 import pytest
 
 from uncloud_engine.chat import build_chat_payload
-from uncloud_engine.foundation import (
+from uncloud_engine.core import (
     BASE_OUTPUT_TOKENS,
     ORDER,
     Capability,

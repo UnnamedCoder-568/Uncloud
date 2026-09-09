@@ -15,7 +15,7 @@ import json
 import pytest
 
 from uncloud_engine.agent import approval, tools
-from uncloud_engine.foundation import (
+from uncloud_engine.core import (
     ALWAYS_ASK,
     DEFAULTS,
     ApprovalRequired,

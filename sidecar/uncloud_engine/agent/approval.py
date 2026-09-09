@@ -24,7 +24,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Callable
 
-from ..foundation import ApprovalRequired, Decision, Gate, Request
+from ..core import ApprovalRequired, Decision, Gate, Request
 from .tools import current_gate
 
 #: An asker returns "yes", "no", "always" or "never".

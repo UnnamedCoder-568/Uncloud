@@ -26,9 +26,41 @@ somebody in completely different directions, and only one of them is true.
 
 from __future__ import annotations
 
-from ..foundation.permission import Request
+from collections.abc import Awaitable, Callable
+
+from ..permission import Decision, Request
 from .contract import Action, Change, Integration, IntegrationError, Sensitivity
 from .documents import Documents
+
+#: How this application asks a person. Installed by the product at start-up:
+#: Uncloud turns it into an HTTP 428, Studio does the same, and a test can make
+#: it refuse. Core owns the RULE that every action is asked about; it does not
+#: own the round trip, which is different in every host.
+_ASK: Callable[[Request], Awaitable[Decision | None]] | None = None
+
+
+class Ungoverned(RuntimeError):
+    """No approver was installed, so nothing can be asked.
+
+    Raised rather than defaulting to allow. An integration framework whose
+    approval hook was never wired would otherwise execute every action
+    silently, and the failure would look like everything working.
+    """
+
+
+def install_approver(ask: Callable[[Request], Awaitable[Decision | None]] | None
+                     ) -> None:
+    global _ASK
+    _ASK = ask
+
+
+async def _ask(request: Request):
+    if _ASK is None:
+        raise Ungoverned(
+            f"{request.action} cannot run: no approver is installed, so there "
+            f"is no way to ask whether it may. This is a wiring fault in the "
+            f"application, not a decision.")
+    return await _ASK(request)
 
 
 def _planned(id: str, name: str, summary: str, needs: str,
@@ -191,9 +223,7 @@ async def perform(action_id: str, arguments: dict, *, origin: str = "agent") -> 
             remedy="This is a fault in the integration. It has been stopped "
                    "rather than run.")
 
-    from ..agent.approval import decide
-
-    await decide(Request(
+    await _ask(Request(
         action=action_id,
         category=action.risk,
         summary=(f"{integration.name}: {change.summary}" if change

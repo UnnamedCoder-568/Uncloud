@@ -12,14 +12,13 @@ capability takes a model out of routing with nothing to show for it.
 
 from __future__ import annotations
 
-import hashlib
 from pathlib import Path
 
 import pytest
 
 from uncloud_engine import profiles
 from uncloud_engine.catalog import CATALOG
-from uncloud_engine.foundation import (
+from uncloud_engine.core import (
     RUNTIMES,
     UNKNOWN_RUNTIME,
     VOCABULARY_VERSION,
@@ -39,48 +38,6 @@ from uncloud_engine.foundation import (
 REPO = Path(__file__).resolve().parents[2]
 OURS = REPO / "sidecar" / "uncloud_engine" / "foundation"
 THEIRS = REPO.parent / "UncloudAdStudio" / "engine" / "adstudio_engine" / "foundation"
-
-FILES = ("__init__.py", "capability.py")
-
-
-def _digest(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
-
-
-# ------------------------------------------------------------------- drift
-def test_the_foundation_declares_itself_shared() -> None:
-    text = (OURS / "capability.py").read_text()
-    assert "BYTE-IDENTICAL IN BOTH REPOSITORIES" in text
-
-
-@pytest.mark.skipif(not THEIRS.exists(),
-                    reason="Uncloud Studio is not checked out beside this repository")
-def test_both_products_carry_the_same_foundation() -> None:
-    for name in FILES:
-        ours, theirs = OURS / name, THEIRS / name
-        assert theirs.exists(), f"{name} is missing from Studio's foundation"
-        assert _digest(ours) == _digest(theirs), (
-            f"foundation/{name} has drifted between Uncloud and Uncloud Studio.\n"
-            f"  ours:   {ours}\n  theirs: {theirs}\n"
-            "Copy whichever is correct over the other; do not edit one alone.")
-
-
-def test_the_foundation_imports_nothing_from_the_product() -> None:
-    import ast
-    import sys
-
-    allowed = set(sys.stdlib_module_names)
-    for name in FILES:
-        tree = ast.parse((OURS / name).read_text())
-        imported: set[str] = set()
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Import):
-                imported |= {a.name.split(".")[0] for a in node.names}
-            elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
-                imported.add(node.module.split(".")[0])
-        outside = sorted(imported - allowed - {"__future__"})
-        assert not outside, (
-            f"foundation/{name} imports {outside}; it must be standard library only")
 
 
 def test_the_vocabulary_version_is_declared() -> None:
