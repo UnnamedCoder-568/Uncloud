@@ -11,6 +11,7 @@ import ChatView from './views/ChatView';
 import ModelsView from './views/ModelsView';
 import ChiselView from './views/ChiselView';
 import SettingsView from './views/SettingsView';
+import TrainingView from './views/TrainingView';
 import ImageView from './views/ImageView';
 import VoiceView from './views/VoiceView';
 import MusicView from './views/MusicView';
@@ -33,6 +34,7 @@ const PANES: { id: View; render: () => React.ReactElement }[] = [
   { id: 'voice', render: () => <VoiceView /> },
   { id: 'outputs', render: () => <OutputsView /> },
   { id: 'guide', render: () => <GuideView /> },
+  { id: 'training', render: () => <TrainingView /> },
   { id: 'settings', render: () => <SettingsView /> },
 ];
 
