@@ -8,6 +8,9 @@ from typing import Any
 import httpx
 
 from ..engines import engine_manager
+from ..foundation import Effort, Plan
+from ..foundation import parse as parse_effort
+from ..foundation import translate as translate_effort
 from .graph import ExecutionGraph, Task
 from .tools import TOOL_SPECS, run_tool
 
@@ -154,11 +157,26 @@ def _context_block(context: list[dict] | None) -> str:
     )
 
 
+RECOVERY_PROMPT = """A plan you made has partly failed. Here is what happened:
+
+{report}
+
+Write a NEW plan for the work that is still outstanding. Do not repeat steps
+that already succeeded — their results are available as {{tN}} references, and
+you may use them. If a step failed because the approach was wrong, try a
+different approach rather than the same one again. If the goal cannot be
+reached, return an empty task list rather than inventing work.
+
+Respond with ONLY the same JSON object shape as before."""
+
+
 class Orchestrator:
-    async def plan(self, goal: str, context: list[dict] | None = None) -> ExecutionGraph:
+    async def plan(self, goal: str, context: list[dict] | None = None, *,
+                   effort: Effort | str = Effort.BALANCED) -> ExecutionGraph:
         if not engine_manager.active:
             raise RuntimeError("No text model is loaded. Start one from the Chat tab first.")
 
+        plan_budget = translate_effort(effort, _active_profile())
         system = PLANNING_SYSTEM_PROMPT.format(tools=_tools_description(_active_tool_specs()))
         # Planning happens once per run and has a long system prompt to chew through;
         # a large model on a busy machine can legitimately take minutes.
@@ -173,6 +191,10 @@ class Orchestrator:
                         ],
                         "temperature": 0.2,
                         "stream": False,
+                        # Planning is where thinking earns its keep, so the
+                        # effort level reaches the request rather than only the
+                        # loop around it.
+                        **_planning_parameters(plan_budget),
                     },
                 )
                 resp.raise_for_status()
@@ -206,7 +228,38 @@ class Orchestrator:
         return graph
 
     async def run(
-        self, graph: ExecutionGraph, on_update: Callable[[ExecutionGraph], Coroutine[Any, Any, None]],
+        self, graph: ExecutionGraph,
+        on_update: Callable[[ExecutionGraph], Coroutine[Any, Any, None]],
+        *, effort: Effort | str = Effort.BALANCED,
+    ) -> ExecutionGraph:
+        """Execute a plan, and — above Fast — re-plan when part of it fails.
+
+        Additive on purpose. Fast is exactly what this did before: one pass,
+        no recovery, whatever happened is the answer. Higher levels wrap that
+        same loop rather than replacing it, so the path that has been working
+        stays the path that runs.
+
+        Recovery re-plans the OUTSTANDING work rather than the whole goal.
+        Re-planning from the top would redo everything that succeeded, which on
+        a task that writes files is not merely wasteful.
+        """
+        budget = translate_effort(effort)
+        await self._execute(graph, on_update)
+
+        for attempt in range(1, budget.passes):
+            failed = [t for t in graph.tasks.values() if t.status == "failed"]
+            if not failed:
+                break
+            recovered = await self._replan(graph, failed, attempt)
+            if recovered is None or not recovered.tasks:
+                break
+            await self._execute(recovered, on_update, into=graph)
+        return graph
+
+    async def _execute(
+        self, graph: ExecutionGraph,
+        on_update: Callable[[ExecutionGraph], Coroutine[Any, Any, None]],
+        *, into: ExecutionGraph | None = None,
     ) -> ExecutionGraph:
         # Mirror the graph into durable memory as it executes. The in-flight graph
         # only lives for this run; the plan file survives, so a later session (or a
@@ -232,7 +285,36 @@ class Orchestrator:
                     task.error = str(exc)
                 self._persist_plan(graph)
                 await on_update(graph)
+        if into is not None and into is not graph:
+            # Fold a recovery plan back into the original, so the interface
+            # shows one account of the work rather than two graphs.
+            for task_id, task in graph.tasks.items():
+                into.tasks.setdefault(task_id, task)
+            self._persist_plan(into)
+            await on_update(into)
         return graph
+
+    async def _replan(self, graph: ExecutionGraph, failed: list[Task],
+                      attempt: int) -> ExecutionGraph | None:
+        """Ask for a new plan for what is left. Never raises.
+
+        A recovery attempt that fails is not worse than not attempting one, so
+        anything going wrong here ends the loop quietly and leaves the original
+        result standing.
+        """
+        report = "\n".join(
+            f"- {t.id} ({t.tool_id}): {t.description or 'no description'} — "
+            f"FAILED: {(t.error or 'no reason given')[:300]}"
+            for t in failed)
+        done = [t for t in graph.tasks.values() if t.status == "completed"]
+        if done:
+            report += "\n\nAlready finished, available as references:\n" + "\n".join(
+                f"- {{{t.id}}}: {t.description or t.tool_id}" for t in done)
+        try:
+            return await self.plan(
+                RECOVERY_PROMPT.format(report=report) + f"\n\nORIGINAL GOAL: {graph.goal}")
+        except Exception:  # noqa: BLE001 - a failed recovery is not a new failure
+            return None
 
     @staticmethod
     def _persist_plan(graph: ExecutionGraph) -> None:
@@ -253,3 +335,38 @@ class Orchestrator:
 
 
 orchestrator = Orchestrator()
+
+
+def _planning_parameters(plan: Plan) -> dict:
+    """The effort plan's parameters, in the shape a chat completion takes.
+
+    Only what the server will recognise. `enable_thinking` travels inside
+    `chat_template_kwargs` because that is where llama.cpp and mlx-lm both look
+    for template arguments; sending it at the top level does nothing anywhere.
+    """
+    out: dict = {"max_tokens": plan.max_output_tokens}
+    if "enable_thinking" in plan.parameters:
+        out["chat_template_kwargs"] = {
+            "enable_thinking": plan.parameters["enable_thinking"]}
+    for name in ("reasoning_max_tokens", "reasoning_effort"):
+        if name in plan.parameters:
+            out[name] = plan.parameters[name]
+    return out
+
+
+def _active_profile():
+    """The loaded model in the shared vocabulary, or None if nothing is up."""
+    from ..config import settings
+    from ..library import scan_library
+    from ..profiles import from_local
+
+    active = engine_manager.active
+    if not active:
+        return None
+    try:
+        for model in scan_library(settings.models_dir):
+            if model.path == active.model_path:
+                return from_local(model)
+    except Exception:  # noqa: BLE001 - a scan failure must not stop planning
+        return None
+    return None

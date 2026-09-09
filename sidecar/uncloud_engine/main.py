@@ -20,6 +20,7 @@ from .agent import tools as agent_tools
 from .agent.graph import ExecutionGraph
 from .agent.orchestrator import orchestrator
 from .agent.tools import TOOL_SPECS
+from . import profiles as uncloud_profiles
 from .foundation import AuditLog, Denied, Gate, Mode, Risk, dump_policy, load_policy
 from .foundation import Request as PermissionRequest
 from .catalog import get_catalog, get_entry
@@ -398,6 +399,50 @@ class AnswerBody(BaseModel):
     answer: str
 
 
+class EffortBody(BaseModel):
+    effort: str
+
+
+def _active_profile():
+    """The loaded model, described in the shared vocabulary, or None.
+
+    Effort translation needs to know what the model accepts. Nothing is loaded
+    on a fresh install, and a plan built without a model is still valid — it
+    simply buys no native reasoning, which is what most models answer anyway.
+    """
+    from .library import scan_library
+
+    active = engine_manager.active
+    if not active:
+        return None
+    for model in scan_library(settings.models_dir):
+        if model.path == active.model_path:
+            return uncloud_profiles.from_local(model)
+    return None
+
+
+@app.get("/api/effort", dependencies=[Depends(require_token)])
+def effort_levels() -> dict:
+    """Every level and what it would actually mean for the loaded model.
+
+    Including which levels buy nothing extra here. Offering four options that
+    behave identically is worse than saying so: a control that appears to work
+    and does nothing teaches people the application is lying to them.
+    """
+    from .foundation import describe as describe_effort
+
+    return {"selected": settings.effort,
+            "levels": describe_effort(_active_profile())}
+
+
+@app.post("/api/effort", dependencies=[Depends(require_token)])
+def set_effort(body: EffortBody) -> dict:
+    from .foundation import parse as parse_effort
+
+    settings.set_effort(parse_effort(body.effort).value)
+    return effort_levels()
+
+
 @app.get("/api/permissions", dependencies=[Depends(require_token)])
 def permissions() -> dict:
     """What is allowed, what asks, and what has been granted for this session."""
@@ -628,6 +673,10 @@ class ChatBody(BaseModel):
     messages: list[dict]
     temperature: float = 0.7
     max_tokens: int = 1024
+    #: fast | balanced | deep | maximum. Unreadable values fall back to the
+    #: stored default rather than failing the request — effort is a preference,
+    #: and a preference should never be able to break a conversation.
+    effort: str = ""
 
 
 @app.post("/api/chat", dependencies=[Depends(require_token)])
@@ -644,6 +693,8 @@ async def chat(body: ChatBody) -> StreamingResponse:
                 temperature=body.temperature,
                 max_tokens=body.max_tokens,
                 engine=engine_manager.active.engine,
+                effort=body.effort or settings.effort,
+                model=_active_profile(),
             )
             # Plain Chat is a direct-answer surface. Thinking-capable GGUF
             # templates otherwise default to an unlimited private-reasoning
@@ -1396,6 +1447,9 @@ async def agent_ws(websocket: WebSocket) -> None:
         raw = await websocket.receive_text()
         payload = json.loads(raw)
         goal = payload.get("goal", "")
+        # Effort travels with the run rather than being read from settings, so
+        # a person can spend more on one task without changing their default.
+        effort = payload.get("effort") or settings.effort
         # A conversation handed over from Chat, so the plan is made knowing
         # what was already discussed rather than from one sentence in
         # isolation. Optional: a goal typed here directly has none.
@@ -1407,7 +1461,7 @@ async def agent_ws(websocket: WebSocket) -> None:
             return
 
         await websocket.send_json({"type": "planning"})
-        graph: ExecutionGraph = await orchestrator.plan(goal, context)
+        graph: ExecutionGraph = await orchestrator.plan(goal, context, effort=effort)
 
         async def on_update(g: ExecutionGraph) -> None:
             await websocket.send_json({"type": "graph", "graph": g.to_dict()})
@@ -1429,7 +1483,7 @@ async def agent_ws(websocket: WebSocket) -> None:
             return str(reply.get("answer", "no"))
 
         with agent_approval.asking(ask):
-            await orchestrator.run(graph, on_update)
+            await orchestrator.run(graph, on_update, effort=effort)
         await websocket.send_json({"type": "done", "graph": graph.to_dict()})
     except WebSocketDisconnect:
         pass

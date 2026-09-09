@@ -91,6 +91,15 @@ class Settings:
             self._data["agent_tool_groups"] = list(groups)
         self._save()
 
+    @property
+    def effort(self) -> str:
+        """How hard to think, by default. Balanced until somebody says else."""
+        return str(self._data.get("effort") or "balanced")
+
+    def set_effort(self, level: str) -> None:
+        self._data["effort"] = level
+        self._save()
+
     # ------------------------------------------------------------ approvals
     @property
     def permission_policy(self) -> dict:
