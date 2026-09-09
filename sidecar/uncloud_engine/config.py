@@ -54,10 +54,19 @@ class Settings:
 
     @property
     def agent_device_access(self) -> bool:
-        """Whether Agent Mode may run shell commands / touch the full filesystem.
+        """How far outside the workspace file tools may reach.
 
-        Defaults to False (workspace-scoped only); the user opts in explicitly
-        in Settings before the agent gets a real shell.
+        A SCOPE, not a permission, and the two are now separate things. This
+        decides which paths `_resolve_path` will resolve; the approval policy
+        decides whether a write happens at all. Both apply, and neither
+        substitutes for the other.
+
+        It was never the sandbox its name suggests. With it off, the `fs_*`
+        tools are confined and `_shell` gets the workspace as its working
+        directory — but the command itself was always unrestricted, so
+        `cd ~ && …` ran. That hole is closed by shell being its own approval
+        category that asks every time and cannot be granted for a session, not
+        by this flag.
         """
         return bool(self._data.get("agent_device_access", False))
 
@@ -80,6 +89,22 @@ class Settings:
             self._data.pop("agent_tool_groups", None)
         else:
             self._data["agent_tool_groups"] = list(groups)
+        self._save()
+
+    # ------------------------------------------------------------ approvals
+    @property
+    def permission_policy(self) -> dict:
+        """What the user has decided about each category of action.
+
+        Stored as plain strings so an unreadable value degrades to the default
+        rather than to permission — `foundation.load_policy` drops anything it
+        does not recognise, and the defaults are the strict ones.
+        """
+        raw = self._data.get("permission_policy")
+        return dict(raw) if isinstance(raw, dict) else {}
+
+    def set_permission_policy(self, policy: dict) -> None:
+        self._data["permission_policy"] = dict(policy)
         self._save()
 
     @property

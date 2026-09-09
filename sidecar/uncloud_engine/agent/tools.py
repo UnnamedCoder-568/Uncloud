@@ -9,10 +9,151 @@ from urllib.parse import unquote
 import httpx
 
 from ..config import settings
+from ..foundation import Gate, Request, Risk
 from ..library import scan_library
 
 WORKSPACE_DIR = Path.home() / ".uncloud" / "workspace"
 WORKSPACE_DIR.mkdir(parents=True, exist_ok=True)
+
+# --------------------------------------------------------------------- risk
+#
+# What each tool could do to a person, as a category. Kept as a table beside
+# the specs rather than as a field inside them, for one reason: this table has
+# to be COMPLETE, and a missing entry has to be a failure rather than a default.
+# A tool with no risk recorded raises, and a test asserts every spec appears
+# here — which means adding a tool without deciding what it can do is a broken
+# build, not an ungoverned hole discovered later.
+#
+# Two calls worth explaining, because neither is obvious:
+#
+# `screen_capture` is DEVICE rather than READ. It photographs whatever the user
+# happens to have open — mail, a password manager, someone else's message — and
+# treating that as "reading a file" would file the most invasive tool here
+# under the one category that does not ask.
+#
+# The browser splits. Opening and reading a page is NETWORK; clicking, typing,
+# running script and moving the pointer are WRITE, because they change state on
+# somebody's server. Neither is a local file operation, but "this pressed a
+# button on a website" is a different question from "this fetched a page", and
+# collapsing them would let a policy that permits research also permit acting.
+TOOL_RISK: dict[str, Risk] = {
+    "shell": Risk.SHELL,
+    "app_open": Risk.DEVICE,
+    "screen_capture": Risk.DEVICE,
+
+    "fs_read": Risk.READ,
+    "fs_list": Risk.READ,
+    "fs_glob": Risk.READ,
+    "fs_grep": Risk.READ,
+    "fs_write": Risk.WRITE,
+    "fs_edit": Risk.WRITE,
+
+    "http_fetch": Risk.NETWORK,
+    "web_read": Risk.NETWORK,
+    "web_search": Risk.NETWORK,
+    "browser_open": Risk.NETWORK,
+    "browser_read": Risk.NETWORK,
+    "browser_links": Risk.NETWORK,
+    "browser_console": Risk.NETWORK,
+    "browser_network": Risk.NETWORK,
+    "browser_screenshot": Risk.NETWORK,
+    "browser_click": Risk.WRITE,
+    "browser_type": Risk.WRITE,
+    "browser_eval": Risk.WRITE,
+    "browser_move": Risk.WRITE,
+    "browser_click_at": Risk.WRITE,
+    "browser_drag": Risk.WRITE,
+    "browser_scroll_at": Risk.WRITE,
+
+    "video_info": Risk.READ,
+    "video_frames": Risk.WRITE,
+    "see_image": Risk.READ,
+
+    "skill_list": Risk.READ,
+    "skill_read": Risk.READ,
+    "skill_save": Risk.WRITE,
+
+    "plan_set": Risk.READ,
+    "plan_show": Risk.READ,
+    "plan_update": Risk.READ,
+    "note_save": Risk.READ,
+    "note_recall": Risk.READ,
+
+    "generate_image": Risk.GENERATE,
+}
+
+
+class Ungoverned(RuntimeError):
+    """A tool ran, or tried to, with nothing deciding whether it may.
+
+    Raised rather than defaulted in either direction. Defaulting to allow is
+    the hole this whole layer exists to close; defaulting to deny would make a
+    forgotten wire-up look like a broken tool. This looks like what it is.
+    """
+
+
+_gate: Gate | None = None
+
+
+def install_gate(gate: Gate | None) -> None:
+    """Give the tool layer its approval gate. Called once, at startup."""
+    global _gate
+    _gate = gate
+
+
+def current_gate() -> Gate:
+    if _gate is None:
+        raise Ungoverned(
+            "No approval gate is installed. Every tool call has to be decided "
+            "by one; a tool layer without it is not a smaller feature, it is an "
+            "ungoverned one.")
+    return _gate
+
+
+def _summarise(tool_id: str, args: dict[str, Any]) -> tuple[str, dict]:
+    """The sentence a person reads, and whatever the interface can show.
+
+    Specific on purpose. "The agent wants to run a command" is not a decision
+    anybody can make; "run `rm -rf build`" is. The most dangerous tool gets the
+    most literal summary.
+    """
+    def first(*names: str) -> str:
+        for name in names:
+            value = args.get(name)
+            if value not in (None, ""):
+                return str(value)
+        return ""
+
+    if tool_id == "shell":
+        command = first("command")
+        return f"Run this command: {command}", {"command": command}
+    if tool_id in ("fs_write", "fs_edit"):
+        path = first("path")
+        body = str(args.get("content") or args.get("new") or "")
+        return (f"{'Write' if tool_id == 'fs_write' else 'Edit'} {path}",
+                {"path": path, "bytes": len(body), "preview": body[:600]})
+    if tool_id == "app_open":
+        target = first("target", "app")
+        return f"Open {target} on this Mac", {"target": target}
+    if tool_id == "screen_capture":
+        return ("Take a screenshot of the whole screen, including anything "
+                "else that is open", {})
+    if tool_id in ("browser_type",):
+        return (f"Type into {first('target')} on the current page",
+                {"target": first("target"), "text": first("text")[:200]})
+    if tool_id in ("browser_click", "browser_click_at"):
+        return f"Click {first('target') or 'in the page'}", dict(args)
+    if tool_id == "browser_eval":
+        return "Run JavaScript in the current page", {"code": first("code")[:400]}
+    if tool_id == "generate_image":
+        return f"Generate an image: {first('prompt')[:160]}", {}
+    if tool_id in ("web_search", "web_read", "http_fetch", "browser_open"):
+        return f"Go online: {first('query', 'url')}", {"target": first("query", "url")}
+    if tool_id == "skill_save":
+        return f"Save a skill called {first('name')}", {"name": first("name")}
+    if tool_id == "video_frames":
+        return f"Extract frames from {first('path')}", {"path": first("path")}
+    return f"{tool_id} {first('path', 'target', 'query', 'url', 'name')}".strip(), {}
 
 TOOL_SPECS = [
     {"id": "shell", "name": "Shell", "description": "Run a shell command.", "args": ["command"]},
@@ -220,7 +361,28 @@ def _resolve_path(raw: str) -> Path:
     return p
 
 
-async def run_tool(tool_id: str, args: dict[str, Any]) -> str:
+async def run_tool(tool_id: str, args: dict[str, Any], *, origin: str = "") -> str:
+    """Run one tool, after asking whether it may.
+
+    The gate is here rather than in each tool for the reason the whole layer
+    exists: thirty-eight tools each remembering to check is thirty-eight
+    chances to forget, and the one that forgets is the one that matters. A tool
+    added tomorrow is governed by having an entry in TOOL_RISK, which it cannot
+    run without.
+    """
+    risk = TOOL_RISK.get(tool_id)
+    if risk is None:
+        raise ValueError(
+            f"Unknown tool: {tool_id}" if tool_id not in {t["id"] for t in TOOL_SPECS}
+            else f"{tool_id} has no risk category. Add one to TOOL_RISK — a tool "
+                 f"nobody has classified cannot be governed.")
+
+    summary, preview = _summarise(tool_id, args)
+    from .approval import decide
+
+    await decide(Request(action=tool_id, category=risk, summary=summary,
+                         preview=preview, origin=origin or "agent"))
+
     if tool_id == "shell":
         return await _shell(args.get("command", ""))
     if tool_id == "fs_read":
