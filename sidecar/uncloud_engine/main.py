@@ -15,9 +15,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
+from .agent import approval as agent_approval
+from .agent import tools as agent_tools
 from .agent.graph import ExecutionGraph
 from .agent.orchestrator import orchestrator
 from .agent.tools import TOOL_SPECS
+from .foundation import AuditLog, Denied, Gate, Mode, Risk, dump_policy, load_policy
+from .foundation import Request as PermissionRequest
 from .catalog import get_catalog, get_entry
 from .chat import build_chat_payload
 from . import conversations as conversations_store
@@ -48,6 +52,74 @@ def require_token(authorization: str | None = Header(default=None)) -> None:
 
 def require_token_ws(token: str = Query(default="")) -> bool:
     return secrets.compare_digest(token, settings.token)
+
+
+# ----------------------------------------------------------------- approvals
+#
+# One gate, built once, asked by every surface. The audit log is append-only
+# and holds summaries rather than content: it records that a file was written,
+# never what was written to it, so the trail never becomes a second copy of the
+# user's work.
+_audit = AuditLog(Path.home() / ".uncloud" / "audit.jsonl")
+
+
+def _record(request: PermissionRequest, decision) -> None:
+    _audit.write(request, decision)
+
+
+gate = Gate(
+    load_policy(settings.permission_policy),
+    record=_record,
+    on_policy_change=lambda policy: settings.set_permission_policy(dump_policy(policy)),
+)
+agent_tools.install_gate(gate)
+
+
+class NeedsApproval(HTTPException):
+    """A person has to decide, and this is an HTTP request rather than a socket.
+
+    428 rather than 403: the request was not refused, it is unfinished. The
+    client renders the prompt, posts the answer, and repeats the call — which
+    is what lets Chat's own tools go through the same gate as the agent's,
+    instead of being the one surface that never asks (audit R2).
+    """
+
+    def __init__(self, request: PermissionRequest) -> None:
+        super().__init__(status_code=428, detail={
+            "approval": {
+                "action": request.action,
+                "category": request.category.value,
+                "summary": request.summary,
+                "preview": request.preview,
+                "origin": request.origin,
+                "mode": gate.mode_for(request.category).value,
+            }})
+
+
+def gated(action: str, category: Risk, summary: str, *, preview: dict | None = None,
+          origin: str = "chat") -> None:
+    """Decide an HTTP-triggered action, or ask the client to ask.
+
+    Synchronous and non-blocking: the gate is consulted from policy alone, and
+    when a person is needed the call is turned into a 428 rather than waiting.
+    An HTTP handler that blocks on a human is a handler that holds a connection
+    open for as long as somebody leaves the window.
+    """
+    request = PermissionRequest(action=action, category=category, summary=summary,
+                                preview=preview or {}, origin=origin)
+    settled = gate.check(request)
+    if settled is None:
+        raise NeedsApproval(request)
+    try:
+        gate.settle(request, settled)
+    except Denied as exc:
+        # A decision the user already made, reported as one. 403 rather than
+        # 428: nothing is pending, and asking again would be pestering them
+        # about something they settled.
+        raise HTTPException(status_code=403, detail={
+            "denied": {"action": request.action,
+                       "category": request.category.value,
+                       "reason": exc.reason}}) from exc
 
 
 @app.get("/health")
@@ -313,6 +385,80 @@ def set_hf_token(body: HfTokenBody) -> dict:
 
 
 # ----------------------------------------------------------------- catalog
+class PolicyBody(BaseModel):
+    category: str
+    mode: str
+
+
+class AnswerBody(BaseModel):
+    action: str
+    category: str
+    summary: str = ""
+    #: yes | no | always | never
+    answer: str
+
+
+@app.get("/api/permissions", dependencies=[Depends(require_token)])
+def permissions() -> dict:
+    """What is allowed, what asks, and what has been granted for this session."""
+    return gate.describe()
+
+
+@app.post("/api/permissions", dependencies=[Depends(require_token)])
+def set_permission(body: PolicyBody) -> dict:
+    """Change a category's policy.
+
+    Returns the whole policy rather than an acknowledgement, because what was
+    stored may be stricter than what was asked for: a shell can never be set to
+    allow, and the interface has to show what actually took effect rather than
+    what the user pressed.
+    """
+    try:
+        category, mode = Risk(body.category), Mode(body.mode)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    applied = gate.set_mode(category, mode)
+    return {**gate.describe(), "applied": applied.value,
+            "clamped": applied is not mode}
+
+
+@app.post("/api/permissions/forget", dependencies=[Depends(require_token)])
+def forget_session_grants() -> dict:
+    """Drop every "yes, for this session" answer. The user's "ask me again"."""
+    gate.forget_session()
+    return gate.describe()
+
+
+@app.post("/api/approvals/answer", dependencies=[Depends(require_token)])
+def answer_approval(body: AnswerBody) -> dict:
+    """Apply a person's answer to a request that came back as 428.
+
+    The gate owns what an answer means — which session grant it creates, which
+    policy it rewrites — so this route only carries it there. The client then
+    repeats the original call, which now passes on policy alone.
+    """
+    try:
+        category = Risk(body.category)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    request = PermissionRequest(action=body.action, category=category,
+                                summary=body.summary, origin="chat")
+    decision = gate.answer(request, body.answer)
+    _audit.write(request, decision)
+    return {"decision": decision.to_dict(), "permissions": gate.describe()}
+
+
+@app.get("/api/audit", dependencies=[Depends(require_token)])
+def audit(limit: int = 200) -> list[dict]:
+    """What has been asked and decided, newest first.
+
+    Summaries, never content. It records that a file was written, not what was
+    written to it — an audit trail that duplicated the user's work would be a
+    second thing to protect rather than a record of what happened.
+    """
+    return _audit.tail(limit=limit)
+
+
 @app.get("/api/catalog", dependencies=[Depends(require_token)])
 def catalog() -> list[dict]:
     from .budget import engine_runs_here
@@ -539,6 +685,9 @@ class ImageGenerateBody(BaseModel):
 
 @app.post("/api/image/generate", dependencies=[Depends(require_token)])
 async def generate_image(body: ImageGenerateBody) -> dict:
+    gated("generate_image", Risk.GENERATE,
+          f"Generate an image: {body.prompt[:160]}",
+          preview={"prompt": body.prompt}, origin="image")
     entry = get_entry(body.catalog_id) if body.catalog_id else None
     job = image_engine.start(
         body.model_path, body.engine, body.prompt, negative_prompt=body.negative_prompt,
@@ -1065,6 +1214,8 @@ async def web_search(body: SearchBody) -> dict:
     which is what makes it fit an application that is otherwise offline: the
     request goes out only when the user's question needs it.
     """
+    gated("web_search", Risk.NETWORK,
+          f"Search the web for: {body.query}", preview={"query": body.query})
     from .agent.tools import _web_search
 
     try:
@@ -1086,6 +1237,9 @@ async def web_images(body: SearchBody) -> dict:
     rather than by the origin site, so displaying one does not announce the
     user to whichever site happens to host the picture.
     """
+    gated("web_images", Risk.NETWORK,
+          f"Search the web for pictures of: {body.query}",
+          preview={"query": body.query})
     import re
     from urllib.parse import quote
 
@@ -1135,6 +1289,8 @@ async def web_read(body: ReadBody) -> dict:
     Extracted rather than raw: HTML markup would burn most of a local model's
     context window on things it cannot use.
     """
+    gated("web_read", Risk.NETWORK, f"Read this page: {body.url}",
+          preview={"url": body.url})
     from .agent.tools import _web_read
 
     try:
@@ -1256,7 +1412,24 @@ async def agent_ws(websocket: WebSocket) -> None:
         async def on_update(g: ExecutionGraph) -> None:
             await websocket.send_json({"type": "graph", "graph": g.to_dict()})
 
-        await orchestrator.run(graph, on_update)
+        async def ask(request: PermissionRequest) -> str:
+            """Put the question to whoever is watching this run.
+
+            Blocking on purpose: the step does not proceed until an answer
+            comes back, which is the whole point. `decide_or_refuse` puts a
+            ceiling on the wait so a closed window becomes a refusal rather
+            than a job that sits in progress for ever.
+            """
+            await websocket.send_json({"type": "approval", "request": {
+                "action": request.action, "category": request.category.value,
+                "summary": request.summary, "preview": request.preview,
+                "mode": gate.mode_for(request.category).value,
+            }})
+            reply = json.loads(await websocket.receive_text())
+            return str(reply.get("answer", "no"))
+
+        with agent_approval.asking(ask):
+            await orchestrator.run(graph, on_update)
         await websocket.send_json({"type": "done", "graph": graph.to_dict()})
     except WebSocketDisconnect:
         pass
