@@ -12,12 +12,12 @@ import type { ReactNode } from 'react';
 import Wordmark from './Wordmark';
 import {
   MessageSquare, Boxes, Workflow, ImageIcon, Clapperboard, Mic, Music,
-  Settings, HelpCircle, FolderOpen, GraduationCap,
+  Settings, HelpCircle, FolderOpen, GraduationCap, ChefHat,
 } from 'lucide-react';
 
 export type View =
   | 'chat' | 'models' | 'chisel' | 'image' | 'video' | 'music' | 'voice'
-  | 'outputs' | 'training' | 'guide' | 'settings';
+  | 'outputs' | 'training' | 'recipes' | 'guide' | 'settings';
 
 type Icon = React.ComponentType<{ size?: number; strokeWidth?: number }>;
 
@@ -28,6 +28,7 @@ const GROUPS: { label?: string; items: { id: View; label: string; icon: Icon }[]
       { id: 'models', label: 'Models', icon: Boxes },
       { id: 'chisel', label: 'Chisel', icon: Workflow },
       { id: 'training', label: 'Training', icon: GraduationCap },
+      { id: 'recipes', label: 'Recipes', icon: ChefHat },
     ],
   },
   {
