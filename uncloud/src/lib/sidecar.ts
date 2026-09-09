@@ -1553,3 +1553,62 @@ export async function forgetAdapter(name: string) {
   return api<{ removed: boolean }>(`/api/adapters/${encodeURIComponent(name)}`,
                                    { method: 'DELETE' });
 }
+
+// ------------------------------------------------------------------- recipes
+export interface RecipeStep {
+  /** Exactly one of these. A capability step survives changing which provider
+   *  is connected; a tool step exists for what no integration covers. */
+  capability: string;
+  tool: string;
+  arguments: Record<string, unknown>;
+  provider: string;
+  note: string;
+}
+
+export interface RecipeInfo {
+  id: string; name: string; description: string;
+  payload: { steps?: RecipeStep[]; parameters?: Record<string, string> };
+  scope: string; subject: string;
+  score: number; uses: number; approved: boolean;
+  /** Score, plus a bonus for approval, plus a smaller one for repetition. */
+  weight: number;
+  created_at: string; updated_at: string;
+}
+
+export interface RecipeStepResult {
+  step: number; what: string; ok: boolean; output: string; error: string;
+}
+
+export interface RecipeRun {
+  recipe_id: string; ok: boolean; started_at: string;
+  results: RecipeStepResult[];
+}
+
+export async function getRecipes() {
+  return api<RecipeInfo[]>('/api/recipes');
+}
+
+export async function createRecipe(body: {
+  name: string; description?: string; subject?: string;
+  steps: Partial<RecipeStep>[]; parameters?: Record<string, string>;
+}) {
+  return apiPost<RecipeInfo>('/api/recipes', body);
+}
+
+export async function updateRecipe(id: string, body: Record<string, unknown>) {
+  return api<RecipeInfo>(`/api/recipes/${encodeURIComponent(id)}`,
+                         { method: 'PATCH', body: JSON.stringify(body) });
+}
+
+export async function deleteRecipe(id: string) {
+  return api<{ deleted: boolean }>(`/api/recipes/${encodeURIComponent(id)}`,
+                                   { method: 'DELETE' });
+}
+
+/** Runs the steps in order. Each one is asked about exactly as it would be if
+ *  a person had typed it — a recipe is a shortcut for fingers, not for the
+ *  gate. */
+export async function runRecipe(id: string, values: Record<string, string>) {
+  return apiPost<RecipeRun>(`/api/recipes/${encodeURIComponent(id)}/run`,
+                            { values });
+}
