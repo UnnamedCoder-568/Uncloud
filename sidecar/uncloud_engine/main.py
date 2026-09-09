@@ -421,6 +421,111 @@ def _active_profile():
     return None
 
 
+class TrainBody(BaseModel):
+    model_path: str
+    dataset_path: str
+    preset: str = "standard"
+    batch_size: int | None = None
+    name: str = ""
+
+
+@app.get("/api/training/presets", dependencies=[Depends(require_token)])
+def training_presets() -> list[dict]:
+    """Three configurations, named for what they do.
+
+    Presets rather than a form: nobody arriving at this feature knows what a
+    sensible rank is, and three cover almost everything people actually want.
+    """
+    from .training import jobs as training
+
+    return training.presets()
+
+
+@app.post("/api/training/prepare", dependencies=[Depends(require_token)])
+def training_prepare(body: TrainBody) -> dict:
+    """Everything that would happen, without starting it.
+
+    Asked before the button is offered, so a dataset that cannot train or a
+    machine that cannot hold the model is explained while the user is still
+    deciding — rather than forty minutes in, which is the failure this whole
+    subsystem is arranged around.
+    """
+    from .training import jobs as training
+
+    try:
+        return training.prepare(body.model_path, body.dataset_path, body.preset,
+                                batch_size=body.batch_size)
+    except training.Refused as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/training", dependencies=[Depends(require_token)])
+async def training_start(body: TrainBody) -> dict:
+    """Start a run. Refuses before spawning anything if it will not work."""
+    from .training import jobs as training
+
+    gated("train", Risk.TRAIN,
+          f"Fine-tune {Path(body.model_path).name} on "
+          f"{Path(body.dataset_path).name}",
+          preview={"model": body.model_path, "dataset": body.dataset_path,
+                   "preset": body.preset},
+          origin="training")
+    try:
+        job = await training.start(body.model_path, body.dataset_path, body.preset,
+                                   batch_size=body.batch_size, name=body.name)
+    except training.Refused as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return job.to_dict()
+
+
+@app.get("/api/training", dependencies=[Depends(require_token)])
+def training_list() -> list[dict]:
+    from .training import jobs as training
+
+    return [job.to_dict() for job in training.all_jobs()]
+
+
+@app.get("/api/training/{job_id}", dependencies=[Depends(require_token)])
+def training_status(job_id: str) -> dict:
+    from .training import jobs as training
+
+    job = training.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="No such training run")
+    return job.to_dict()
+
+
+@app.post("/api/training/{job_id}/cancel", dependencies=[Depends(require_token)])
+def training_cancel(job_id: str) -> dict:
+    from .training import jobs as training
+
+    return {"cancelled": training.cancel(job_id)}
+
+
+@app.get("/api/adapters", dependencies=[Depends(require_token)])
+def list_adapters() -> list[dict]:
+    """Every adapter this machine has trained.
+
+    Each carries a card saying which model it belongs to — an adapter with no
+    provenance is unusable six weeks later, and it is not a model: it will not
+    load without the one it was trained against.
+    """
+    from .training import jobs as training
+
+    return training.adapters()
+
+
+@app.delete("/api/adapters/{name}", dependencies=[Depends(require_token)])
+def delete_adapter(name: str) -> dict:
+    from .training import jobs as training
+
+    gated("delete_adapter", Risk.DELETE, f"Delete the adapter {name}",
+          origin="training")
+    if not training.forget(name):
+        raise HTTPException(status_code=404, detail="No such adapter")
+    return {"deleted": True}
+
+
 @app.get("/api/skills", dependencies=[Depends(require_token)])
 def list_skills() -> list[dict]:
     """Every installed skill, with whether it can be offered here.
