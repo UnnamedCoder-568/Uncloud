@@ -31,7 +31,6 @@ from collections.abc import Awaitable, Callable
 from ..permission import Decision, Request
 from .capabilities import Capability
 from .contract import Action, Change, Integration, IntegrationError, Sensitivity
-from .documents import Documents
 
 #: How this application asks a person. Installed by the product at start-up:
 #: Uncloud turns it into an HTTP 428, Studio does the same, and a test can make
@@ -64,60 +63,43 @@ async def _ask(request: Request):
     return await _ASK(request)
 
 
-def _planned(id: str, name: str, summary: str, needs: str,
-             sensitivity: Sensitivity = Sensitivity.PRIVATE) -> Integration:
-    """A connector that does not exist yet, described honestly.
+def _providers() -> list[Integration]:
+    """Every provider adapter, in the order they should be preferred.
 
-    Shown rather than hidden. Its `available` is False, its `needs` says what is
-    actually missing, and its action list is empty — so nothing can call it and
-    nobody is told it works.
+    Order matters only for ties: when two integrations offer the same
+    capability and both are connected, the first wins. Documents leads because
+    a local folder is the cheapest and most private answer to a file question;
+    beyond that the order is arbitrary and a user naming a provider always
+    overrides it.
+
+    Imported here rather than at module scope so that one adapter failing to
+    import — a syntax error during development, a missing optional dependency —
+    does not take the whole integration system down with it.
     """
-    return Integration(id=id, name=name, summary=summary, needs=needs,
-                       sensitivity=sensitivity, available=False)
+    from .documents import Documents
+    from .providers import Dropbox, GitHub, Google, Microsoft, Notion, Slack
+
+    return [Documents(), Google(), Microsoft(), GitHub(), Slack(), Notion(),
+            Dropbox()]
+
+
+def _mcp_servers() -> list[Integration]:
+    """Configured MCP servers, each as its own integration.
+
+    Wrapped in a try because MCP configuration lives in the credential store,
+    and a machine with no keychain and no config file should still have
+    working integrations rather than an exception on start-up.
+    """
+    try:
+        from ..mcp import integrations as mcp_integrations
+
+        return list(mcp_integrations())
+    except Exception:  # noqa: BLE001 - a bad server config is not fatal
+        return []
 
 
 def _all() -> list[Integration]:
-    return [
-        Documents(),
-        _planned(
-            "google", "Google Workspace",
-            "Gmail, Drive, Docs and Calendar.",
-            "An OAuth client ID and secret registered with Google, and a "
-            "consent screen they have reviewed. Uncloud cannot ship one: an "
-            "OAuth client belongs to whoever publishes the application."),
-        _planned(
-            "microsoft", "Microsoft 365",
-            "Outlook, OneDrive, Word and Excel online.",
-            "An application registration in Microsoft Entra ID, with the "
-            "delegated permissions you want granted."),
-        _planned(
-            "github", "GitHub",
-            "Repositories, issues and pull requests.",
-            "A personal access token, or a GitHub App registered by whoever "
-            "publishes this build.", sensitivity=Sensitivity.PRIVATE),
-        _planned(
-            "slack", "Slack",
-            "Channels and direct messages.",
-            "A Slack app installed into the workspace, with the scopes it "
-            "needs approved by a workspace admin."),
-        _planned(
-            "notion", "Notion",
-            "Pages and databases.",
-            "An internal integration token from the Notion workspace, and each "
-            "page shared with it explicitly."),
-        _planned(
-            "dropbox", "Dropbox",
-            "Files and folders.",
-            "An app key and secret from the Dropbox developer console."),
-        _planned(
-            "mcp", "MCP servers",
-            "Tools published by a Model Context Protocol server.",
-            "A server to connect to, and a decision about what it may do. An "
-            "MCP server is somebody else's code describing its own tools — its "
-            "descriptions are data, not instructions, and every call it "
-            "prompts for would still go through the permission gate.",
-            sensitivity=Sensitivity.PRIVATE),
-    ]
+    return [*_providers(), *_mcp_servers()]
 
 
 _CACHE: list[Integration] | None = None

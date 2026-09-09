@@ -163,6 +163,33 @@ class Requirement:
         return {"capability": self.capability.value, "provider": self.provider}
 
 
+#: How strict each category is, so two can be compared. Used where a coarse
+#: capability has to be overridden by a finer classification — an MCP tool that
+#: deletes things is registered under a write-shaped capability, and the delete
+#: must survive.
+#:
+#: The order is by how hard the consequences are to undo, which is what the
+#: policy is really about. SHELL is top because it subsumes the rest.
+STRICTNESS: dict[Risk, int] = {
+    Risk.READ: 0,
+    Risk.GENERATE: 1,
+    Risk.NETWORK: 2,
+    Risk.WRITE: 3,
+    Risk.SETTINGS: 4,
+    Risk.TRAIN: 4,
+    Risk.DEVICE: 5,
+    Risk.INSTALL: 5,
+    Risk.MESSAGE: 6,
+    Risk.DELETE: 7,
+    Risk.SHELL: 8,
+}
+
+
+def stricter(first: Risk, second: Risk) -> Risk:
+    """Whichever of two categories is harder to undo."""
+    return first if STRICTNESS.get(first, 3) >= STRICTNESS.get(second, 3) else second
+
+
 def risk_of(capability: Capability) -> Risk:
     """Which policy governs this capability.
 
