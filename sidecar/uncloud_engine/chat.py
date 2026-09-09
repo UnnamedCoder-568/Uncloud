@@ -15,7 +15,7 @@ answer budget and, above this layer, more passes — see `foundation.effort`.
 
 from __future__ import annotations
 
-from .foundation import Effort, ModelProfile, translate
+from .core import Effort, ModelProfile, translate
 
 
 def build_chat_payload(

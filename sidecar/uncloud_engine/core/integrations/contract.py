@@ -33,7 +33,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import StrEnum
 
-from ..foundation.permission import Risk
+from ..permission import Risk
 
 
 class Sensitivity(StrEnum):

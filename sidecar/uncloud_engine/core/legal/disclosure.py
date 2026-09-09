@@ -41,7 +41,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
-from ..foundation.capability import CommercialUse, Licence, ModelProfile
+from ..capability import CommercialUse, Licence, ModelProfile
 
 
 class Severity:

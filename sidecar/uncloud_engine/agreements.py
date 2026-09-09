@@ -16,8 +16,8 @@ from __future__ import annotations
 from importlib import metadata
 
 from .config import Settings
-from .legal import Acceptance, Ledger, Register, Store, load_all
-from .legal.disclosure import Acknowledgement
+from .core.legal import Acceptance, Ledger, Register, Store, load_all
+from .core.legal.disclosure import Acknowledgement
 
 
 def _app_version() -> str:

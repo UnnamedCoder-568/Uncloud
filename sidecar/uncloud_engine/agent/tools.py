@@ -9,7 +9,7 @@ from urllib.parse import unquote
 import httpx
 
 from ..config import settings
-from ..foundation import Gate, Request, Risk
+from ..core import Gate, Request, Risk
 from ..library import scan_library
 
 WORKSPACE_DIR = Path.home() / ".uncloud" / "workspace"
@@ -383,7 +383,7 @@ async def run_tool(tool_id: str, args: dict[str, Any], *, origin: str = "") -> s
     # does — one level down, and with a better question, because for a write it
     # can show what would change rather than only what was called.
     if "." in tool_id:
-        from ..integrations import find_action, perform
+        from ..core.integrations import find_action, perform
 
         if find_action(tool_id) is not None:
             return await perform(tool_id, args, origin=origin or "agent")
@@ -1023,7 +1023,7 @@ def _integrations() -> str:
     model that knows Google Workspace exists but is not connected can say so;
     one that has never heard of it invents a reason instead.
     """
-    from ..integrations import all_integrations
+    from ..core.integrations import all_integrations
 
     lines = []
     for integration in all_integrations(refresh=True):

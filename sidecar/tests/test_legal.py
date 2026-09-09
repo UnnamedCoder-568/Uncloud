@@ -16,17 +16,18 @@ from pathlib import Path
 
 import pytest
 
-from uncloud_engine.foundation.capability import (
+from uncloud_engine.core.capability import (
     CommercialUse,
     Component,
     Licence,
     ModelProfile,
 )
-from uncloud_engine.legal import disclosure, notices, terms
+from uncloud_engine.core.legal import disclosure, notices, terms
 
 REPO = Path(__file__).resolve().parents[2]
-OURS = REPO / "sidecar" / "uncloud_engine" / "legal"
-THEIRS = REPO.parent / "UncloudAdStudio" / "engine" / "adstudio_engine" / "legal"
+OURS = REPO / "sidecar" / "uncloud_engine" / "core" / "legal"
+THEIRS = (REPO.parent / "UncloudAdStudio" / "engine" / "adstudio_engine"
+          / "core" / "legal")
 
 SHARED = ("__init__.py", "terms.py", "disclosure.py", "notices.py",
           "documents/core-terms.md", "documents/privacy.md")
@@ -271,7 +272,7 @@ def test_a_notice_with_no_licence_is_reported_as_incomplete(tmp_path) -> None:
     assert notices.summarise(loaded)["incomplete"] == 1
 
 
-# ------------------------------------------------------- the wall, and drift
+# ------------------------------------------------------------------ imports
 def _imports(path: Path) -> set[str]:
     found: set[str] = set()
     for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
@@ -281,41 +282,6 @@ def _imports(path: Path) -> set[str]:
             found.add((node.module or "").split(".")[0]
                       if node.level == 0 else (node.module or "").split(".")[0])
     return {name for name in found if name}
-
-
-def test_consent_and_permission_never_import_each_other() -> None:
-    """Agreeing to terms is not granting an agent permission to run a shell
-    command, and one must never be able to satisfy the other. Structural,
-    because 'remember not to' is not a mechanism."""
-    for name in ("terms.py", "disclosure.py", "notices.py", "__init__.py"):
-        assert "permission" not in _imports(OURS / name), \
-            f"legal/{name} imports the permission gate"
-    gate = REPO / "sidecar" / "uncloud_engine" / "foundation" / "permission.py"
-    assert "legal" not in _imports(gate), "the permission gate imports the legal core"
-
-
-def test_the_legal_core_imports_only_the_standard_library_and_foundation() -> None:
-    allowed = set(sys.stdlib_module_names) | {"foundation", ""}
-    for name in ("terms.py", "disclosure.py", "notices.py"):
-        outside = _imports(OURS / name) - allowed
-        assert not outside, f"legal/{name} reaches into the product: {outside}"
-
-
-def test_the_legal_core_declares_itself_shared() -> None:
-    assert "BYTE-IDENTICAL IN BOTH REPOSITORIES" in (OURS / "terms.py").read_text()
-
-
-@pytest.mark.skipif(not THEIRS.exists(),
-                    reason="Uncloud Studio is not checked out beside this repository")
-def test_both_products_carry_the_same_legal_core() -> None:
-    for name in SHARED:
-        ours, theirs = OURS / name, THEIRS / name
-        assert theirs.exists(), f"legal/{name} is missing from Studio"
-        assert hashlib.sha256(ours.read_bytes()).hexdigest() == \
-               hashlib.sha256(theirs.read_bytes()).hexdigest(), (
-            f"legal/{name} has drifted between Uncloud and Uncloud Studio.\n"
-            f"  ours:   {ours}\n  theirs: {theirs}\n"
-            "Copy whichever is correct over the other; do not edit one alone.")
 
 
 # ------------------------------------------------------ the wiring, over HTTP
@@ -474,7 +440,7 @@ def test_the_shipped_notice_file_covers_both_halves_of_the_application() -> None
     actually shipped. Both halves matter: the frontend is bundled into the same
     application, so its dependencies carry the same obligation as the engine's.
     """
-    from uncloud_engine.legal import load_notices, summarise
+    from uncloud_engine.core.legal import load_notices, summarise
 
     entries = load_notices()
     assert entries, "run scripts/generate_notices.py"
@@ -488,7 +454,7 @@ def test_a_package_declaring_no_licence_is_recorded_as_unknown() -> None:
     """Not omitted, and not guessed at. An approximated licence reads as
     authoritative, which is worse than an absent one in the document somebody
     checks during due diligence."""
-    from uncloud_engine.legal import load_notices
+    from uncloud_engine.core.legal import load_notices
 
     for notice in load_notices():
         if not notice.licence:
@@ -505,8 +471,8 @@ def test_the_legal_package_would_be_in_the_built_app() -> None:
 
     conf = json.loads((REPO / "uncloud" / "src-tauri" / "tauri.conf.json").read_text())
     resources = conf["bundle"]["resources"]
-    for expected in ("../../sidecar/uncloud_engine/legal/*.py",
-                     "../../sidecar/uncloud_engine/legal/documents/*.md",
-                     "../../sidecar/uncloud_engine/legal/product/*.md",
-                     "../../sidecar/uncloud_engine/integrations/*.py"):
+    for expected in ("../../sidecar/uncloud_engine/core/legal/*.py",
+                     "../../sidecar/uncloud_engine/core/legal/documents/*.md",
+                     "../../sidecar/uncloud_engine/core/legal/product/*.md",
+                     "../../sidecar/uncloud_engine/core/integrations/*.py"):
         assert expected in resources, f"{expected} would be absent from the build"

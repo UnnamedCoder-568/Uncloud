@@ -49,7 +49,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from ..foundation import Capability, Risk
+from ..core import Capability, Risk
 
 SKILLS_DIR = Path.home() / ".uncloud" / "skills"
 SKILLS_DIR.mkdir(parents=True, exist_ok=True)
@@ -292,7 +292,7 @@ def availability(skill: Skill, *, tools: set[str] | None = None,
 
     prompts: tuple[Risk, ...] = ()
     if gate is not None:
-        from ..foundation import Request
+        from ..core import Request
 
         prompts = tuple(
             r.category for r in gate.would_prompt(
@@ -316,7 +316,7 @@ def _risk_of(tool_id: str) -> Risk | None:
 
 
 def _denied(gate, category: Risk) -> bool:
-    from ..foundation import Mode
+    from ..core import Mode
 
     return gate.mode_for(category) is Mode.DENY
 

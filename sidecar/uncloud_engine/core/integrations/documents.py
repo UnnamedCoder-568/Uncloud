@@ -29,7 +29,7 @@ import zipfile
 from pathlib import Path
 from xml.etree import ElementTree
 
-from ..foundation.permission import Risk
+from ..permission import Risk
 from . import credentials
 from .contract import Action, Integration, IntegrationError, Sensitivity
 

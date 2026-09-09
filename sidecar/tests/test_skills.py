@@ -12,7 +12,7 @@ from __future__ import annotations
 import pytest
 
 from uncloud_engine.agent import skills
-from uncloud_engine.foundation import Capability, Gate, Mode, Risk
+from uncloud_engine.core import Capability, Gate, Mode, Risk
 
 
 @pytest.fixture

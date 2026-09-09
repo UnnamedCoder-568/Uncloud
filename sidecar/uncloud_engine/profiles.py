@@ -24,7 +24,7 @@ category with no mapping raises rather than guessing at something plausible.
 from __future__ import annotations
 
 from .catalog import CatalogEntry
-from .foundation import (
+from .core import (
     Capability,
     CommercialUse,
     Cost,
