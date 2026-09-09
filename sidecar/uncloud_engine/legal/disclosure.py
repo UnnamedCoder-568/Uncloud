@@ -277,6 +277,11 @@ def acknowledge(profile: ModelProfile) -> Acknowledgement:
         acknowledged_at=datetime.now(UTC).isoformat(timespec="seconds"))
 
 
+#: The one acknowledgement that is about the catalogue rather than about a
+#: model. Stored under a reserved id so it travels with the others.
+UNVERIFIED_CLASS = "*unverified*"
+
+
 @dataclass
 class Ledger:
     """Acknowledgements this machine has recorded.
@@ -291,17 +296,56 @@ class Ledger:
     def record(self, acknowledgement: Acknowledgement) -> None:
         self.entries[acknowledgement.model_id] = acknowledgement
 
+    def acknowledge(self, profile: ModelProfile) -> Acknowledgement:
+        """Record that these terms were shown, at whichever scope fits.
+
+        The caller does not choose. Which scope an acknowledgement has follows
+        from what was actually being said — a specific restriction is about the
+        model, "nobody checked" is about the catalogue — and letting two
+        applications decide that separately is how they end up disagreeing.
+        """
+        if profile.licence.commercial_use is CommercialUse.UNVERIFIED:
+            return self.acknowledge_unverified()
+        made = acknowledge(profile)
+        self.record(made)
+        return made
+
+    def acknowledge_unverified(self) -> Acknowledgement:
+        """Record that the user understands what an unread licence means.
+
+        Once, for the whole catalogue, rather than per model — see `needed`.
+        """
+        made = Acknowledgement(
+            model_id=UNVERIFIED_CLASS,
+            commercial_use=CommercialUse.UNVERIFIED.value, licence_id="",
+            acknowledged_at=datetime.now(UTC).isoformat(timespec="seconds"))
+        self.record(made)
+        return made
+
     def needed(self, profile: ModelProfile) -> bool:
         """Whether this model's terms still need acknowledging.
 
-        True when they never were, and true again when the publisher has
-        changed them since — consent to terms that no longer exist is not
-        consent.
+        Two kinds, and the distinction is what keeps this from becoming noise.
+
+        A SPECIFIC restriction — forbidden, research-only, conditions to meet —
+        is about this model, and is acknowledged per model. It is rare, it is
+        actionable, and it is worth a stop.
+
+        "Nobody has read this licence" is not about the model at all; it is a
+        statement about how much the catalogue knows. In a catalogue where that
+        is true of most entries, asking per model would put an identical dialog
+        in front of every single download — which does not inform anybody, and
+        does train them to dismiss the dialogs that matter. So it is
+        acknowledged ONCE, as the class of thing it is.
         """
         disclosure = describe(profile)
         if not disclosure.must_acknowledge:
             return False
+        if profile.licence.commercial_use is CommercialUse.UNVERIFIED:
+            return UNVERIFIED_CLASS not in self.entries
         existing = self.entries.get(profile.id)
         if existing is None:
             return True
+        # Consent to terms that no longer exist is not consent: a publisher who
+        # relicenses invalidates what somebody was told.
         return existing.stale_against(profile.licence)

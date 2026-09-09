@@ -1128,3 +1128,84 @@ export async function deleteOutput(path: string) {
 export async function saveCopy(path: string, dest: string, into_folder: boolean) {
   return apiPost<{ path: string }>('/api/outputs/save_copy', { path, dest, into_folder });
 }
+
+// ---------------------------------------------------------------------- legal
+/** A model's terms, as recorded — never as inferred.
+ *
+ *  Note what is absent: nothing here says whether the model may be downloaded.
+ *  Uncloud's catalogue carries no verified licence data, so almost every answer
+ *  is `unverified`, and the one thing that must never be rendered as is a no.
+ */
+export interface ModelLicence {
+  model_id: string; model_name: string;
+  headline: string; explanation: string;
+  severity: 'none' | 'note' | 'acknowledge';
+  must_acknowledge: boolean;
+  needs_acknowledgement: boolean;
+  conditions: string[];
+  licence_id: string; licence_name: string; url: string;
+  commercial_use: 'allowed' | 'conditional' | 'forbidden' | 'research_only' | 'unverified';
+  verified: boolean; verified_by: string; verified_on: string;
+  redistributable: boolean;
+  per_component: { role: string; name: string; licence: string }[];
+  mixed: boolean;
+  publisher_gate: boolean;
+}
+
+export interface LegalDocument {
+  id: string; title: string; version: number; effective: string;
+  accepted_from: number; material: boolean; changes: string; product: string;
+  /** False for a notice. Asking for a tick on a privacy policy teaches people
+   *  that ticking boxes is meaningless. */
+  requires_agreement: boolean;
+  body?: string;
+  accepted: { document_id: string; version: number; accepted_at: string;
+              app_version: string } | null;
+}
+
+export interface LegalOutstanding extends LegalDocument {
+  because: 'new' | 'changed';
+  previously: number | null;
+}
+
+export interface LegalState {
+  settled: boolean;
+  outstanding: LegalOutstanding[];
+  documents: LegalDocument[];
+}
+
+export interface ThirdPartyNotice {
+  name: string; version: string; licence: string; url: string;
+  kind: string; complete: boolean; has_text: boolean;
+}
+
+export interface ThirdPartyNotices {
+  summary: { total: number; incomplete: number;
+             by_licence: Record<string, number>;
+             by_kind: Record<string, number> };
+  notices: ThirdPartyNotice[];
+}
+
+export async function getLegalState() {
+  return api<LegalState>('/api/legal');
+}
+
+export async function getLegalDocument(id: string) {
+  return api<LegalDocument>(`/api/legal/${id}`);
+}
+
+export async function acceptTerms(document_id: string, version: number) {
+  return apiPost<LegalState>('/api/legal/accept', { document_id, version });
+}
+
+export async function getThirdPartyNotices() {
+  return api<ThirdPartyNotices>('/api/legal/notices/third-party');
+}
+
+export async function getModelLicence(modelId: string) {
+  return api<ModelLicence>(`/api/models/${encodeURIComponent(modelId)}/licence`);
+}
+
+export async function acknowledgeModelLicence(model_id: string) {
+  return apiPost<ModelLicence>('/api/models/licence/acknowledge', { model_id });
+}

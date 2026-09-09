@@ -220,6 +220,31 @@ def test_an_acknowledgement_stops_the_same_warning_recurring() -> None:
     assert ledger.needed(model) is False
 
 
+def test_nobody_checked_is_acknowledged_once_rather_than_per_model() -> None:
+    """The difference between informing somebody and training them to dismiss
+    dialogs. In a catalogue where most licences are unread, a per-model prompt
+    puts an identical box in front of every download."""
+    ledger = disclosure.Ledger()
+    first = profile(id="a", licence=Licence())
+    second = profile(id="b", licence=Licence())
+    assert ledger.needed(first) is True
+
+    ledger.acknowledge(first)
+    assert ledger.needed(first) is False
+    assert ledger.needed(second) is False, \
+        "a second unread licence asked again, which is the noise this avoids"
+
+
+def test_a_specific_restriction_is_still_acknowledged_per_model() -> None:
+    """The other half. 'This model forbids commercial use' is about this model,
+    is rare, and is worth a stop."""
+    ledger = disclosure.Ledger()
+    ledger.acknowledge(profile(id="a", licence=Licence()))
+    restricted = profile(id="b", licence=Licence(
+        id="nc", commercial_use=CommercialUse.FORBIDDEN))
+    assert ledger.needed(restricted) is True
+
+
 def test_relicensing_invalidates_an_acknowledgement() -> None:
     """Consent to terms that no longer exist is not consent."""
     model = profile(licence=Licence(id="nc", commercial_use=CommercialUse.FORBIDDEN))
@@ -367,19 +392,30 @@ def test_accepting_terms_grants_no_permission(tmp_path) -> None:
         assert client.get("/api/permissions").json() == before
 
 
-def test_uncloud_reports_its_licences_as_unread_rather_than_as_refusals(tmp_path
-                                                                       ) -> None:
-    """Uncloud's catalogue carries no verified licence data at all. Every
-    answer is therefore `unverified`, which is the truth — and the one thing it
-    must never be rendered as is a no."""
+def test_an_unread_licence_reports_as_unread_rather_than_as_a_refusal(tmp_path
+                                                                      ) -> None:
+    """Most of Uncloud's catalogue has not been read. That answer is the truth,
+    and the one thing it must never be rendered as is a no."""
     with _Client(tmp_path) as client:
         profiles = client.get("/api/models/profiles").json()
-        body = client.get(f"/api/models/{profiles[0]['id']}/licence").json()
-        assert body["commercial_use"] == "unverified"
+        unread = next(p for p in profiles
+                      if p["licence"]["commercial_use"] == "unverified")
+        body = client.get(f"/api/models/{unread['id']}/licence").json()
         assert body["headline"] == "Licence not checked"
+        assert "not a yes and it is not a no" in body["explanation"]
         for absent in ("may_download", "can_download", "blocked",
                        "download_allowed"):
             assert absent not in body
+
+
+def test_a_licence_that_was_read_says_who_read_it(tmp_path) -> None:
+    """The other half of the same honesty: a verified permissive licence should
+    not interrupt anybody, and should be able to show its provenance."""
+    with _Client(tmp_path) as client:
+        body = client.get("/api/models/flux1-schnell/licence").json()
+        assert body["commercial_use"] == "allowed"
+        assert body["verified"] is True and body["verified_on"]
+        assert body["needs_acknowledgement"] is False
 
 
 def test_acknowledging_a_licence_grants_nothing(tmp_path) -> None:
@@ -390,6 +426,47 @@ def test_acknowledging_a_licence_grants_nothing(tmp_path) -> None:
                             json={"model_id": model_id}).json()
         assert after["needs_acknowledgement"] is False
         assert client.get("/api/permissions").json() == before
+
+
+# ------------------------------------------------------- the licence table
+def test_every_verified_row_records_who_read_it_and_when() -> None:
+    """A verification with no date is not a verification. Publishers
+    relicense, and a stale reading has to be visible as one."""
+    from uncloud_engine.catalog import VERIFIED_TERMS
+
+    for model_id, terms in VERIFIED_TERMS.items():
+        assert terms.verified_on, f"{model_id} claims terms with no date"
+        assert terms.verified_by, f"{model_id} claims terms with no source"
+        assert terms.url, f"{model_id} states terms with nothing to check them against"
+
+
+def test_a_model_with_no_row_reports_unread_rather_than_permitted() -> None:
+    """Absence from the table is not an omission to be fixed by guessing."""
+    from uncloud_engine.catalog import CATALOG, VERIFIED_TERMS
+
+    unlisted = [e for e in CATALOG if e.id not in VERIFIED_TERMS]
+    assert unlisted, "the table covers everything; this test has stopped testing"
+    for entry in unlisted:
+        assert entry.licence.commercial_use == "unverified"
+
+
+def test_conditions_are_recorded_wherever_a_licence_sets_them() -> None:
+    """A condition nobody read is a breach nobody intended."""
+    from uncloud_engine.catalog import VERIFIED_TERMS
+
+    for model_id, terms in VERIFIED_TERMS.items():
+        if terms.commercial_use == "conditional":
+            assert terms.conditions, \
+                f"{model_id} is conditional but names no condition"
+
+
+def test_the_klein_split_is_recorded_because_it_breaks_the_obvious_rule() -> None:
+    """Licences split by model SIZE, not family. 'FLUX.2 Klein is Apache-2.0'
+    is false as stated, and this is the row that says so."""
+    from uncloud_engine.catalog import VERIFIED_TERMS
+
+    assert VERIFIED_TERMS["flux2-klein-4b-mlx"].commercial_use == "allowed"
+    assert VERIFIED_TERMS["flux2-klein-9b-mflux-q6"].commercial_use == "forbidden"
 
 
 # ------------------------------------------------------------------ shipping

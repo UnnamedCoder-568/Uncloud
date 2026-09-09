@@ -185,20 +185,27 @@ def test_transcription_takes_audio_rather_than_text() -> None:
 
 
 # ----------------------------------------------------------------- licence
-def test_no_catalogue_entry_claims_a_verified_licence() -> None:
-    """Uncloud's catalogue carries no licence data — thirty-odd entries, none
-    with terms. Every projection must therefore say UNVERIFIED, and UNVERIFIED
-    must never be rendered as permission.
+def test_a_licence_is_verified_only_where_somebody_actually_read_it() -> None:
+    """Part of the catalogue has been read at source and part has not, and the
+    projection has to keep those apart.
 
-    This test is expected to change when licence data is populated. It exists
-    so that the gap is a recorded fact rather than an assumption somebody makes
-    while reading the code.
+    The earlier version of this test asserted that NOTHING was verified, and
+    said it was expected to change when licence data was populated. It has.
+    What it holds now is the invariant that survives: a licence claiming to be
+    verified carries who read it and when, and everything else reports
+    UNVERIFIED — which is neither a yes nor a no.
     """
+    from uncloud_engine.catalog import VERIFIED_TERMS
+
     for entry in CATALOG:
         licence = profiles.from_catalog(entry).licence
-        assert licence.commercial_use is CommercialUse.UNVERIFIED
-        assert licence.verified is False
-        assert licence.needs_disclosure is True
+        if entry.id in VERIFIED_TERMS:
+            assert licence.verified is True, f"{entry.id} was read but reports unread"
+            assert licence.verified_by and licence.verified_on
+        else:
+            assert licence.commercial_use is CommercialUse.UNVERIFIED
+            assert licence.verified is False
+            assert licence.needs_disclosure is True
 
 
 def test_a_projected_entry_still_points_at_its_publisher() -> None:

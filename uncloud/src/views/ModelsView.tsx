@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { Check, Download, FolderCog, HardDrive, Loader2, CheckCircle2, XCircle } from 'lucide-react';
 import Quantize from '../components/Quantize';
-import { getCatalog, getLibrary, startDownload, listDownloads, getSettings, setModelsDir as saveModelsDir } from '../lib/sidecar';
+import { getCatalog, getLibrary, startDownload, listDownloads, getSettings, setModelsDir as saveModelsDir,
+         acknowledgeModelLicence, getModelLicence, type ModelLicence } from '../lib/sidecar';
 import type { CatalogEntry, LocalModel, DownloadState } from '../lib/sidecar';
 import { formatBytes, formatSpeed } from '../lib/format';
 
@@ -20,6 +21,8 @@ export default function ModelsView() {
   const [library, setLibrary] = useState<LocalModel[]>([]);
   const [downloads, setDownloads] = useState<DownloadState[]>([]);
   const [onlyUncensored, setOnlyUncensored] = useState(false);
+  const [disclosing, setDisclosing] = useState<
+    { terms: ModelLicence; entry: CatalogEntry } | null>(null);
 
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -84,6 +87,28 @@ export default function ModelsView() {
     downloads.find((d) => d.catalog_id === catalogId && (d.status === 'downloading' || d.status === 'pending'));
 
   async function download(entry: CatalogEntry) {
+    // Terms first, and only where there is something worth saying. Asked at
+    // this moment rather than for every card on render: thirty-three models
+    // would be thirty-three requests to answer a question almost nobody asks.
+    //
+    // Nothing here can refuse. Most of this catalogue's licences have never
+    // been read, and "nobody checked" is not grounds to stop somebody
+    // installing a model — it is grounds to say so, once.
+    let terms: ModelLicence | null = null;
+    try { terms = await getModelLicence(entry.id); } catch { /* shown below */ }
+    if (terms?.needs_acknowledgement) {
+      setDisclosing({ terms, entry });
+      return;
+    }
+    await startDownload(entry.id);
+    refresh();
+  }
+
+  async function acknowledgeAndDownload() {
+    if (!disclosing) return;
+    const { entry } = disclosing;
+    setDisclosing(null);
+    await acknowledgeModelLicence(entry.id);
     await startDownload(entry.id);
     refresh();
   }
@@ -280,6 +305,93 @@ export default function ModelsView() {
             })}
           </div>
         </section>
+      </div>
+
+      {disclosing && (
+        <LicenceDialog terms={disclosing.terms} name={disclosing.entry.name}
+                       onCancel={() => setDisclosing(null)}
+                       onAccept={acknowledgeAndDownload} />
+      )}
+    </div>
+  );
+}
+
+/** What a publisher's licence says, before the download starts.
+ *
+ *  It cannot refuse. There is no path from this dialog to "you may not install
+ *  this" — the only buttons are cancel and continue, and that is the point: a
+ *  licence describes what may be done with the OUTPUT, which depends on facts
+ *  about the user that this application does not have.
+ */
+function LicenceDialog({ terms, name, onCancel, onAccept }: {
+  terms: ModelLicence; name: string; onCancel: () => void; onAccept: () => void;
+}) {
+  const unread = terms.commercial_use === 'unverified';
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-8
+                    bg-black/50 backdrop-blur-sm" onClick={onCancel}>
+      <div className="card w-full max-w-xl flex flex-col gap-4 p-6"
+           onClick={(e) => e.stopPropagation()}>
+        <div>
+          <h3 className="text-sm mb-1">{terms.headline}</h3>
+          <p className="text-[11px] text-[var(--text-faint)]">
+            {unread ? 'Applies to models Uncloud has not checked' : name}
+            {terms.licence_name ? ` · ${terms.licence_name}` : ''}
+          </p>
+        </div>
+
+        <p className="text-xs leading-relaxed text-[var(--text-dim)]">
+          {terms.explanation}
+        </p>
+
+        {unread && (
+          <p className="text-xs leading-relaxed text-[var(--text-dim)]">
+            You are being asked this once, not for every model. Uncloud has read the
+            licences of some of its catalogue and not others; where it has not, it
+            says so rather than guessing. Before you use anything commercially,
+            check the model's own licence.
+          </p>
+        )}
+
+        {terms.conditions.length > 0 && (
+          <ul className="flex flex-col gap-2 text-xs leading-relaxed
+                         text-[var(--text-dim)] border-l-2 border-[var(--accent)] pl-3">
+            {terms.conditions.map((c) => <li key={c}>{c}</li>)}
+          </ul>
+        )}
+
+        {terms.mixed && (
+          <div className="text-xs text-[var(--text-dim)]">
+            <p className="mb-2">
+              This pipeline is assembled from separately-licensed parts, and they do
+              not all say the same thing. Every one of them applies.
+            </p>
+            <ul className="flex flex-col gap-1 font-mono text-[11px]">
+              {terms.per_component.map((c) => (
+                <li key={c.role + c.name}>{c.role}: {c.name} — {c.licence}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {terms.url && (
+          <a href={terms.url} target="_blank" rel="noreferrer"
+             className="text-[11px] text-[var(--accent)] hover:underline">
+            Read the licence itself — it is the authority, and this is a summary.
+          </a>
+        )}
+
+        <div className="flex items-center justify-end gap-2 pt-1">
+          <button onClick={onCancel}
+                  className="text-xs px-4 py-2 rounded-lg text-[var(--text-dim)]
+                             hover:text-[var(--text)] transition">
+            Cancel
+          </button>
+          <button onClick={onAccept}
+                  className="text-xs px-4 py-2 rounded-lg btn-accent transition">
+            I understand — download it
+          </button>
+        </div>
       </div>
     </div>
   );

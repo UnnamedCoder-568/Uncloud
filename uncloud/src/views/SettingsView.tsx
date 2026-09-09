@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import LegalSection from '../components/LegalSection';
 import { open } from '@tauri-apps/plugin-dialog';
 import { setModelsDir, setDeviceAccess, setHfToken, getSettings, setKeepAwake, getAgentTools, setAgentToolGroups, setOutputDir, getResident, stopAllModels, getWeightCache, clearWeightCache } from '../lib/sidecar';
 import type { Settings, AgentTools, ResidentModels } from '../lib/sidecar';
@@ -335,6 +336,8 @@ export default function SettingsView() {
             </button>
           </div>
         </section>
+
+        <LegalSection />
 
         <section className="card p-4">
           <h2 className="text-sm mb-1">About</h2>
