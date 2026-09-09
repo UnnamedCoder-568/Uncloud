@@ -421,6 +421,43 @@ def _active_profile():
     return None
 
 
+@app.get("/api/skills", dependencies=[Depends(require_token)])
+def list_skills() -> list[dict]:
+    """Every installed skill, with whether it can be offered here.
+
+    Checked rather than assumed: a skill handed to the planner and then unable
+    to run wastes a whole turn, and on a small model a turn is most of the
+    budget. Unusable ones are still listed, with the reason — a skill an author
+    can see is broken gets fixed; one that silently vanished does not.
+    """
+    from .agent.skills import discover
+    from .agent.tools import auto_groups, tools_for
+    from .budget import memory_budget
+
+    groups = settings.agent_tool_groups
+    if groups is None:
+        active = engine_manager.active
+        groups = auto_groups(active.model_path if active else None)
+    available = {spec["id"] for spec in tools_for(groups)}
+
+    profile = _active_profile()
+    return [entry.to_dict() for entry in discover(
+        tools=available,
+        capabilities=set(profile.capabilities) if profile else None,
+        memory_gb=memory_budget().get("budget_gb", 0.0),
+        gate=gate,
+    )]
+
+
+@app.delete("/api/skills/{slug}", dependencies=[Depends(require_token)])
+def delete_skill(slug: str) -> dict:
+    from .agent.skills import skill_delete
+
+    if not skill_delete(slug):
+        raise HTTPException(status_code=404, detail="No such skill")
+    return {"deleted": True}
+
+
 @app.get("/api/effort", dependencies=[Depends(require_token)])
 def effort_levels() -> dict:
     """Every level and what it would actually mean for the loaded model.
