@@ -193,8 +193,8 @@ TOOL_SPECS = [
     },
     {
         "id": "skill_save", "name": "Save Skill",
-        "description": "Write down a procedure as a reusable skill, when the user asks you to remember how something is done. Save instructions a person could follow, never code to run.",
-        "args": ["name", "description", "instructions"],
+        "description": "Write down a procedure as a reusable skill, when the user asks you to remember how something is done. Save instructions a person could follow, never code to run. 'tools' optionally lists the tool ids it expects to use, so it can be offered only where they are available.",
+        "args": ["name", "description", "instructions", "tools (optional)"],
     },
     {
         "id": "browser_console", "name": "Read Browser Console",
@@ -419,6 +419,9 @@ async def run_tool(tool_id: str, args: dict[str, Any], *, origin: str = "") -> s
                 str(args.get("name", "")),
                 str(args.get("description", "")),
                 str(args.get("instructions", "")),
+                tools=str(args.get("tools", "")),
+                capabilities=str(args.get("capabilities", "")),
+                memory_gb=str(args.get("memory_gb", "")),
             )
     if tool_id == "app_open":
         return _app_open(args.get("target", ""), args.get("app", ""))
