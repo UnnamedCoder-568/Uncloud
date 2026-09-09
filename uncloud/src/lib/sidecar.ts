@@ -1267,43 +1267,91 @@ export async function acknowledgeModelLicence(model_id: string) {
 
 // --------------------------------------------------------------- integrations
 export interface IntegrationAction {
-  id: string; summary: string; risk: string; writes: boolean;
+  id: string; summary: string;
+  /** What this action does, independent of who does it — `email.send`. The
+   *  orchestrator plans in these; providers implement them. */
+  capability: string;
+  risk: string;
+  writes: boolean;
   parameters: Record<string, string>;
+  scopes: string[];
+}
+
+export interface IntegrationScope {
+  id: string;
+  /** In a person's terms. `.../auth/gmail.send` tells nobody anything. */
+  summary: string;
+  required: boolean;
+}
+
+/** Six states, because "not working" has six different remedies and telling
+ *  somebody the wrong one wastes their afternoon. */
+export type ConnectionState =
+  | 'not_configured'        // nobody has registered an OAuth client
+  | 'not_connected'         // configured, nobody has signed in
+  | 'connected'
+  | 'authentication_required'  // they did connect, and something changed
+  | 'error'
+  | 'unavailable';
+
+export interface IntegrationConnection {
+  provider: string; kind: string; state: ConnectionState; usable: boolean;
+  account: string; scopes: string[]; expires_at: number;
+  error: string; remedy: string; connected_at: string;
+}
+
+export interface McpToolInfo {
+  name: string; description: string; schema: Record<string, unknown>;
+  /** Inferred from the tool, and only ever rounded up. Shown because it is a
+   *  guess about somebody else's code. */
+  risk: string;
+}
+
+export interface McpDetail {
+  config: { id: string; command: string; args: string[]; cwd: string;
+            label: string; env_keys: string[] };
+  running: boolean;
+  tools: McpToolInfo[];
+  resources: { uri: string; name: string; description: string }[];
+  prompts: { name: string; description: string }[];
+  server_info: Record<string, string>;
 }
 
 export interface IntegrationInfo {
   id: string; name: string; summary: string;
-  /** normal | private. Private content never reaches a remote model unless the
-   *  user has allowed it for this integration specifically. */
   sensitivity: string;
-  /** Whether the code to do this exists in this build. False is a real,
-   *  displayable state and not an error. */
   available: boolean;
-  /** What is missing when it is not available, written for the person who has
-   *  to go and get it. */
+  /** What is missing when it cannot work, written for the person who has to go
+   *  and get it. */
   needs: string;
   needs_credential: boolean;
+  auth_kind: 'oauth2_pkce' | 'oauth2_secret' | 'token' | 'none';
+  platforms: string[];
   connected: boolean;
-  /** A folder, an address, a username — never the credential. */
+  connection: IntegrationConnection;
   account: string;
+  capabilities: string[];
+  scopes: IntegrationScope[];
   actions: IntegrationAction[];
+  mcp?: McpDetail;
 }
 
 export interface IntegrationsState {
   integrations: IntegrationInfo[];
-  /** False when there is no OS keychain and secrets fall back to a 0600 file.
-   *  Surfaced rather than hidden: quietly degrading while the interface says
-   *  "stored securely" would be worse than refusing to store. */
+  /** Which providers offer which capability, whether or not connected. */
+  capabilities: Record<string, string[]>;
+  /** And which of those would actually run right now. */
+  connected_capabilities: Record<string, string[]>;
+  /** False when there is no OS keychain and secrets fall back to a 0600 file. */
   keychain: boolean;
-  credentials: { handle: string; label: string; kind: string;
-                 stored_at: string; secure: boolean }[];
 }
 
 export async function getIntegrations() {
   return api<IntegrationsState>('/api/integrations');
 }
 
-/** Connect one. The secret travels inwards only — nothing returns it. */
+/** Connect with a pasted token, or point a local integration at a folder.
+ *  The secret travels inwards only — nothing returns it. */
 export async function connectIntegration(
   integration_id: string, body: { label?: string; secret?: string },
 ) {
@@ -1311,9 +1359,54 @@ export async function connectIntegration(
                                     { integration_id, ...body });
 }
 
-export async function disconnectIntegration(integration_id: string) {
-  return apiPost<IntegrationsState>('/api/integrations/disconnect',
-                                    { integration_id });
+/** Record an OAuth client the USER registered. Uncloud ships none. */
+export async function configureIntegration(integration_id: string, body: {
+  client_id: string; client_secret?: string;
+  authorize_url?: string; token_url?: string;
+}) {
+  return apiPost<IntegrationsState>('/api/integrations/configure',
+                                    { integration_id, ...body });
+}
+
+/** Opens a browser and blocks until the redirect comes back. */
+export async function authorizeIntegration(integration_id: string,
+                                           scopes: string[]) {
+  return apiPost<IntegrationsState>('/api/integrations/authorize',
+                                    { integration_id, scopes });
+}
+
+export async function disconnectIntegration(integration_id: string,
+                                            forgetConfiguration = false) {
+  return apiPost<IntegrationsState>('/api/integrations/disconnect', {
+    integration_id,
+    label: forgetConfiguration ? 'forget-configuration' : '',
+  });
+}
+
+// ----------------------------------------------------------------------- MCP
+export async function getMcpServers() {
+  return api<IntegrationInfo[]>('/api/mcp');
+}
+
+export async function addMcpServer(body: {
+  id: string; command: string; args?: string[]; cwd?: string;
+  label?: string; env?: Record<string, string>;
+}) {
+  return apiPost<IntegrationInfo[]>('/api/mcp', body);
+}
+
+export async function connectMcpServer(id: string) {
+  return apiPost<IntegrationInfo>(`/api/mcp/${encodeURIComponent(id)}/connect`);
+}
+
+export async function disconnectMcpServer(id: string) {
+  return apiPost<IntegrationInfo[]>(
+    `/api/mcp/${encodeURIComponent(id)}/disconnect`);
+}
+
+export async function forgetMcpServer(id: string) {
+  return api<IntegrationInfo[]>(`/api/mcp/${encodeURIComponent(id)}`,
+                                { method: 'DELETE' });
 }
 
 // ---------------------------------------------------------------- permissions

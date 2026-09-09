@@ -151,6 +151,18 @@ def health() -> dict:
 
 
 @app.on_event("shutdown")
+def _stop_mcp_servers() -> None:
+    """Reap MCP subprocesses.
+
+    A server left running after the application closed is somebody's laptop
+    fan at three in the morning, and nothing about it points back here.
+    """
+    from .core import mcp
+
+    mcp.shutdown()
+
+
+@app.on_event("shutdown")
 async def _shutdown() -> None:
     """Release every model and child process.
 
@@ -432,6 +444,35 @@ class ConnectBody(BaseModel):
     #: Only ever travels inwards. It goes to the keychain and nothing returns
     #: it — not this route, not any other.
     secret: str = ""
+
+
+class ProviderConfigBody(BaseModel):
+    """An OAuth client the USER registered. Never one of ours."""
+
+    integration_id: str
+    client_id: str
+    #: Empty for PKCE, which is the point of PKCE.
+    client_secret: str = ""
+    #: Overrides for a tenant-specific authority, which Microsoft needs.
+    authorize_url: str = ""
+    token_url: str = ""
+
+
+class ScopeChoiceBody(BaseModel):
+    integration_id: str
+    #: Which optional scopes to ask for. A user who wants to read mail but not
+    #: send it should be able to decline the second.
+    scopes: list[str] = []
+
+
+class McpServerBody(BaseModel):
+    id: str
+    command: str
+    args: list[str] = []
+    cwd: str = ""
+    label: str = ""
+    #: May hold an API token, so it goes where secrets go.
+    env: dict[str, str] = {}
 
 
 class AnswerBody(BaseModel):
@@ -808,57 +849,246 @@ def acknowledge_model_licence(body: AcknowledgeBody) -> dict:
 # -------------------------------------------------------------- integrations
 @app.get("/api/integrations", dependencies=[Depends(require_token)])
 def integrations_list() -> dict:
-    """What can be connected, what is, and what each one would need.
+    """Everything connectable, its state, and what each one can do.
 
-    Unbuilt connectors are included on purpose. "Google Workspace needs an
-    OAuth client you register with Google" and "we do not support that" send
-    somebody in completely different directions, and only one of them is true.
+    One call rather than one per row, and deliberately no network traffic: a
+    settings page that made a token request per integration would be slow, burn
+    rate limit, and refresh tokens as a side effect of being looked at.
     """
-    from .core.integrations import describe
+    from .core.integrations import capability_map, describe
     from .core.integrations import credentials as broker
 
-    return {"integrations": describe(),
-            # Whether secrets are going into a real keychain. Somebody on a
-            # machine with no secret service should be told, and get to decide,
-            # rather than find out later.
-            "keychain": broker.secure(),
-            "credentials": broker.describe()}
+    return {
+        "integrations": describe(),
+        # Which providers offer which capability, so the interface can show
+        # what would actually work rather than what is installed.
+        "capabilities": capability_map(connected_only=False),
+        "connected_capabilities": capability_map(),
+        # Whether secrets are going into a real keychain. Somebody on a machine
+        # with no secret service should be told and get to decide.
+        "keychain": broker.secure(),
+    }
 
 
 @app.post("/api/integrations/connect", dependencies=[Depends(require_token)])
 def integrations_connect(body: ConnectBody) -> dict:
-    """Connect an integration. The secret goes in and never comes back out."""
-    from .core.integrations import get
+    """Connect with a pasted token, or point a local integration at a folder.
+
+    The OAuth path is separate — see `/api/integrations/authorize` — because it
+    opens a browser and waits, which is a different shape of request.
+    """
+    from .core.auth import AuthKind, connect_with_token
     from .core.integrations import credentials as broker
+    from .core.integrations import get
 
     integration = get(body.integration_id)
     if integration is None:
         raise HTTPException(status_code=404, detail="no such integration")
     if not integration.available:
-        raise HTTPException(status_code=400, detail=integration.needs
-                            or "not available in this build")
-    if integration.needs_credential and not body.secret:
         raise HTTPException(status_code=400,
-                            detail=f"{integration.name} needs a credential")
-    if not integration.needs_credential and not body.label:
-        raise HTTPException(status_code=400,
-                            detail=f"{integration.name} needs a folder")
+                            detail=integration.needs or "not available here")
 
-    if integration.needs_credential:
-        broker.store(body.integration_id, body.secret, label=body.label)
-    else:
-        # A folder is not a credential. It goes in the index, where it can be
-        # displayed without an unlock prompt.
+    if integration.auth_kind is AuthKind.NONE:
+        if not body.label:
+            raise HTTPException(status_code=400,
+                                detail=f"{integration.name} needs a folder")
+        # A folder is not a credential: it goes in the readable index so a
+        # settings screen needs no unlock prompt to draw a list.
         broker.remember_path(body.integration_id, body.label)
+        return integrations_list()
+
+    if not body.secret:
+        raise HTTPException(status_code=400,
+                            detail=f"{integration.name} needs a token")
+    account = body.label
+    connect_with_token(body.integration_id, body.secret,
+                       account=account or body.integration_id)
+    # Ask the provider who this is, now that there is something to ask with.
+    # Failure is not fatal: the connection works, the label is just less useful.
+    if not account and hasattr(integration, "whoami"):
+        try:
+            discovered = integration.whoami()
+            if discovered:
+                connect_with_token(body.integration_id, body.secret,
+                                   account=discovered)
+        except Exception:  # noqa: BLE001 - a label is not worth failing over
+            pass
+    return integrations_list()
+
+
+@app.post("/api/integrations/configure", dependencies=[Depends(require_token)])
+def integrations_configure(body: ProviderConfigBody) -> dict:
+    """Record an OAuth client the user registered with the provider.
+
+    Uncloud ships none of these. An OAuth client is issued to a named party
+    under Google's or Microsoft's terms, and fabricating one would be both a
+    lie and a violation — so NOT_CONFIGURED is a real state and this is how it
+    is left behind.
+    """
+    from .core.auth import ProviderConfig, configure_provider
+    from .core.integrations import get
+
+    integration = get(body.integration_id)
+    if integration is None or integration.defaults is None:
+        raise HTTPException(status_code=404,
+                            detail="that integration does not use OAuth")
+    defaults = integration.defaults
+    configure_provider(
+        ProviderConfig(
+            provider=body.integration_id,
+            client_id=body.client_id.strip(),
+            has_secret=bool(body.client_secret),
+            authorize_url=body.authorize_url.strip() or defaults.authorize_url,
+            token_url=body.token_url.strip() or defaults.token_url,
+            revoke_url=defaults.revoke_url,
+            extra_authorize=dict(defaults.extra_authorize)),
+        client_secret=body.client_secret)
+    return integrations_list()
+
+
+@app.post("/api/integrations/authorize", dependencies=[Depends(require_token)])
+async def integrations_authorize(body: ScopeChoiceBody) -> dict:
+    """Run an OAuth sign-in: open a browser, wait for the redirect, store.
+
+    Blocking for as long as somebody takes to sign in, which is why it is its
+    own route rather than part of connect — and bounded, so a forgotten browser
+    tab does not hold a socket open all afternoon.
+    """
+    import asyncio
+    import webbrowser
+
+    from .core.auth import AuthError, Flow, store_oauth_result
+    from .core.integrations import get
+
+    integration = get(body.integration_id)
+    if integration is None or integration.defaults is None:
+        raise HTTPException(status_code=404,
+                            detail="that integration does not use OAuth")
+
+    from .core.auth import provider_config
+
+    config = provider_config(body.integration_id, integration.defaults)
+    wanted = tuple(body.scopes) or tuple(
+        s.id for s in integration.scopes if s.required)
+    try:
+        flow = Flow(config, wanted)
+        attempt = flow.begin()
+    except AuthError as exc:
+        raise HTTPException(status_code=400, detail=exc.to_dict()) from exc
+
+    webbrowser.open(attempt.authorize_url)
+    try:
+        # The listener blocks a thread; kept off the event loop so the rest of
+        # the engine stays responsive while somebody signs in.
+        code = await asyncio.to_thread(flow.await_redirect, attempt)
+        tokens = await asyncio.to_thread(
+            lambda: flow.exchange(attempt, code, client=_http_client()))
+    except AuthError as exc:
+        raise HTTPException(status_code=400, detail=exc.to_dict()) from exc
+
+    account = ""
+    if hasattr(integration, "whoami"):
+        store_oauth_result(body.integration_id, tokens, account="")
+        try:
+            account = integration.whoami()
+        except Exception:  # noqa: BLE001 - a label is not worth failing over
+            account = ""
+    store_oauth_result(body.integration_id, tokens, account=account)
     return integrations_list()
 
 
 @app.post("/api/integrations/disconnect", dependencies=[Depends(require_token)])
 def integrations_disconnect(body: ConnectBody) -> dict:
-    from .core.integrations import credentials as broker
+    """Sign out, telling the provider if it will listen.
 
+    Local state is cleared either way: a disconnect that failed because the
+    provider was unreachable, and left the connection looking live, would be
+    worse than one that tidied up locally.
+    """
+    from .core.auth import ProviderConfig, disconnect
+    from .core.auth import forget_provider_config
+    from .core.integrations import credentials as broker
+    from .core.integrations import get
+
+    integration = get(body.integration_id)
+    defaults = (integration.defaults if integration and integration.defaults
+                else ProviderConfig(provider=body.integration_id))
+    disconnect(body.integration_id, defaults, client=_http_client())
     broker.forget(body.integration_id)
+    if body.label == "forget-configuration":
+        forget_provider_config(body.integration_id)
     return integrations_list()
+
+
+def _http_client():
+    import httpx
+
+    return httpx.Client(timeout=30.0)
+
+
+# ----------------------------------------------------------------------- MCP
+@app.get("/api/mcp", dependencies=[Depends(require_token)])
+def mcp_servers() -> list[dict]:
+    """Configured MCP servers, with the risk each tool is governed as.
+
+    The risk is shown rather than hidden because it is an inference about
+    somebody else's code, and a user who disagrees should be able to see it
+    instead of discovering it by being asked at the wrong moment.
+    """
+    from .core import mcp
+
+    return mcp.describe()
+
+
+@app.post("/api/mcp", dependencies=[Depends(require_token)])
+def mcp_add(body: McpServerBody) -> list[dict]:
+    from .core import mcp
+
+    gated("mcp_configure", Risk.SETTINGS,
+          f"Add the MCP server {body.label or body.id}",
+          preview={"command": body.command, "args": " ".join(body.args)},
+          origin="settings")
+    mcp.configure(mcp.ServerConfig(
+        id=body.id, command=body.command, args=tuple(body.args),
+        cwd=body.cwd, label=body.label, env=dict(body.env)))
+    return mcp.describe()
+
+
+@app.post("/api/mcp/{server_id}/connect", dependencies=[Depends(require_token)])
+def mcp_connect(server_id: str) -> dict:
+    """Start a server and discover what it offers.
+
+    Starting somebody else's program is a settings-level action and is asked
+    about as one — before the process exists, not after.
+    """
+    from .core import mcp
+
+    server = mcp.get(server_id)
+    if server is None:
+        raise HTTPException(status_code=404, detail="no such server")
+    gated("mcp_start", Risk.SETTINGS,
+          f"Start the MCP server {server.name}",
+          preview={"command": server.config.command}, origin="settings")
+    try:
+        return mcp.connect(server_id).to_dict()
+    except mcp.McpError as exc:
+        raise HTTPException(status_code=400, detail=exc.to_dict()) from exc
+
+
+@app.post("/api/mcp/{server_id}/disconnect", dependencies=[Depends(require_token)])
+def mcp_disconnect(server_id: str) -> list[dict]:
+    from .core import mcp
+
+    mcp.disconnect(server_id)
+    return mcp.describe()
+
+
+@app.delete("/api/mcp/{server_id}", dependencies=[Depends(require_token)])
+def mcp_forget(server_id: str) -> list[dict]:
+    from .core import mcp
+
+    mcp.forget(server_id)
+    return mcp.describe()
 
 
 @app.get("/api/catalog", dependencies=[Depends(require_token)])
