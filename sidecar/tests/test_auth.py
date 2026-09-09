@@ -12,6 +12,7 @@ moment somebody depends on it.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import threading
 import time
@@ -106,10 +107,9 @@ def test_an_unconfigured_provider_refuses_before_opening_a_browser() -> None:
 
 # -------------------------------------------------------------- the redirect
 def _visit(url: str) -> None:
-    try:
+    # The assertion is on what the flow received, not on what the browser saw.
+    with contextlib.suppress(Exception):
         urllib.request.urlopen(url, timeout=5).read()
-    except Exception:  # noqa: BLE001 - the assertion is on the flow, not this
-        pass
 
 
 def test_the_code_comes_back_through_the_loopback_listener() -> None:

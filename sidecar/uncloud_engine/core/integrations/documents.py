@@ -95,7 +95,7 @@ class Documents(Integration):
             ))
 
     # ------------------------------------------------------------ connection
-    def connected(self) -> bool:
+    def ready(self) -> bool:
         root = credentials.path_of(HANDLE)
         return bool(root and root.is_dir())
 

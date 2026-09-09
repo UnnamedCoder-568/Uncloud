@@ -220,15 +220,51 @@ def test_an_action_no_integration_declares_cannot_be_performed() -> None:
     assert registry.find_action("documents.delete_everything") is None
 
 
-def test_an_unbuilt_connector_is_visible_and_says_what_it_needs() -> None:
-    """'Google Workspace needs an OAuth client you register with Google' and
-    'we do not support that' send somebody in completely different
-    directions."""
-    google = registry.get("google")
-    assert google is not None
-    assert google.available is False
-    assert "OAuth client" in google.needs
-    assert google.actions == (), "an unbuilt connector must offer nothing"
+def test_a_provider_needing_an_oauth_client_says_so_rather_than_pretending() -> None:
+    """The state that replaced "not built".
+
+    Google and Microsoft are fully implemented and cannot work until somebody
+    registers an OAuth application, because an OAuth client is issued to a
+    named party under the provider's terms and Uncloud will not fabricate one.
+    NOT_CONFIGURED is the honest answer, and its remedy is something only the
+    user can do.
+    """
+    for provider in ("google", "microsoft"):
+        integration = registry.get(provider)
+        assert integration is not None
+        assert integration.available is True, "these are built"
+        assert integration.actions, "and they declare real actions"
+        assert integration.connection().state.value == "not_configured"
+        assert "cannot supply one" in integration.needs \
+            or "cannot supply" in integration.needs \
+            or "belongs to whoever" in integration.needs
+
+
+def test_a_provider_taking_a_user_issued_token_needs_no_registration() -> None:
+    """The difference that decides IMPLEMENTED from REQUIRES EXTERNAL
+    CONFIGURATION in the report: GitHub, Slack and Notion issue tokens the user
+    creates for themselves."""
+    for provider in ("github", "slack", "notion"):
+        integration = registry.get(provider)
+        assert integration is not None
+        assert integration.auth_kind.value == "token"
+        assert integration.connection().state.value == "not_connected"
+
+
+def test_every_integration_declares_at_least_one_capability() -> None:
+    """A placeholder with no actions was the previous state of this system.
+    Nothing should be in the registry now that cannot do anything."""
+    for integration in registry.all_integrations():
+        assert integration.capabilities(), f"{integration.id} does nothing"
+
+
+def test_every_scope_is_described_in_a_persons_terms() -> None:
+    """`https://www.googleapis.com/auth/gmail.send` tells nobody anything.
+    A consent screen exists to be understood."""
+    for integration in registry.all_integrations():
+        for scope in integration.scopes:
+            assert scope.summary and scope.summary != scope.id, \
+                f"{integration.id}: {scope.id} has no plain description"
 
 
 # ----------------------------------------------------- connection ≠ permission
@@ -314,20 +350,6 @@ def test_the_approval_shows_the_change_rather_than_the_action_name(recorder,
     assert "ana@example.com" in seen["preview"]
     assert "cannot be undone" in seen["preview"]
     assert "Please find attached." in seen["preview"]
-
-
-def test_an_unbuilt_connector_offers_nothing_that_could_be_called() -> None:
-    """Declared-but-unbuilt has to be inert as well as visible. It appears in
-    the list with what it needs, and there is no action on it to invoke — so a
-    model that has read the list still cannot reach for it."""
-    for integration in registry.all_integrations():
-        if not integration.available:
-            assert integration.actions == ()
-            assert integration.needs, f"{integration.id} says nothing about why"
-
-    with pytest.raises(IntegrationError) as raised:
-        asyncio.run(registry.perform("google.mail.send", {}))
-    assert raised.value.remedy
 
 
 def test_an_available_integration_that_is_switched_off_says_what_it_needs(

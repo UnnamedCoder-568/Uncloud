@@ -50,6 +50,8 @@
       "../../sidecar/uncloud_engine/core/*.py": "engine/uncloud_engine/core/",
       "../../sidecar/uncloud_engine/core/auth/*.py": "engine/uncloud_engine/core/auth/",
       "../../sidecar/uncloud_engine/core/integrations/*.py": "engine/uncloud_engine/core/integrations/",
+      "../../sidecar/uncloud_engine/core/integrations/providers/*.py": "engine/uncloud_engine/core/integrations/providers/",
+      "../../sidecar/uncloud_engine/core/mcp/*.py": "engine/uncloud_engine/core/mcp/",
       "../../sidecar/uncloud_engine/core/legal/*.py": "engine/uncloud_engine/core/legal/",
       "../../sidecar/uncloud_engine/core/legal/documents/*.md": "engine/uncloud_engine/core/legal/documents/",
       "../../sidecar/uncloud_engine/core/legal/documents/*.json": "engine/uncloud_engine/core/legal/documents/",

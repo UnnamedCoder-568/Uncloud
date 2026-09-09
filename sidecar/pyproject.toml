@@ -43,3 +43,14 @@ dependencies = [
     "uvicorn[standard]>=0.52.3",
     "websockets>=17.0.1",
 ]
+
+# Matched to Uncloud Studio's configuration deliberately. Core is byte-identical
+# in both repositories, so two different rulesets would mean code that is clean
+# on one side and not the other — and the `noqa` comments needed to satisfy one
+# become "unused directive" errors in the other.
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]

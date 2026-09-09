@@ -33,9 +33,15 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import StrEnum
 
-from ..auth.contract import AuthKind, Connection, ProviderConfig, Scope
+from ..auth.contract import (
+    AuthKind,
+    Connection,
+    ConnectionState,
+    ProviderConfig,
+    Scope,
+)
 from ..permission import Risk
-from .capabilities import Capability, risk_of, writes
+from .capabilities import Capability, risk_of, stricter
 
 
 class Sensitivity(StrEnum):
@@ -75,20 +81,33 @@ class Action:
     #: Scopes this action needs, where the provider issues them per-scope. Used
     #: to explain a failure as "you did not grant this" rather than as an error.
     scopes: tuple[str, ...] = ()
+    #: A stricter classification than the capability implies. Exists for one
+    #: case: an MCP server's tools do not map onto the shared vocabulary — a
+    #: server can do anything — so they are registered under a coarse
+    #: capability and classified individually. It can only ever tighten, so an
+    #: adapter cannot talk its way into a milder policy than its capability.
+    at_least: Risk | None = None
 
     @property
     def risk(self) -> Risk:
-        return risk_of(self.capability)
-
-    @property
-    def writes(self) -> bool:
-        return writes(self.capability)
+        derived = risk_of(self.capability)
+        return stricter(derived, self.at_least) if self.at_least else derived
 
     def to_dict(self) -> dict:
         return {"id": self.id, "summary": self.summary,
                 "capability": self.capability.value, "risk": self.risk.value,
                 "writes": self.writes, "parameters": dict(self.parameters),
                 "scopes": list(self.scopes)}
+
+    @property
+    def writes(self) -> bool:
+        """Whether this changes something outside Uncloud.
+
+        Derived from the effective risk rather than the capability, so an MCP
+        tool classified as a delete under a read-shaped capability is still
+        previewed.
+        """
+        return self.risk is not Risk.READ
 
 
 @dataclass(frozen=True)
@@ -188,6 +207,16 @@ class Integration:
         """
         return next((a for a in self.actions if a.capability is capability), None)
 
+    def ready(self) -> bool:
+        """Whether an integration that needs no credential is set up.
+
+        Only consulted for `AuthKind.NONE`. A documents folder has nothing to
+        authenticate and can still be unconfigured — no folder chosen — and
+        without this hook it would report itself connected on a fresh install.
+        Separate from `connected()` to keep that from recursing.
+        """
+        return True
+
     def connection(self) -> Connection:
         """This provider's authentication state.
 
@@ -195,6 +224,13 @@ class Integration:
         gets the five states, refresh and disconnect without writing any of it.
         """
         from ..auth import status as connection_status
+
+        if self.auth_kind is AuthKind.NONE:
+            return Connection(
+                provider=self.id, kind=self.auth_kind,
+                state=(ConnectionState.CONNECTED if self.ready()
+                       else ConnectionState.NOT_CONNECTED),
+                account=self.account())
 
         return connection_status(
             self.id, self.auth_kind,
