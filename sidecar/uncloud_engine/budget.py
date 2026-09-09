@@ -15,7 +15,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-
 # Which runtimes exist on which machines. mflux and MLX are Apple Silicon and
 # nothing else — they are not slower elsewhere, they do not install. Everything
 # below them runs anywhere torch does.
@@ -40,8 +39,21 @@ def engine_runs_here(engine: str) -> bool:
 
 
 def memory_budget() -> dict:
-    """Total and usable memory, and the accelerator's own ceiling if it has one."""
+    """Total and usable memory, and the accelerator's own ceiling if it has one.
+
+    Deliberately not Core's `hardware.detect()`, which answers a different
+    question. Core says what the machine IS — a static fact, the same all day.
+    This says what can be ALLOCATED right now, which is what a generation has
+    to fit inside: Metal will not hand out its whole pool, and a discrete card
+    is already holding the desktop and a browser's compositor.
+
+    Core is the fallback rather than the source. Without torch and psutil this
+    used to report zero, and everything downstream then refused to plan at all
+    — a machine with no torch installed could not even be told what it had.
+    """
     import platform
+
+    from .core import hardware as core_hardware
 
     total = available = 0.0
     try:
@@ -51,6 +63,14 @@ def memory_budget() -> dict:
         total, available = vm.total / 1e9, vm.available / 1e9
     except Exception:  # noqa: BLE001 - psutil is optional
         pass
+
+    machine = None
+    if not total:
+        machine = core_hardware.detect()
+        total = machine.system_memory_gb
+        # Nothing measured what is free, so assume most of it is not. Better a
+        # conservative number than a confident wrong one.
+        available = round(total * 0.6, 1)
 
     device, budget, unified = "cpu", available, False
     try:
@@ -78,6 +98,16 @@ def memory_budget() -> dict:
     except Exception:  # noqa: BLE001 - torch may be missing
         pass
 
+    if not budget:
+        # No torch, so no accelerator ceiling to read. Core knows what the
+        # machine has; three quarters of it is the same margin Metal applies.
+        machine = machine or core_hardware.detect()
+        usable = machine.usable_memory_gb
+        if usable:
+            budget = usable * 0.75
+            unified = bool(machine.unified_memory_gb)
+            device = "mps" if unified else ("cuda" if machine.gpus else "cpu")
+
     return {
         "total_gb": round(total, 1),
         "available_gb": round(available, 1),
@@ -85,6 +115,10 @@ def memory_budget() -> dict:
         "budget_gb": round(budget, 1),
         "unified": unified,
         "platform": platform.system(),
+        # What the machine is, as opposed to what can be allocated right now.
+        # Included so a caller that needs the static answer does not have to
+        # detect it a second time.
+        "machine": (machine or core_hardware.detect()).to_dict(),
     }
 
 
