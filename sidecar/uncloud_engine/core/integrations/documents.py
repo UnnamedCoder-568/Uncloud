@@ -11,11 +11,11 @@ looks enough like content for a model to try to answer from it. The three Office
 formats are read properly here: paragraphs from Word, cells from Excel, slide
 text from PowerPoint.
 
-**Reading only, and it says so.** Writing a .docx means constructing a document
-with relationships, content types and styles that Word will open — that is a
-library, and shipping a writer that produced files Word rejects would be worse
-than not having one. The action list contains no writer, so nothing can offer
-one.
+**It writes the three formats too, in `ooxml`.** Text only — paragraphs, rows,
+slides — because that is what an agent summarising a spreadsheet into a deck
+actually produces. What it will not do is styles, images and tables: a
+half-implemented style engine produces files that open with warnings, which is
+worse than a plain document that opens cleanly.
 
 **Scope is enforced on the resolved path.** Connecting a folder grants that
 folder. `../` out of it, and a symlink pointing out of it, both resolve first
@@ -29,9 +29,9 @@ import zipfile
 from pathlib import Path
 from xml.etree import ElementTree
 
-from ..permission import Risk
-from . import credentials
-from .contract import Action, Integration, IntegrationError, Sensitivity
+from . import credentials, ooxml
+from .capabilities import Capability
+from .contract import Action, Change, Integration, IntegrationError, Sensitivity
 
 HANDLE = "documents"
 
@@ -63,15 +63,35 @@ class Documents(Integration):
             available=True,
             needs_credential=False,
             actions=(
-                Action(id="documents.list", risk=Risk.READ,
+                Action(id="documents.list",
+                       capability=Capability.STORAGE_LIST,
                        summary="List the files in the connected folder",
                        parameters={"subfolder": "optional, relative to the folder"}),
-                Action(id="documents.read", risk=Risk.READ,
+                Action(id="documents.read",
+                       capability=Capability.STORAGE_READ,
                        summary="Read one document as text",
                        parameters={"path": "relative to the connected folder"}),
-                Action(id="documents.search", risk=Risk.READ,
+                Action(id="documents.search",
+                       capability=Capability.STORAGE_SEARCH,
                        summary="Find documents containing a phrase",
                        parameters={"query": "the text to look for"}),
+                Action(id="documents.write_document",
+                       capability=Capability.DOCUMENT_CREATE,
+                       summary="Write a Word document",
+                       parameters={"path": "relative, ending .docx",
+                                   "paragraphs": "list of lines; '# ' makes a heading",
+                                   "title": "optional"}),
+                Action(id="documents.write_spreadsheet",
+                       capability=Capability.SPREADSHEET_WRITE,
+                       summary="Write an Excel workbook",
+                       parameters={"path": "relative, ending .xlsx",
+                                   "rows": "list of rows, each a list of values",
+                                   "sheet_name": "optional"}),
+                Action(id="documents.write_presentation",
+                       capability=Capability.PRESENTATION_CREATE,
+                       summary="Write a PowerPoint deck",
+                       parameters={"path": "relative, ending .pptx",
+                                   "slides": "list of {title, bullets}"}),
             ))
 
     # ------------------------------------------------------------ connection
@@ -114,6 +134,44 @@ class Documents(Integration):
         return target
 
     # ---------------------------------------------------------------- actions
+    async def preview(self, action_id: str, arguments: dict) -> Change | None:
+        """What a write would do, before it does it.
+
+        Reads return None. For a write the file path matters most — overwriting
+        somebody's report is the thing they would want to catch — so whether
+        the target already exists is stated rather than left to be discovered.
+        """
+        if action_id not in {"documents.write_document",
+                             "documents.write_spreadsheet",
+                             "documents.write_presentation"}:
+            return None
+
+        relative = str(arguments.get("path", ""))
+        target = self._resolve(relative)
+        exists = target.is_file()
+        if action_id == "documents.write_spreadsheet":
+            rows = arguments.get("rows") or []
+            detail = f"{len(rows)} row(s)"
+            body = "\n".join(
+                "\t".join(str(c) for c in row) for row in rows[:8])
+        elif action_id == "documents.write_presentation":
+            slides = arguments.get("slides") or []
+            detail = f"{len(slides)} slide(s)"
+            body = "\n".join(
+                str(s.get("title", "")) for s in slides[:8]
+                if isinstance(s, dict))
+        else:
+            paragraphs = arguments.get("paragraphs") or []
+            detail = f"{len(paragraphs)} paragraph(s)"
+            body = "\n".join(str(p) for p in paragraphs[:8])
+
+        return Change(
+            summary=("Replace" if exists else "Create") + f" {target.name}",
+            target=str(target), detail=detail,
+            # Overwriting is the case worth flagging: the previous contents are
+            # gone, and nothing here keeps a copy.
+            reversible=not exists, body=body)
+
     async def run(self, action_id: str, arguments: dict) -> str:
         if action_id == "documents.list":
             return self._list(str(arguments.get("subfolder", "")))
@@ -121,9 +179,74 @@ class Documents(Integration):
             return self._read(str(arguments.get("path", "")))
         if action_id == "documents.search":
             return self._search(str(arguments.get("query", "")))
+        if action_id == "documents.write_document":
+            return self._write_document(arguments)
+        if action_id == "documents.write_spreadsheet":
+            return self._write_spreadsheet(arguments)
+        if action_id == "documents.write_presentation":
+            return self._write_presentation(arguments)
         raise IntegrationError(f"{action_id} is not something this can do.",
                                remedy="Ask for one of: "
                                       + ", ".join(a.id for a in self.actions))
+
+    # ----------------------------------------------------------------- writes
+    def _target(self, arguments: dict, suffix: str) -> Path:
+        """A checked path with the right extension.
+
+        The extension is enforced rather than corrected: a caller asking to
+        write a deck to `notes.txt` has misunderstood something, and quietly
+        renaming the file would hide that.
+        """
+        relative = str(arguments.get("path", "")).strip()
+        if not relative:
+            raise IntegrationError("No file name was given.",
+                                   remedy=f"Give a path ending in {suffix}.")
+        if not relative.lower().endswith(suffix):
+            raise IntegrationError(
+                f"{relative!r} does not end in {suffix}.",
+                remedy=f"Office will not open it otherwise. Use a {suffix} name.")
+        return self._resolve(relative)
+
+    def _write_document(self, arguments: dict) -> str:
+        target = self._target(arguments, ".docx")
+        paragraphs = [str(p) for p in (arguments.get("paragraphs") or [])]
+        if not paragraphs:
+            raise IntegrationError("There is nothing to write.",
+                                   remedy="Give at least one paragraph.")
+        ooxml.write_docx(target, paragraphs,
+                         title=str(arguments.get("title", "")))
+        return f"Wrote {target.name} ({len(paragraphs)} paragraphs)."
+
+    def _write_spreadsheet(self, arguments: dict) -> str:
+        target = self._target(arguments, ".xlsx")
+        raw = arguments.get("rows") or []
+        if not raw:
+            raise IntegrationError("There is nothing to write.",
+                                   remedy="Give at least one row.")
+        rows = [list(row) if isinstance(row, (list, tuple)) else [row]
+                for row in raw]
+        ooxml.write_xlsx(target, rows,
+                         sheet_name=str(arguments.get("sheet_name") or "Sheet1"))
+        return f"Wrote {target.name} ({len(rows)} rows)."
+
+    def _write_presentation(self, arguments: dict) -> str:
+        target = self._target(arguments, ".pptx")
+        raw = arguments.get("slides") or []
+        slides = []
+        for entry in raw:
+            if isinstance(entry, dict):
+                bullets = entry.get("bullets") or entry.get("points") or []
+                slides.append((str(entry.get("title", "")),
+                               [str(b) for b in bullets]))
+            elif isinstance(entry, (list, tuple)) and entry:
+                slides.append((str(entry[0]),
+                               [str(b) for b in (entry[1] if len(entry) > 1 else [])]))
+        if not slides:
+            raise IntegrationError(
+                "There is nothing to write.",
+                remedy="Give slides as {title, bullets} objects.")
+        ooxml.write_pptx(target, slides)
+        return f"Wrote {target.name} ({len(slides)} slides)."
 
     def _list(self, subfolder: str) -> str:
         target = self._resolve(subfolder)
@@ -160,11 +283,18 @@ class Documents(Integration):
         if not query.strip():
             raise IntegrationError("No search text was given.",
                                    remedy="Say what to look for.")
-        root = self._root()
+        root = self._root().resolve()
         needle = query.lower()
         hits = []
         for child in sorted(root.rglob("*")):
             if not child.is_file() or child.name.startswith("."):
+                continue
+            # Checked per candidate rather than trusting the walk. `rglob` does
+            # not currently follow directory symlinks, but that is a property
+            # of the traversal implementation and it has changed between Python
+            # versions — the boundary must not depend on it.
+            resolved = child.resolve()
+            if resolved != root and root not in resolved.parents:
                 continue
             if child.stat().st_size > MAX_BYTES:
                 continue

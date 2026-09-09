@@ -19,9 +19,9 @@ from pathlib import Path
 
 import pytest
 
-from uncloud_engine.core.permission import Mode, Risk
 from uncloud_engine.core.integrations import (
     Action,
+    Capability,
     Change,
     Integration,
     IntegrationError,
@@ -30,6 +30,9 @@ from uncloud_engine.core.integrations import (
     documents,
     registry,
 )
+from uncloud_engine.core.permission import Risk
+from uncloud_engine.core.integrations.capabilities import Capability
+from uncloud_engine.core.permission import Risk
 
 HERE = Path(__file__).resolve().parent
 PACKAGE = HERE.parent / "uncloud_engine" / "core" / "integrations"
@@ -236,8 +239,12 @@ class _Recorder(Integration):
         super().__init__(
             id="recorder", name="Recorder", summary="test double",
             available=True, needs_credential=False,
-            actions=(Action(id="recorder.send", risk=Risk.MESSAGE,
-                            summary="Send something", writes=True),))
+            # A capability rather than a risk: the policy is derived, so two
+            # providers implementing the same thing cannot end up governed
+            # differently.
+            actions=(Action(id="recorder.send",
+                            capability=Capability.CHAT_MESSAGE_SEND,
+                            summary="Send something"),))
         self._preview = preview_returns
         self.ran = False
 

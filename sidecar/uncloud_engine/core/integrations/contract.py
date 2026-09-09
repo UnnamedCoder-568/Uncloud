@@ -33,7 +33,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import StrEnum
 
+from ..auth.contract import AuthKind, Connection, ProviderConfig, Scope
 from ..permission import Risk
+from .capabilities import Capability, risk_of, writes
 
 
 class Sensitivity(StrEnum):
@@ -56,24 +58,37 @@ class Sensitivity(StrEnum):
 
 @dataclass(frozen=True)
 class Action:
-    """One thing an integration can do.
+    """One thing an integration can do, and which capability it implements.
 
-    `risk` is required and there is no default. An action nobody has classified
-    cannot be governed, and defaulting it to something mild is how a write ends
-    up going through a read's policy.
+    `capability` is what makes the orchestrator provider-agnostic: it plans in
+    terms of `email.send` and the registry finds whatever is connected and able.
+    Risk and write-ness are DERIVED from it rather than declared here, so two
+    providers implementing the same capability cannot end up under different
+    policies — which would mean sending mail asked for approval through Gmail
+    and did not through Outlook.
     """
 
     id: str
     summary: str
-    risk: Risk
-    #: Whether it changes something outside Uncloud, and therefore has to
-    #: produce a `Change` before it happens rather than after.
-    writes: bool = False
+    capability: Capability
     parameters: dict[str, str] = field(default_factory=dict)
+    #: Scopes this action needs, where the provider issues them per-scope. Used
+    #: to explain a failure as "you did not grant this" rather than as an error.
+    scopes: tuple[str, ...] = ()
+
+    @property
+    def risk(self) -> Risk:
+        return risk_of(self.capability)
+
+    @property
+    def writes(self) -> bool:
+        return writes(self.capability)
 
     def to_dict(self) -> dict:
-        return {"id": self.id, "summary": self.summary, "risk": self.risk.value,
-                "writes": self.writes, "parameters": dict(self.parameters)}
+        return {"id": self.id, "summary": self.summary,
+                "capability": self.capability.value, "risk": self.risk.value,
+                "writes": self.writes, "parameters": dict(self.parameters),
+                "scopes": list(self.scopes)}
 
 
 @dataclass(frozen=True)
@@ -150,10 +165,45 @@ class Integration:
     needs: str = ""
     #: Whether connecting requires a secret at all. A folder on disk does not.
     needs_credential: bool = True
+    #: How this provider expects to be authenticated, and what it needs to be
+    #: pointed at. Both are the provider's facts, not the user's.
+    auth_kind: AuthKind = AuthKind.NONE
+    defaults: ProviderConfig | None = None
+    #: What each scope is for, in a person's terms. `mail.google.com/gmail.send`
+    #: tells nobody anything; "Send mail as you" is what a consent screen is
+    #: for.
+    scopes: tuple[Scope, ...] = ()
+    #: Platforms this can work on. Empty means anywhere.
+    platforms: tuple[str, ...] = ()
+
+    # ------------------------------------------------------------- queries
+    def capabilities(self) -> frozenset[Capability]:
+        return frozenset(a.capability for a in self.actions)
+
+    def implements(self, capability: Capability) -> Action | None:
+        """The action that provides this capability, if any.
+
+        The lookup that makes capability routing work. An integration is asked
+        what it can do rather than being matched by name.
+        """
+        return next((a for a in self.actions if a.capability is capability), None)
+
+    def connection(self) -> Connection:
+        """This provider's authentication state.
+
+        Default implementation asks the shared connection store, so an adapter
+        gets the five states, refresh and disconnect without writing any of it.
+        """
+        from ..auth import status as connection_status
+
+        return connection_status(
+            self.id, self.auth_kind,
+            self.defaults or ProviderConfig(provider=self.id),
+            account=self.account())
 
     def connected(self) -> bool:
-        """Whether this is usable right now. Overridden by adapters."""
-        return False
+        """Whether this is usable right now."""
+        return self.connection().state.usable
 
     def account(self) -> str:
         """A label for what is connected — an address, a folder, a username.
@@ -181,11 +231,18 @@ class Integration:
             remedy=self.needs or "There is nothing to do about this yet.")
 
     def to_dict(self) -> dict:
+        connection = self.connection()
         return {
             "id": self.id, "name": self.name, "summary": self.summary,
             "sensitivity": self.sensitivity.value,
             "available": self.available, "needs": self.needs,
             "needs_credential": self.needs_credential,
-            "connected": self.connected(), "account": self.account(),
+            "auth_kind": self.auth_kind.value,
+            "platforms": list(self.platforms),
+            "connected": connection.state.usable,
+            "connection": connection.to_dict(),
+            "account": connection.account or self.account(),
+            "capabilities": sorted(c.value for c in self.capabilities()),
+            "scopes": [s.to_dict() for s in self.scopes],
             "actions": [a.to_dict() for a in self.actions],
         }

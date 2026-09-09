@@ -29,6 +29,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 
 from ..permission import Decision, Request
+from .capabilities import Capability
 from .contract import Action, Change, Integration, IntegrationError, Sensitivity
 from .documents import Documents
 
@@ -131,6 +132,70 @@ def all_integrations(*, refresh: bool = False) -> list[Integration]:
 
 def get(integration_id: str) -> Integration | None:
     return next((i for i in all_integrations() if i.id == integration_id), None)
+
+
+# --------------------------------------------------------- capability routing
+def providers_for(capability: Capability, *, connected_only: bool = True
+                  ) -> list[Integration]:
+    """Everything that can do this, best candidate first.
+
+    The function that keeps provider names out of planning. The orchestrator
+    asks for `email.send`; whether that is Gmail or Outlook is decided here, by
+    what is actually connected, and adding a third provider changes nothing
+    above this line.
+
+    Ordered by how ready each one is rather than alphabetically: a connected
+    provider beats a configured one, which beats one that exists. Ties keep
+    registration order, which is stable and lets a product express a preference
+    by ordering its own list.
+    """
+    able = [i for i in all_integrations()
+            if i.available and i.implements(capability) is not None]
+    if connected_only:
+        able = [i for i in able if i.connected()]
+    return able
+
+
+def capability_map(*, connected_only: bool = True) -> dict[str, list[str]]:
+    """Which providers offer which capability. For diagnostics and the UI."""
+    out: dict[str, list[str]] = {}
+    for capability in Capability:
+        names = [i.id for i in providers_for(capability,
+                                             connected_only=connected_only)]
+        if names:
+            out[capability.value] = names
+    return out
+
+
+async def perform_capability(capability: Capability, arguments: dict, *,
+                             provider: str = "", origin: str = "agent") -> str:
+    """Do this, with whatever can.
+
+    `provider` narrows it when the user said which — "send it from my work
+    account". Left empty, the registry chooses, and the choice is reported in
+    the failure when there is nothing to choose from: "no connected integration
+    can send email" is actionable, and "action not found" is not.
+    """
+    candidates = providers_for(capability)
+    if provider:
+        candidates = [i for i in candidates if i.id == provider]
+
+    if not candidates:
+        anyone = providers_for(capability, connected_only=False)
+        if not anyone:
+            raise IntegrationError(
+                f"Nothing in this build can {capability.value}.",
+                remedy="This capability has no provider yet.")
+        names = ", ".join(i.name for i in anyone)
+        raise IntegrationError(
+            f"No connected integration can {capability.value}.",
+            remedy=f"Connect one of these in Settings → Integrations: {names}.",
+            needs_reconnect=True)
+
+    chosen = candidates[0]
+    action = chosen.implements(capability)
+    assert action is not None      # providers_for only returns those that do
+    return await perform(action.id, arguments, origin=origin)
 
 
 def find_action(action_id: str) -> tuple[Integration, Action] | None:

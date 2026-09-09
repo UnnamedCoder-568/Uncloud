@@ -107,7 +107,7 @@ class _Callback(http.server.BaseHTTPRequestHandler):
             "place-items:center;background:#0b0b0e;color:#e8e8ea}"
             "div{text-align:center;max-width:32ch;line-height:1.6}</style>"
             f"<div><h2>{heading}</h2><p>{message}</p></div>"
-        ).encode("utf-8")
+        ).encode()
 
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -147,7 +147,7 @@ class Flow:
         chosen = port or _free_port()
         redirect_uri = f"http://127.0.0.1:{chosen}/callback"
 
-        parameters = {
+        parameters: dict[str, str] = {
             "response_type": "code",
             "client_id": self.config.client_id,
             "redirect_uri": redirect_uri,
