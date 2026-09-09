@@ -507,5 +507,6 @@ def test_the_legal_package_would_be_in_the_built_app() -> None:
     resources = conf["bundle"]["resources"]
     for expected in ("../../sidecar/uncloud_engine/legal/*.py",
                      "../../sidecar/uncloud_engine/legal/documents/*.md",
-                     "../../sidecar/uncloud_engine/legal/product/*.md"):
+                     "../../sidecar/uncloud_engine/legal/product/*.md",
+                     "../../sidecar/uncloud_engine/integrations/*.py"):
         assert expected in resources, f"{expected} would be absent from the build"
