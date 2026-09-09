@@ -41,6 +41,8 @@ TOOL_RISK: dict[str, Risk] = {
     "app_open": Risk.DEVICE,
     "screen_capture": Risk.DEVICE,
 
+    "integrations": Risk.READ,
+
     "fs_read": Risk.READ,
     "fs_list": Risk.READ,
     "fs_glob": Risk.READ,
@@ -157,6 +159,11 @@ def _summarise(tool_id: str, args: dict[str, Any]) -> tuple[str, dict]:
 
 TOOL_SPECS = [
     {"id": "shell", "name": "Shell", "description": "Run a shell command.", "args": ["command"]},
+    {"id": "integrations", "name": "Integrations",
+     "description": "List what this computer is connected to — document folders, "
+                    "accounts — and which actions each one offers. Use the action "
+                    "ids it returns to actually do something.",
+     "args": []},
     {"id": "fs_read", "name": "Read File", "description": "Read a text file.", "args": ["path"]},
     {"id": "fs_write", "name": "Write File", "description": "Write a text file.", "args": ["path", "content"]},
     {"id": "fs_list", "name": "List Directory", "description": "List a directory's contents.", "args": ["path"]},
@@ -370,6 +377,17 @@ async def run_tool(tool_id: str, args: dict[str, Any], *, origin: str = "") -> s
     added tomorrow is governed by having an entry in TOOL_RISK, which it cannot
     run without.
     """
+    # Integration actions are namespaced (`documents.read`) and carry their own
+    # risk category, declared by the integration rather than listed here. They
+    # go to `registry.perform`, which asks the gate exactly as this function
+    # does — one level down, and with a better question, because for a write it
+    # can show what would change rather than only what was called.
+    if "." in tool_id:
+        from ..integrations import find_action, perform
+
+        if find_action(tool_id) is not None:
+            return await perform(tool_id, args, origin=origin or "agent")
+
     risk = TOOL_RISK.get(tool_id)
     if risk is None:
         raise ValueError(
@@ -385,6 +403,8 @@ async def run_tool(tool_id: str, args: dict[str, Any], *, origin: str = "") -> s
 
     if tool_id == "shell":
         return await _shell(args.get("command", ""))
+    if tool_id == "integrations":
+        return _integrations()
     if tool_id == "fs_read":
         return _fs_read(args.get("path", ""))
     if tool_id == "fs_write":
@@ -993,4 +1013,35 @@ async def _video_frames(args: dict[str, Any]) -> str:
     for i, f in enumerate(files):
         lines.append(f"  {start + i * duration / len(files):6.2f}s  {f}")
     lines.append("\nUse see_image on any of these to look at it.")
+    return "\n".join(lines)
+
+
+def _integrations() -> str:
+    """What is connected, and what could be, in the model's terms.
+
+    Unbuilt connectors are listed with what they need rather than hidden. A
+    model that knows Google Workspace exists but is not connected can say so;
+    one that has never heard of it invents a reason instead.
+    """
+    from ..integrations import all_integrations
+
+    lines = []
+    for integration in all_integrations(refresh=True):
+        if not integration.available:
+            lines.append(f"{integration.name} — not available in this build. "
+                         f"{integration.needs}")
+            continue
+        if not integration.connected():
+            lines.append(
+                f"{integration.name} — not connected. The user can "
+                + ("choose a folder for it in Settings."
+                   if not integration.needs_credential
+                   else "connect it in Settings."))
+            continue
+        where = f" ({integration.account()})" if integration.account() else ""
+        lines.append(f"{integration.name}{where} — connected.")
+        for action in integration.actions:
+            arguments = ", ".join(f"{k}: {v}"
+                                  for k, v in action.parameters.items())
+            lines.append(f"    {action.id}({arguments}) — {action.summary}")
     return "\n".join(lines)

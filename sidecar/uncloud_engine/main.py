@@ -402,6 +402,16 @@ class AcknowledgeBody(BaseModel):
     model_id: str
 
 
+class ConnectBody(BaseModel):
+    integration_id: str
+    #: A folder for a filesystem integration, an account name otherwise. Shown
+    #: in the interface, so it must be something a person would recognise.
+    label: str = ""
+    #: Only ever travels inwards. It goes to the keychain and nothing returns
+    #: it — not this route, not any other.
+    secret: str = ""
+
+
 class AnswerBody(BaseModel):
     action: str
     category: str
@@ -771,6 +781,62 @@ def acknowledge_model_licence(body: AcknowledgeBody) -> dict:
     made = ledger(settings).acknowledge(profile)
     settings.record_acknowledgement(made.model_id, made.to_dict())
     return model_licence(body.model_id)
+
+
+# -------------------------------------------------------------- integrations
+@app.get("/api/integrations", dependencies=[Depends(require_token)])
+def integrations_list() -> dict:
+    """What can be connected, what is, and what each one would need.
+
+    Unbuilt connectors are included on purpose. "Google Workspace needs an
+    OAuth client you register with Google" and "we do not support that" send
+    somebody in completely different directions, and only one of them is true.
+    """
+    from .integrations import describe
+    from .integrations import credentials as broker
+
+    return {"integrations": describe(),
+            # Whether secrets are going into a real keychain. Somebody on a
+            # machine with no secret service should be told, and get to decide,
+            # rather than find out later.
+            "keychain": broker.secure(),
+            "credentials": broker.describe()}
+
+
+@app.post("/api/integrations/connect", dependencies=[Depends(require_token)])
+def integrations_connect(body: ConnectBody) -> dict:
+    """Connect an integration. The secret goes in and never comes back out."""
+    from .integrations import get
+    from .integrations import credentials as broker
+
+    integration = get(body.integration_id)
+    if integration is None:
+        raise HTTPException(status_code=404, detail="no such integration")
+    if not integration.available:
+        raise HTTPException(status_code=400, detail=integration.needs
+                            or "not available in this build")
+    if integration.needs_credential and not body.secret:
+        raise HTTPException(status_code=400,
+                            detail=f"{integration.name} needs a credential")
+    if not integration.needs_credential and not body.label:
+        raise HTTPException(status_code=400,
+                            detail=f"{integration.name} needs a folder")
+
+    if integration.needs_credential:
+        broker.store(body.integration_id, body.secret, label=body.label)
+    else:
+        # A folder is not a credential. It goes in the index, where it can be
+        # displayed without an unlock prompt.
+        broker.remember_path(body.integration_id, body.label)
+    return integrations_list()
+
+
+@app.post("/api/integrations/disconnect", dependencies=[Depends(require_token)])
+def integrations_disconnect(body: ConnectBody) -> dict:
+    from .integrations import credentials as broker
+
+    broker.forget(body.integration_id)
+    return integrations_list()
 
 
 @app.get("/api/catalog", dependencies=[Depends(require_token)])

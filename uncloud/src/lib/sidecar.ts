@@ -1209,3 +1209,55 @@ export async function getModelLicence(modelId: string) {
 export async function acknowledgeModelLicence(model_id: string) {
   return apiPost<ModelLicence>('/api/models/licence/acknowledge', { model_id });
 }
+
+
+// --------------------------------------------------------------- integrations
+export interface IntegrationAction {
+  id: string; summary: string; risk: string; writes: boolean;
+  parameters: Record<string, string>;
+}
+
+export interface IntegrationInfo {
+  id: string; name: string; summary: string;
+  /** normal | private. Private content never reaches a remote model unless the
+   *  user has allowed it for this integration specifically. */
+  sensitivity: string;
+  /** Whether the code to do this exists in this build. False is a real,
+   *  displayable state and not an error. */
+  available: boolean;
+  /** What is missing when it is not available, written for the person who has
+   *  to go and get it. */
+  needs: string;
+  needs_credential: boolean;
+  connected: boolean;
+  /** A folder, an address, a username — never the credential. */
+  account: string;
+  actions: IntegrationAction[];
+}
+
+export interface IntegrationsState {
+  integrations: IntegrationInfo[];
+  /** False when there is no OS keychain and secrets fall back to a 0600 file.
+   *  Surfaced rather than hidden: quietly degrading while the interface says
+   *  "stored securely" would be worse than refusing to store. */
+  keychain: boolean;
+  credentials: { handle: string; label: string; kind: string;
+                 stored_at: string; secure: boolean }[];
+}
+
+export async function getIntegrations() {
+  return api<IntegrationsState>('/api/integrations');
+}
+
+/** Connect one. The secret travels inwards only — nothing returns it. */
+export async function connectIntegration(
+  integration_id: string, body: { label?: string; secret?: string },
+) {
+  return apiPost<IntegrationsState>('/api/integrations/connect',
+                                    { integration_id, ...body });
+}
+
+export async function disconnectIntegration(integration_id: string) {
+  return apiPost<IntegrationsState>('/api/integrations/disconnect',
+                                    { integration_id });
+}
