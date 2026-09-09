@@ -19,11 +19,19 @@ import { AlertTriangle, Check, ChevronRight, FolderOpen, KeyRound, Loader2,
          Lock, Plug, Server, Settings2, X } from 'lucide-react';
 
 import {
-  addMcpServer, authorizeIntegration, configureIntegration, connectIntegration,
-  connectMcpServer, disconnectIntegration, disconnectMcpServer, forgetMcpServer,
-  getIntegrations, type ConnectionState, type IntegrationInfo,
-  type IntegrationsState,
+  addMcpServer, authorizeIntegration, classifyMcpTool, configureIntegration,
+  connectIntegration, connectMcpServer, disconnectIntegration,
+  disconnectMcpServer, forgetMcpServer, getIntegrations,
+  type ConnectionState, type IntegrationInfo, type IntegrationsState,
 } from '../lib/sidecar';
+
+/** The categories a person can put an MCP tool into.
+ *
+ *  Ordered by how hard the consequences are to undo, which is what the policy
+ *  is really about, so the list itself reads as a warning as you go down it.
+ */
+const RISKS = ['read', 'network', 'write', 'install', 'message', 'delete',
+               'shell'] as const;
 
 const STATE_LABEL: Record<ConnectionState, string> = {
   connected: 'Connected',
@@ -499,20 +507,39 @@ function McpSection({ servers, busy, onAct, onReload }: {
             </div>
 
             {server.mcp && server.mcp.tools.length > 0 && (
-              <div className="mt-2 flex flex-col gap-1">
+              <div className="mt-2 flex flex-col gap-1.5">
                 {server.mcp.tools.map((tool) => (
                   <div key={tool.name}
-                       className="flex items-baseline justify-between gap-3 text-[11px]">
-                    <span className="font-mono truncate">{tool.name}</span>
-                    <span className="text-[10px] text-[var(--text-faint)] shrink-0">
-                      asks as {tool.risk}
+                       className="flex items-center justify-between gap-3 text-[11px]">
+                    <span className="min-w-0">
+                      <span className="font-mono truncate">{tool.name}</span>
+                      {!tool.certain && (
+                        <span className="text-[10px] text-amber-400 ml-2">
+                          not recognised
+                        </span>
+                      )}
+                      <span className="block text-[10px] text-[var(--text-faint)]">
+                        {tool.why}
+                      </span>
                     </span>
+                    <select
+                      value={tool.risk}
+                      title="How carefully Uncloud treats this tool"
+                      onChange={(e) => onAct(server.id, () => classifyMcpTool(
+                        server.mcp!.config.id, tool.name, e.target.value))}
+                      className="shrink-0 bg-[var(--bg)] px-2 py-1 rounded
+                                 text-[10px] outline-none font-mono">
+                      {RISKS.map((risk) => (
+                        <option key={risk} value={risk}>asks as {risk}</option>
+                      ))}
+                    </select>
                   </div>
                 ))}
                 <p className="text-[10px] text-[var(--text-faint)] mt-1 leading-relaxed">
-                  Uncloud infers how carefully to treat each tool from its name.
-                  It only ever rounds up, and a tool it does not recognise is
-                  treated as a write.
+                  Uncloud works out how carefully to treat each tool from its
+                  name, and only ever rounds up — a tool it does not recognise
+                  is treated as a write, never as a read. You can change any of
+                  these; it is the only thing that can make one less strict.
                 </p>
               </div>
             )}

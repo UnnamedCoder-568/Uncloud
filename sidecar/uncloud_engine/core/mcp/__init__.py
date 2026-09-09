@@ -14,8 +14,9 @@ policy. Risk is inferred from the tool and only ever rounded up.
 """
 
 from .client import McpError, Prompt, Resource, Server, ServerConfig, Tool
-from .integration import McpIntegration, classify
+from .integration import UNKNOWN, Classification, McpIntegration, classify
 from .manager import (
+    clear_override,
     configure,
     configured,
     connect,
@@ -24,11 +25,14 @@ from .manager import (
     forget,
     get,
     integrations,
+    overrides_for,
+    set_override,
     shutdown,
 )
 
 __all__ = [
-    "McpError", "McpIntegration", "Prompt", "Resource", "Server",
-    "ServerConfig", "Tool", "classify", "configure", "configured", "connect",
-    "describe", "disconnect", "forget", "get", "integrations", "shutdown",
+    "UNKNOWN", "Classification", "McpError", "McpIntegration", "Prompt",
+    "Resource", "Server", "ServerConfig", "Tool", "classify", "clear_override",
+    "configure", "configured", "connect", "describe", "disconnect", "forget",
+    "get", "integrations", "overrides_for", "set_override", "shutdown",
 ]

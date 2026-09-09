@@ -12,6 +12,7 @@ import json
 import secrets
 
 import pytest
+from cryptography.exceptions import InvalidTag
 
 from uncloud_engine import conversations as convo
 from uncloud_engine import vault as vault_module
@@ -114,7 +115,9 @@ def test_a_file_written_under_another_key_will_not_open(monkeypatch) -> None:
             return other
 
     monkeypatch.setattr(convo, "vault", OtherVault())
-    with pytest.raises(Exception):
+    # Named rather than blind: a test that passes because an unrelated import
+    # broke is a test that has stopped checking anything.
+    with pytest.raises((InvalidTag, ValueError)):
         convo.load(c.id)
 
 
@@ -126,7 +129,7 @@ def test_an_altered_file_is_refused_rather_than_half_read() -> None:
     raw = bytearray(path.read_bytes())
     raw[-1] ^= 0x01
     path.write_bytes(bytes(raw))
-    with pytest.raises(Exception):
+    with pytest.raises((InvalidTag, ValueError)):
         convo.load(c.id)
 
 

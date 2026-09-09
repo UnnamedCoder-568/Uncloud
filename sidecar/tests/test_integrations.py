@@ -31,8 +31,6 @@ from uncloud_engine.core.integrations import (
     registry,
 )
 from uncloud_engine.core.permission import Risk
-from uncloud_engine.core.integrations.capabilities import Capability
-from uncloud_engine.core.permission import Risk
 
 HERE = Path(__file__).resolve().parent
 PACKAGE = HERE.parent / "uncloud_engine" / "core" / "integrations"

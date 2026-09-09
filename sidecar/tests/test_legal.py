@@ -400,10 +400,10 @@ def test_every_verified_row_records_who_read_it_and_when() -> None:
     relicense, and a stale reading has to be visible as one."""
     from uncloud_engine.catalog import VERIFIED_TERMS
 
-    for model_id, terms in VERIFIED_TERMS.items():
-        assert terms.verified_on, f"{model_id} claims terms with no date"
-        assert terms.verified_by, f"{model_id} claims terms with no source"
-        assert terms.url, f"{model_id} states terms with nothing to check them against"
+    for model_id, recorded in VERIFIED_TERMS.items():
+        assert recorded.verified_on, f"{model_id} claims terms with no date"
+        assert recorded.verified_by, f"{model_id} claims terms with no source"
+        assert recorded.url, f"{model_id} states terms with nothing to check them against"
 
 
 def test_a_model_with_no_row_reports_unread_rather_than_permitted() -> None:
@@ -420,9 +420,9 @@ def test_conditions_are_recorded_wherever_a_licence_sets_them() -> None:
     """A condition nobody read is a breach nobody intended."""
     from uncloud_engine.catalog import VERIFIED_TERMS
 
-    for model_id, terms in VERIFIED_TERMS.items():
-        if terms.commercial_use == "conditional":
-            assert terms.conditions, \
+    for model_id, recorded in VERIFIED_TERMS.items():
+        if recorded.commercial_use == "conditional":
+            assert recorded.conditions, \
                 f"{model_id} is conditional but names no condition"
 
 

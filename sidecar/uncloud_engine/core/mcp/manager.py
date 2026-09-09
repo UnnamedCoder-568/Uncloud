@@ -63,6 +63,7 @@ def forget(server_id: str) -> bool:
     if existing is not None:
         existing.disconnect()
     broker.forget(f"{_handle(server_id)}.env")
+    broker.forget(f"{_CONFIG}.{server_id}.risk")
     return broker.forget(_handle(server_id))
 
 
@@ -70,7 +71,8 @@ def configured() -> list[ServerConfig]:
     out = []
     for handle in broker.describe():
         name = handle["handle"]
-        if not name.startswith(f"{_CONFIG}.") or name.endswith(".env"):
+        if (not name.startswith(f"{_CONFIG}.")
+                or name.endswith((".env", ".risk"))):
             continue
         stored = broker.path_of(name)
         if stored is None:
@@ -97,6 +99,66 @@ def _environment(server_id: str) -> dict[str, str]:
         return dict(json.loads(holder["raw"]))
     except (KeyError, TypeError, ValueError):
         return {}
+
+
+# ---------------------------------------------------------------- overrides
+def overrides_for(server_id: str) -> dict:
+    """Classifications a person set for this server's tools.
+
+    Stored in the readable index rather than the keychain: a risk category is
+    not a secret, and needing an unlock prompt to draw a settings page would be
+    absurd.
+    """
+    from ..permission import Risk
+
+    stored = broker.path_of(f"{_CONFIG}.{server_id}.risk")
+    if stored is None:
+        return {}
+    try:
+        raw = json.loads(str(stored))
+    except (TypeError, ValueError):
+        return {}
+    out = {}
+    for tool, value in (raw or {}).items():
+        try:
+            out[str(tool)] = Risk(str(value))
+        except ValueError:
+            # A category this build does not know. Dropped rather than
+            # guessed at, so the tool falls back to inference.
+            continue
+    return out
+
+
+def set_override(server_id: str, tool: str, risk) -> None:
+    """Record how a person wants one tool governed.
+
+    The only path by which a classification can be LOWERED. That is deliberate:
+    the user is the authority on their own machine, and requiring an explicit
+    decision is a better answer for an ambiguous tool than guessing a mild
+    category for it.
+    """
+    current = {tool_name: value.value
+               for tool_name, value in overrides_for(server_id).items()}
+    current[tool] = risk.value if hasattr(risk, "value") else str(risk)
+    broker.remember_path(f"{_CONFIG}.{server_id}.risk", json.dumps(current))
+    with _lock:
+        existing = _servers.get(server_id)
+    if existing is not None:
+        existing._rebuild()
+
+
+def clear_override(server_id: str, tool: str) -> bool:
+    current = {tool_name: value.value
+               for tool_name, value in overrides_for(server_id).items()}
+    if tool not in current:
+        return False
+    del current[tool]
+    broker.remember_path(f"{_CONFIG}.{server_id}.risk", json.dumps(current))
+    with _lock:
+        existing = _servers.get(server_id)
+    if existing is not None:
+        existing._rebuild()
+    return True
 
 
 # --------------------------------------------------------------- lifecycle

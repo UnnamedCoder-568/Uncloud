@@ -478,6 +478,12 @@ class RunRecipeBody(BaseModel):
     values: dict[str, str] = {}
 
 
+class McpRiskBody(BaseModel):
+    tool: str
+    #: A risk category, or empty to go back to Uncloud's own inference.
+    risk: str = ""
+
+
 class McpServerBody(BaseModel):
     id: str
     command: str
@@ -1183,6 +1189,51 @@ def mcp_connect(server_id: str) -> dict:
         return mcp.connect(server_id).to_dict()
     except mcp.McpError as exc:
         raise HTTPException(status_code=400, detail=exc.to_dict()) from exc
+
+
+@app.post("/api/mcp/{server_id}/classify", dependencies=[Depends(require_token)])
+def mcp_classify(server_id: str, body: McpRiskBody) -> dict:
+    """Say how one of a server's tools should be governed.
+
+    The only path by which a classification can be LOWERED, and deliberately so:
+    the user is the authority on their own machine, a server is not. Uncloud
+    infers a category from the tool's name and admits when it guessed; this is
+    how somebody corrects it rather than living with the guess.
+
+    Changing how something is governed is itself a settings decision, so it is
+    asked about — otherwise "reclassify then run" would be a way around the
+    prompt you were trying to avoid.
+    """
+    from .core import mcp
+
+    server = mcp.get(server_id)
+    if server is None:
+        raise HTTPException(status_code=404, detail="no such server")
+
+    if not body.risk:
+        gated("mcp_classify", Risk.SETTINGS,
+              f"Let Uncloud classify {body.tool} again",
+              preview={"server": server.name, "tool": body.tool},
+              origin="settings")
+        mcp.clear_override(server_id, body.tool)
+        return server.to_dict()
+
+    try:
+        category = Risk(body.risk)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{body.risk!r} is not a risk category. Known: "
+                   + ", ".join(sorted(r.value for r in Risk))) from exc
+
+    gated("mcp_classify", Risk.SETTINGS,
+          f"Govern {body.tool} as {category.value}",
+          preview={"server": server.name, "tool": body.tool,
+                   "was": server.classification(body.tool).risk.value,
+                   "becomes": category.value},
+          origin="settings")
+    mcp.set_override(server_id, body.tool, category)
+    return server.to_dict()
 
 
 @app.post("/api/mcp/{server_id}/disconnect", dependencies=[Depends(require_token)])
