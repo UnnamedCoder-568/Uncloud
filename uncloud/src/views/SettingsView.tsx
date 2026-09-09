@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import IntegrationsSection from '../components/IntegrationsSection';
+import PermissionsSection from '../components/PermissionsSection';
 import LegalSection from '../components/LegalSection';
 import { open } from '@tauri-apps/plugin-dialog';
 import { setModelsDir, setDeviceAccess, setHfToken, getSettings, setKeepAwake, getAgentTools, setAgentToolGroups, setOutputDir, getResident, stopAllModels, getWeightCache, clearWeightCache } from '../lib/sidecar';
@@ -337,6 +338,8 @@ export default function SettingsView() {
             </button>
           </div>
         </section>
+
+        <PermissionsSection />
 
         <IntegrationsSection />
 

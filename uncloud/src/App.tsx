@@ -6,6 +6,7 @@ import Panes from './components/Panes';
 import { onHandoffSignal } from './lib/handoff';
 import Onboarding from './views/Onboarding';
 import TermsView from './views/TermsView';
+import ApprovalPrompt from './components/ApprovalPrompt';
 import ChatView from './views/ChatView';
 import ModelsView from './views/ModelsView';
 import ChiselView from './views/ChiselView';
@@ -137,8 +138,10 @@ export default function App() {
     </div>
   );
 
-  if (engineUp === null) return splash;
-  if (!engineUp) return <SetupView onReady={handleEngineReady} />;
+  // Mounted before any branch returns, so a request that needs a decision
+  // during setup or onboarding still has somewhere to be answered.
+  if (engineUp === null) return <>{splash}<ApprovalPrompt /></>;
+  if (!engineUp) return <><SetupView onReady={handleEngineReady} /><ApprovalPrompt /></>;
 
   if (engineError) {
     return (
@@ -154,7 +157,7 @@ export default function App() {
   if (!settled) return <TermsView onSettled={() => setSettled(true)} />;
 
   if (!onboarded) {
-    return <Onboarding onDone={() => setOnboarded(true)} />;
+    return <><Onboarding onDone={() => setOnboarded(true)} /><ApprovalPrompt /></>;
   }
 
   return (
@@ -184,6 +187,7 @@ export default function App() {
           )}
         />
       </main>
+      <ApprovalPrompt />
     </div>
   );
 }

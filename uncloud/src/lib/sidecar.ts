@@ -31,12 +31,66 @@ async function authHeaders(): Promise<Record<string, string>> {
   return { Authorization: `Bearer ${token}` };
 }
 
-export async function api<T>(path: string, opts: RequestInit = {}): Promise<T> {
+/** A request the engine will not complete until a person decides.
+ *
+ *  The engine answers 428 rather than 403: nothing was refused, the call is
+ *  unfinished. Every surface goes through `api`, so intercepting it here is
+ *  what makes one gate cover all of them — the alternative is each caller
+ *  remembering, and the one that forgets is the one that matters.
+ */
+export interface ApprovalRequest {
+  action: string;
+  category: string;
+  summary: string;
+  preview: Record<string, unknown>;
+  origin: string;
+  /** What the current policy is for this category, so the prompt can offer
+   *  "always" only where always is actually available. */
+  mode: string;
+}
+
+export type ApprovalAnswer = 'yes' | 'no' | 'always' | 'never';
+
+let asker: ((request: ApprovalRequest) => Promise<ApprovalAnswer>) | null = null;
+
+/** Installed once by the application shell. Until it is, a 428 surfaces as an
+ *  error rather than hanging — a prompt nobody can see is worse than a
+ *  failure somebody can read. */
+export function setApprovalAsker(
+  fn: ((request: ApprovalRequest) => Promise<ApprovalAnswer>) | null,
+) {
+  asker = fn;
+}
+
+function approvalFrom(text: string): ApprovalRequest | null {
+  try {
+    const body = JSON.parse(text);
+    const found = body?.detail?.approval;
+    return found && typeof found.action === 'string' ? found : null;
+  } catch { return null; }
+}
+
+export async function api<T>(path: string, opts: RequestInit = {},
+                             retried = false): Promise<T> {
   const url = `${await baseUrl()}${path}`;
   const headers = { ...(await authHeaders()), ...(opts.body ? { 'Content-Type': 'application/json' } : {}), ...(opts.headers || {}) };
   const resp = await fetch(url, { ...opts, headers });
   if (!resp.ok) {
     const text = await resp.text().catch(() => resp.statusText);
+
+    if (resp.status === 428 && asker && !retried) {
+      const request = approvalFrom(text);
+      if (request) {
+        const answer = await asker(request);
+        await apiPost('/api/approvals/answer', {
+          action: request.action, category: request.category,
+          summary: request.summary, answer,
+        });
+        // Once. A second 428 after an answer means the answer did not settle
+        // it, and repeating would be an unbreakable loop of prompts.
+        return api<T>(path, opts, true);
+      }
+    }
     throw new Error(`${resp.status}: ${text}`);
   }
   return resp.json();
@@ -1260,4 +1314,59 @@ export async function connectIntegration(
 export async function disconnectIntegration(integration_id: string) {
   return apiPost<IntegrationsState>('/api/integrations/disconnect',
                                     { integration_id });
+}
+
+// ---------------------------------------------------------------- permissions
+export interface PermissionsState {
+  policy: Record<string, string>;
+  /** Categories that ask every time whatever the policy says. Deliberate and
+   *  not a setting — a standing yes to arbitrary shell commands is not
+   *  something this software offers. */
+  always_ask: string[];
+  session_grants: { actions: string[]; categories: string[] };
+}
+
+export interface AuditEntry {
+  action: string; category: string; summary: string; origin: string;
+  allowed: boolean; mode: string; asked: boolean; reason: string;
+  /** Seconds since the epoch, as the engine writes it. */
+  at: number;
+}
+
+export async function getPermissions() {
+  return api<PermissionsState>('/api/permissions');
+}
+
+/** Returns the whole policy, because what was stored may be stricter than what
+ *  was asked for — the interface has to show what took effect. */
+export async function setPermission(category: string, mode: string) {
+  return apiPost<PermissionsState>('/api/permissions', { category, mode });
+}
+
+export async function forgetSessionGrants() {
+  return apiPost<PermissionsState>('/api/permissions/forget');
+}
+
+export async function getAudit(limit = 100) {
+  return api<AuditEntry[]>(`/api/audit?limit=${limit}`);
+}
+
+// --------------------------------------------------------------------- effort
+export interface EffortLevel {
+  id: string; label: string; blurb: string;
+  /** What this level actually buys with the loaded model. */
+  applied: string[];
+  /** What it asked for and could not have. A level that buys nothing extra
+   *  says so rather than appearing to work. */
+  degraded: string[];
+  thinks: boolean;
+}
+
+export async function getEffort() {
+  return api<{ selected: string; levels: EffortLevel[] }>('/api/effort');
+}
+
+export async function setEffort(effort: string) {
+  return apiPost<{ selected: string; levels: EffortLevel[] }>('/api/effort',
+                                                              { effort });
 }
