@@ -60,6 +60,47 @@ npm run tauri dev
 - **Vision** requires a model with an image encoder (Gemma 4, Qwen3.8) served
   through `mlx-vlm`; text-only models return a clear error.
 
+## Architecture: Core, Uncloud, Studio
+
+`sidecar/uncloud_engine/core/` is **Uncloud Core** — the layer both this
+application and Uncloud Studio are built on, byte-identical in both
+repositories with a sync script and a drift test. Its own
+[README](sidecar/uncloud_engine/core/README.md) explains what belongs there and
+what deliberately does not.
+
+The short version:
+
+* **Core** — model vocabulary, permissions and approvals, effort, the
+  evaluation engine, hardware detection, legal state, authentication,
+  integrations, MCP. Core may be imported by a product and may never import
+  one; a test enforces both directions.
+* **Uncloud** — the general-purpose local AI runtime: models, the agent, tools,
+  skills, recipes, training, terminal and document workflows.
+* **Uncloud Studio** — the creative product: projects, brand memory, campaigns,
+  generation pipelines, creative evaluation. It consumes Core rather than
+  reimplementing it.
+
+## Integrations
+
+Seven providers, planned in capabilities rather than provider names: the agent
+asks for `email.send` and the registry decides who serves it.
+
+| Provider | State | What it needs |
+| -------- | ----- | ------------- |
+| Documents folder | works | a folder |
+| GitHub | works | a personal access token |
+| Slack | works | a token from a Slack app in your workspace |
+| Notion | works | an internal integration token |
+| Google Workspace | implemented | **an OAuth client you register with Google** |
+| Microsoft 365 | implemented | **an app registration in Entra ID** |
+| Dropbox | implemented | **an app key from the Dropbox console** |
+| MCP servers | works | a command to run |
+
+The three marked in bold report `CONFIGURATION REQUIRED` until you register an
+application. Uncloud ships no OAuth clients and never will: an OAuth client is
+issued to a named party under the provider's terms, and fabricating one would
+be both a lie and a violation.
+
 ## Terms, model licences and integrations
 
 **Terms.** The application asks for agreement before anything else it does,
