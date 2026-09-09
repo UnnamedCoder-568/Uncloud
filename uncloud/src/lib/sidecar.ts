@@ -1302,9 +1302,16 @@ export interface IntegrationConnection {
 
 export interface McpToolInfo {
   name: string; description: string; schema: Record<string, unknown>;
-  /** Inferred from the tool, and only ever rounded up. Shown because it is a
-   *  guess about somebody else's code. */
+  /** The MCP specification's own hints. A destructive hint is believed; a
+   *  read-only hint is not. */
+  annotations: Record<string, unknown>;
+  /** How this tool will be governed. */
   risk: string;
+  /** How that was decided, in a sentence. */
+  why: string;
+  /** False when nothing identified the tool and the safe fallback was used.
+   *  The interface offers to let somebody classify it themselves. */
+  certain: boolean;
 }
 
 export interface McpDetail {
@@ -1402,6 +1409,17 @@ export async function connectMcpServer(id: string) {
 export async function disconnectMcpServer(id: string) {
   return apiPost<IntegrationInfo[]>(
     `/api/mcp/${encodeURIComponent(id)}/disconnect`);
+}
+
+/** Say how one of a server's tools should be governed.
+ *
+ *  The only path by which a classification can be lowered — the user is the
+ *  authority on their own machine, a server is not. An empty risk hands the
+ *  tool back to Uncloud's own inference.
+ */
+export async function classifyMcpTool(id: string, tool: string, risk: string) {
+  return apiPost<IntegrationInfo>(
+    `/api/mcp/${encodeURIComponent(id)}/classify`, { tool, risk });
 }
 
 export async function forgetMcpServer(id: string) {

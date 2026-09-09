@@ -226,65 +226,181 @@ def test_a_configured_environment_variable_does_reach_the_server(server_script) 
 
 def test_a_reassuring_description_cannot_lower_the_risk() -> None:
     """`delete_everything` describes itself as "Totally safe, honestly". The
-    name wins, and the inference only ever rounds up."""
-    assert classify("delete_everything", "Totally safe, honestly") is Risk.DELETE
-    assert classify("run_shell", "just reads a file") is Risk.SHELL
-    assert classify("send_email", "read only, promise") is Risk.MESSAGE
+    name wins, and inference only ever rounds up."""
+    assert classify("delete_everything", "Totally safe, honestly").risk is Risk.DELETE
+    assert classify("run_shell", "just reads a file").risk is Risk.SHELL
+    assert classify("send_email", "read only, promise").risk is Risk.MESSAGE
 
 
-def test_an_unrecognised_tool_is_treated_as_a_write_not_a_read() -> None:
+#: The three failures found in the previous pass, plus everything adjacent to
+#: them. Every expectation here is either exact or in the SAFE direction —
+#: a tool being governed more carefully than it needs is an inconvenience, and
+#: one governed less carefully than it needs is the bug.
+ADVERSARIAL: tuple[tuple[str, Risk], ...] = (
+    # The originals.
+    ("delete_everything", Risk.DELETE),
+    ("frobnicate_the_widget", Risk.WRITE),
+    ("sendMail", Risk.MESSAGE),
+    # `get` hiding inside longer words. None of these may become a READ.
+    ("get_widget", Risk.READ),          # genuinely a getter
+    ("widget_getter", Risk.WRITE),      # not a token match; safe fallback
+    ("forget_item", Risk.WRITE),
+    ("target", Risk.WRITE),
+    ("targets", Risk.WRITE),
+    ("getter", Risk.WRITE),
+    ("budget_report", Risk.WRITE),
+    ("gadget", Risk.WRITE),
+    # camelCase, PascalCase and the acronym case.
+    ("send_mail", Risk.MESSAGE),
+    ("SendMail", Risk.MESSAGE),
+    ("removeAll", Risk.DELETE),
+    ("updateProfile", Risk.WRITE),
+    ("HTTPRequest", Risk.NETWORK),
+    ("getUserProfile", Risk.READ),
+    ("deleteUserAccount", Risk.DELETE),
+    # Two signals in one name: the more severe must win.
+    ("readAndDelete", Risk.DELETE),
+    ("get_and_purge", Risk.DELETE),
+    ("list_then_email", Risk.MESSAGE),
+    ("fetch_and_run_shell", Risk.SHELL),
+    # No separator at all — substring matching may raise but never lower.
+    ("deleteeverything", Risk.DELETE),
+    ("removeallfiles", Risk.DELETE),
+    # Nothing recognisable.
+    ("mystery", Risk.WRITE),
+    ("xyzzy", Risk.WRITE),
+    ("", Risk.WRITE),
+)
+
+
+@pytest.mark.parametrize(("name", "expected"), ADVERSARIAL)
+def test_adversarial_tool_names_are_classified_safely(name, expected) -> None:
+    assert classify(name).risk is expected, classify(name).why
+
+
+def test_no_adversarial_name_is_ever_under_classified() -> None:
+    """The property that matters more than any individual expectation.
+
+    A tool whose name contains a severe signal must never come out milder than
+    that signal, whatever else is in the name.
+    """
+    from uncloud_engine.core.integrations.capabilities import STRICTNESS
+
+    severe = {"delete": Risk.DELETE, "remove": Risk.DELETE,
+              "purge": Risk.DELETE, "shell": Risk.SHELL, "exec": Risk.SHELL,
+              "send": Risk.MESSAGE, "email": Risk.MESSAGE,
+              "publish": Risk.MESSAGE, "install": Risk.INSTALL}
+    for word, floor in severe.items():
+        for shape in (word, f"{word}_thing", f"do_{word}",
+                      f"{word.capitalize()}Thing", f"quickly_{word}_it"):
+            decided = classify(shape)
+            assert STRICTNESS[decided.risk] >= STRICTNESS[floor], (
+                f"{shape!r} was classified {decided.risk.value}, milder than "
+                f"the {floor.value} its name implies")
+
+
+def test_substring_matching_can_only_ever_raise() -> None:
+    """The bug that made `frobnicate_the_widget` a read was substring matching
+    applied to READ. Structurally, it now cannot be."""
+    from uncloud_engine.core.mcp.integration import _SUBSTRING_SIGNALS
+
+    categories = {risk for risk, _ in _SUBSTRING_SIGNALS}
+    assert Risk.READ not in categories
+    assert Risk.WRITE not in categories, \
+        "WRITE is the fallback, so matching it as a substring buys nothing"
+
+
+def test_an_unrecognised_tool_is_treated_as_a_write_and_says_it_guessed() -> None:
     """An unclassified tool from somebody else's server is not a thing to wave
-    through under the mildest policy in the system."""
-    assert classify("mystery") is Risk.WRITE
-    assert classify("frobnicate_the_widget") is Risk.WRITE
-
-
-def test_camel_case_names_are_classified_too() -> None:
-    """The other common MCP naming style. `sendMail` has no separator, and
-    tokenising the lowercased name destroys the only boundary there is — which
-    made it a WRITE rather than a MESSAGE, an under-classification and the one
-    direction this must never be wrong in."""
-    assert classify("sendMail") is Risk.MESSAGE
-    assert classify("deleteBranch") is Risk.DELETE
-    assert classify("runShell") is Risk.SHELL
-    assert classify("getUser") is Risk.READ
-
-
-def test_a_short_signal_does_not_match_inside_an_unrelated_word() -> None:
-    """`get` inside `widget` classified a tool called `frobnicate_the_widget`
-    as a read, which is exactly the direction this must never be wrong in."""
-    assert classify("frobnicate_the_widget") is Risk.WRITE
-    assert classify("targets") is Risk.WRITE
-    assert classify("listWidgets") is Risk.READ, "but a real signal still lands"
-
-
-def test_a_finer_classification_survives_the_coarse_capability() -> None:
-    """MCP tools are registered under a write-shaped capability because they do
-    not map onto the shared vocabulary. The delete has to survive that."""
-    from uncloud_engine.core.integrations.capabilities import Capability
-    from uncloud_engine.core.integrations.contract import Action
-
-    action = Action(id="x", capability=Capability.STORAGE_WRITE, summary="",
-                    at_least=Risk.DELETE)
-    assert action.risk is Risk.DELETE
-    assert action.writes is True
-
-
-def test_an_override_can_only_tighten() -> None:
-    """Otherwise an adapter could talk its way into a milder policy than its
-    capability, which is the whole thing deriving risk was meant to prevent."""
-    from uncloud_engine.core.integrations.capabilities import Capability
-    from uncloud_engine.core.integrations.contract import Action
-
-    action = Action(id="x", capability=Capability.EMAIL_SEND, summary="",
-                    at_least=Risk.READ)
-    assert action.risk is Risk.MESSAGE
+    through under the mildest policy in the system — and the interface should
+    be able to ask about it."""
+    decided = classify("wibble")
+    assert decided.risk is Risk.WRITE
+    assert decided.certain is False
+    assert "nothing identified" in decided.why
 
 
 def test_prose_cannot_talk_a_tool_into_being_a_read() -> None:
     """A description saying "read" proves nothing, and a server that wanted to
     be waved through would say exactly that."""
-    assert classify("wibble", "just reads and lists things") is Risk.WRITE
+    assert classify("wibble", "just reads and lists things").risk is Risk.WRITE
+
+
+# ---------------------------------------------------- explicit over inferred
+def test_a_servers_admission_against_interest_is_believed() -> None:
+    """`destructiveHint` is a hint against the author's own interest, so it can
+    be believed. It raises a tool that would otherwise look harmless."""
+    decided = classify("get_page", annotations={"destructiveHint": True})
+    assert decided.risk is Risk.DELETE
+    assert "declares it" in decided.why
+
+
+def test_an_open_world_hint_raises_a_tool_to_network() -> None:
+    assert classify("lookup", annotations={"openWorldHint": True}).risk \
+        is Risk.NETWORK
+
+
+def test_a_read_only_hint_is_never_acted_on() -> None:
+    """The opposite kind of hint. A server wanting to be waved through would
+    set exactly this, so it buys nothing."""
+    assert classify("delete_all", annotations={"readOnlyHint": True}).risk \
+        is Risk.DELETE
+    assert classify("wibble", annotations={"readOnlyHint": True}).risk \
+        is Risk.WRITE
+
+
+def test_a_hint_cannot_lower_a_name_that_says_worse() -> None:
+    decided = classify("run_shell", annotations={"openWorldHint": True})
+    assert decided.risk is Risk.SHELL, "network is milder than shell"
+
+
+def test_only_a_person_can_lower_a_classification(config) -> None:
+    """The answer to "require explicit classification rather than guessing".
+    The user is the authority on their own machine; the server is not."""
+    mcp.configure(config)
+    integration = mcp.connect("notes")
+    try:
+        assert integration.classification("mystery").risk is Risk.WRITE
+
+        mcp.set_override("notes", "mystery", Risk.READ)
+        decided = integration.classification("mystery")
+        assert decided.risk is Risk.READ
+        assert decided.certain is True
+        assert "you classified" in decided.why
+
+        # And it reaches the action the gate actually consults.
+        action = integration.action("mcp.notes.mystery")
+        assert action is not None and action.risk is Risk.READ
+
+        assert mcp.clear_override("notes", "mystery") is True
+        assert integration.classification("mystery").risk is Risk.WRITE
+    finally:
+        integration.disconnect()
+
+
+def test_an_override_survives_for_the_right_server_only(config) -> None:
+    mcp.configure(config)
+    mcp.set_override("notes", "mystery", Risk.READ)
+    assert mcp.overrides_for("notes")["mystery"] is Risk.READ
+    assert mcp.overrides_for("other") == {}
+
+
+def test_forgetting_a_server_forgets_its_classifications(config) -> None:
+    mcp.configure(config)
+    mcp.set_override("notes", "mystery", Risk.READ)
+    mcp.forget("notes")
+    assert mcp.overrides_for("notes") == {}
+
+
+def test_an_unknown_category_in_storage_falls_back_to_inference(config) -> None:
+    """A build that no longer knows a category must not crash on a config
+    written by one that did."""
+    from uncloud_engine.core.integrations import credentials as broker
+
+    mcp.configure(config)
+    broker.remember_path("mcp.server.notes.risk",
+                         '{"mystery": "teleport"}')
+    assert mcp.overrides_for("notes") == {}
 
 
 def test_mcp_tools_go_through_the_same_gate_as_everything_else(config,

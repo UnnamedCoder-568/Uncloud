@@ -92,15 +92,24 @@ class Tool:
     model as a description and never used to decide whether the call is
     allowed — that is the gate's job, and a server describing its tool as
     harmless does not make it so.
+
+    `annotations` is the MCP specification's own hint block — `readOnlyHint`,
+    `destructiveHint`, `idempotentHint`, `openWorldHint`. It is the closest
+    thing to explicit metadata a server offers, and it is worth reading for
+    exactly one reason: a hint that a tool is DANGEROUS is a hint against the
+    author's own interest, so it can be believed. A hint that a tool is safe
+    is the opposite and is never acted on.
     """
 
     name: str
     description: str = ""
     schema: dict = field(default_factory=dict)
+    annotations: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {"name": self.name, "description": self.description,
-                "schema": dict(self.schema)}
+                "schema": dict(self.schema),
+                "annotations": dict(self.annotations)}
 
 
 @dataclass(frozen=True)
@@ -185,7 +194,8 @@ class Server:
         self.tools = tuple(
             Tool(name=str(t.get("name", "")),
                  description=str(t.get("description", "")),
-                 schema=dict(t.get("inputSchema") or {}))
+                 schema=dict(t.get("inputSchema") or {}),
+                 annotations=dict(t.get("annotations") or {}))
             for t in self._maybe("tools/list", "tools"))
         self.resources = tuple(
             Resource(uri=str(r.get("uri", "")), name=str(r.get("name", "")),
