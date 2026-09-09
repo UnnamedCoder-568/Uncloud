@@ -1370,3 +1370,93 @@ export async function setEffort(effort: string) {
   return apiPost<{ selected: string; levels: EffortLevel[] }>('/api/effort',
                                                               { effort });
 }
+
+// ------------------------------------------------------------------ training
+export interface TrainingPreset {
+  id: string; label: string; note: string;
+  iterations: number; batch_size: number; rank: number; learning_rate: number;
+}
+
+export interface DatasetReport {
+  path: string; count: number; characters: number; variety: number;
+  usable: boolean;
+  /** Things somebody should know before spending an hour on this. Warnings
+   *  rather than refusals: a small or repetitive set is their decision. */
+  warnings: string[];
+  /** Lines that could not be used, with their line numbers. Reported rather
+   *  than skipped — a file that silently lost a third of its lines trains on a
+   *  third of what its author intended. */
+  problems: { line: number; what: string; fatal: boolean }[];
+  problem_count: number;
+}
+
+export interface FeasibilityEstimate {
+  feasible: boolean; reason: string;
+  memory_gb: number; budget_gb: number; disk_gb: number;
+  seconds: number; time: string;
+  /** Settings that would make it fit, when it does not. Null when nothing
+   *  would — an offer that cannot help is worse than no offer. */
+  suggestion: { batch_size: number } | null;
+}
+
+export interface TrainingPlan {
+  dataset: DatasetReport;
+  estimate: FeasibilityEstimate;
+  preset: TrainingPreset & { id: string };
+}
+
+export interface TrainingJob {
+  id: string; model_path: string; dataset_path: string; preset: string;
+  output_dir: string;
+  status: 'pending' | 'preparing' | 'training' | 'done' | 'error' | 'cancelled';
+  iteration: number; iterations: number; percent: number;
+  train_loss: number | null; val_loss: number | null;
+  error: string; examples: number;
+  started_at: number; ended_at: number | null;
+  estimate: FeasibilityEstimate | Record<string, never>;
+  log: string[];
+}
+
+export interface AdapterCard {
+  adapter: string; base_model: string; dataset: string; examples: number;
+  preset: string; iterations: number;
+  train_loss: number | null; val_loss: number | null;
+  trained_at: number; trained_by: string; note: string;
+  path: string; weights: string[]; ready: boolean;
+}
+
+export async function getTrainingPresets() {
+  return api<TrainingPreset[]>('/api/training/presets');
+}
+
+/** Everything that would happen, without starting it. Asked before the button
+ *  is offered, so a run that cannot work is explained while the user is still
+ *  deciding rather than forty minutes in. */
+export async function prepareTraining(body: {
+  model_path: string; dataset_path: string; preset?: string;
+}) {
+  return apiPost<TrainingPlan>('/api/training/prepare', body);
+}
+
+export async function startTraining(body: {
+  model_path: string; dataset_path: string; preset?: string; name?: string;
+}) {
+  return apiPost<TrainingJob>('/api/training', body);
+}
+
+export async function getTrainingJobs() {
+  return api<TrainingJob[]>('/api/training');
+}
+
+export async function cancelTraining(id: string) {
+  return apiPost<{ cancelled: boolean }>(`/api/training/${id}/cancel`);
+}
+
+export async function getAdapters() {
+  return api<AdapterCard[]>('/api/adapters');
+}
+
+export async function forgetAdapter(name: string) {
+  return api<{ removed: boolean }>(`/api/adapters/${encodeURIComponent(name)}`,
+                                   { method: 'DELETE' });
+}
