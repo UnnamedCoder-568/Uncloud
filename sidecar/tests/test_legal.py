@@ -469,6 +469,33 @@ def test_the_klein_split_is_recorded_because_it_breaks_the_obvious_rule() -> Non
     assert VERIFIED_TERMS["flux2-klein-9b-mflux-q6"].commercial_use == "forbidden"
 
 
+def test_the_shipped_notice_file_covers_both_halves_of_the_application() -> None:
+    """Generated at build time and checked in, so what a user reads is what was
+    actually shipped. Both halves matter: the frontend is bundled into the same
+    application, so its dependencies carry the same obligation as the engine's.
+    """
+    from uncloud_engine.legal import load_notices, summarise
+
+    entries = load_notices()
+    assert entries, "run scripts/generate_notices.py"
+    kinds = summarise(entries)["by_kind"]
+    assert kinds.get("python", 0) > 0 and kinds.get("node", 0) > 0
+    assert any(n.name == "react" for n in entries), \
+        "the frontend's dependencies are missing from the notices"
+
+
+def test_a_package_declaring_no_licence_is_recorded_as_unknown() -> None:
+    """Not omitted, and not guessed at. An approximated licence reads as
+    authoritative, which is worse than an absent one in the document somebody
+    checks during due diligence."""
+    from uncloud_engine.legal import load_notices
+
+    for notice in load_notices():
+        if not notice.licence:
+            assert notice.complete is False
+            assert notice.to_dict()["licence"] == "not recorded"
+
+
 # ------------------------------------------------------------------ shipping
 def test_the_legal_package_would_be_in_the_built_app() -> None:
     """Both non-Python parts fail SILENTLY when absent: no documents means an
