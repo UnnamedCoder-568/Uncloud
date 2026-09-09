@@ -391,6 +391,17 @@ class PolicyBody(BaseModel):
     mode: str
 
 
+class AcceptBody(BaseModel):
+    document_id: str
+    #: The version the interface actually displayed. Required, so agreement can
+    #: never be recorded for a page the person did not see.
+    version: int
+
+
+class AcknowledgeBody(BaseModel):
+    model_id: str
+
+
 class AnswerBody(BaseModel):
     action: str
     category: str
@@ -644,6 +655,120 @@ def audit(limit: int = 200) -> list[dict]:
     second thing to protect rather than a record of what happened.
     """
     return _audit.tail(limit=limit)
+
+
+# --------------------------------------------------------------------- legal
+def _profile(model_id: str):
+    """One model in the shared vocabulary, catalogue or library.
+
+    Both are searched because a licence question is just as real about
+    something found on disk — more so, in fact: that is where `unverified`
+    genuinely lives.
+    """
+    return next((p for p in model_profiles_objects() if p.id == model_id), None)
+
+
+def model_profiles_objects() -> list:
+    from .library import scan_library
+    from .profiles import catalogue_profiles, from_local
+
+    local = scan_library(settings.models_dir)
+    installed = {m.catalog_id for m in local if m.catalog_id}
+    out = list(catalogue_profiles(installed_ids=installed))
+    seen = {p.id for p in out}
+    for model in local:
+        if model.catalog_id in installed or model.id in seen:
+            continue
+        out.append(from_local(model))
+    return out
+
+
+@app.get("/api/legal", dependencies=[Depends(require_token)])
+def legal_state() -> dict:
+    """Which agreements exist, which are outstanding, and what was accepted.
+
+    Deliberately not part of `/api/settings` and deliberately not near
+    `/api/permissions`. Agreeing to a document and approving an action are both
+    a recorded yes, and keeping them at separate addresses is the cheapest
+    reminder that one can never satisfy the other.
+    """
+    from .agreements import register
+
+    return register(settings).state()
+
+
+@app.get("/api/legal/notices/third-party", dependencies=[Depends(require_token)])
+def third_party_notices(text: bool = False) -> dict:
+    """Whose work is included, and under what terms."""
+    from .legal import load_notices, summarise
+
+    entries = load_notices()
+    return {"summary": summarise(entries),
+            "notices": [n.to_dict(text=text) for n in entries]}
+
+
+@app.get("/api/legal/{document_id}", dependencies=[Depends(require_token)])
+def legal_document(document_id: str) -> dict:
+    """One document, with its text. Sent only on request — the state endpoint
+    is polled, and three agreements would make every poll expensive."""
+    from .agreements import register
+
+    reg = register(settings)
+    document = reg.get(document_id)
+    if document is None:
+        raise HTTPException(status_code=404, detail="no such document")
+    accepted = reg.store.accepted(document_id)
+    return {**document.to_dict(body=True),
+            "accepted": accepted.to_dict() if accepted else None}
+
+
+@app.post("/api/legal/accept", dependencies=[Depends(require_token)])
+def accept_terms(body: AcceptBody) -> dict:
+    from .agreements import register
+
+    try:
+        register(settings).accept(body.document_id, body.version)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="no such document") from None
+    except ValueError as exc:
+        # The interface displayed a version that is no longer current. Refused
+        # rather than recorded against the new one, which would produce a
+        # consent record describing a page nobody read.
+        raise HTTPException(status_code=409, detail=str(exc)) from None
+    return register(settings).state()
+
+
+@app.get("/api/models/{model_id}/licence", dependencies=[Depends(require_token)])
+def model_licence(model_id: str) -> dict:
+    """What this model's licence says, and how firmly to say it.
+
+    Note what is absent: nothing here answers "may it be downloaded". Uncloud's
+    catalogue carries no verified licence data at all, so almost every answer
+    is `unverified` — which is the truth, is not a refusal, and must never be
+    rendered as one.
+    """
+    from .agreements import ledger
+    from .legal import describe
+
+    profile = _profile(model_id)
+    if profile is None:
+        raise HTTPException(status_code=404, detail="no such model")
+    shown = describe(profile)
+    return {**shown.to_dict(),
+            "needs_acknowledgement": ledger(settings).needed(profile)}
+
+
+@app.post("/api/models/licence/acknowledge", dependencies=[Depends(require_token)])
+def acknowledge_model_licence(body: AcknowledgeBody) -> dict:
+    """Record that the terms were shown. Grants nothing, widens nothing."""
+    from .legal import acknowledge
+
+    profile = _profile(body.model_id)
+    if profile is None:
+        raise HTTPException(status_code=404, detail="no such model")
+    settings.record_acknowledgement(body.model_id,
+                                    acknowledge(profile).to_dict())
+    return model_licence(body.model_id)
 
 
 @app.get("/api/catalog", dependencies=[Depends(require_token)])

@@ -116,6 +116,46 @@ class Settings:
         self._data["permission_policy"] = dict(policy)
         self._save()
 
+    # ---------------------------------------------------------------- legal
+    # Terms live beside the other settings rather than in a database, because
+    # Uncloud has no application database and adding one to hold three rows
+    # would be a second place for state to be. Kept SEPARATE from
+    # `permission_policy` above with a comment saying so, because these two
+    # dictionaries are the exact pair that must never be confused: one records
+    # what a person agreed to, the other what an agent may do.
+    @property
+    def terms_acceptances(self) -> list[dict]:
+        raw = self._data.get("terms_acceptances")
+        return [dict(r) for r in raw] if isinstance(raw, list) else []
+
+    def record_acceptance(self, acceptance: dict) -> None:
+        """Store agreement to one document, keeping the highest version.
+
+        Downgrading the application must not withdraw consent already given to
+        a later version.
+        """
+        kept = [a for a in self.terms_acceptances
+                if a.get("document_id") != acceptance.get("document_id")
+                or int(a.get("version", 0)) > int(acceptance.get("version", 0))]
+        if all(a.get("document_id") != acceptance.get("document_id")
+               for a in kept):
+            kept.append(dict(acceptance))
+        self._data["terms_acceptances"] = kept
+        self._save()
+
+    @property
+    def licence_acknowledgements(self) -> dict:
+        """That a model's terms were SHOWN. Not a grant, and never consulted to
+        decide whether anything may run."""
+        raw = self._data.get("licence_acknowledgements")
+        return dict(raw) if isinstance(raw, dict) else {}
+
+    def record_acknowledgement(self, model_id: str, entry: dict) -> None:
+        existing = self.licence_acknowledgements
+        existing[model_id] = dict(entry)
+        self._data["licence_acknowledgements"] = existing
+        self._save()
+
     @property
     def output_dir(self) -> Path:
         """Where generated work is written.
