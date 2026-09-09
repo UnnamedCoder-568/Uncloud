@@ -231,9 +231,8 @@ def test_an_mcp_environment_variable_is_not_readable_afterwards(
 
 def test_starting_someone_elses_program_is_a_settings_decision(tmp_path) -> None:
     """Before the process exists, not after."""
-    from uncloud_engine.core import Mode, Risk
-
     from uncloud_engine import main
+    from uncloud_engine.core import Mode, Risk
 
     with _Client(tmp_path) as client:
         main.gate.set_mode(Risk.SETTINGS, Mode.ALLOW)
