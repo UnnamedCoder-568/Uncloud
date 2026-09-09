@@ -60,6 +60,35 @@ npm run tauri dev
 - **Vision** requires a model with an image encoder (Gemma 4, Qwen3.8) served
   through `mlx-vlm`; text-only models return a clear error.
 
+## Terms, model licences and integrations
+
+**Terms.** The application asks for agreement before anything else it does,
+including downloading a model. The documents live in
+`sidecar/uncloud_engine/legal/` — a core agreement shared byte-identically with
+Uncloud Studio, plus a supplement about the agent specifically. They are
+**unreviewed drafts**: structurally complete and accurate about how the software
+behaves, but no lawyer has read them, and every fact that must not be invented —
+entity, address, jurisdiction, contacts — is a visible `[[PLACEHOLDER]]`. A test
+fails if one is filled in with something plausible.
+
+Agreeing to a document grants no permission. Consent and approval are separate
+systems throughout, the legal package and the permission gate never import each
+other, and a test holds them apart.
+
+**Model licences.** Nine catalogue entries have been read at source and carry
+real terms with who read them and when; the rest report `unverified`, which is
+neither a yes nor a no. Uncloud never blocks a download on its own reading of a
+licence — it discloses, and where terms are restrictive, conditional or unread
+it asks for one acknowledgement. Publishers' own gates (access requests, licence
+click-throughs, auth tokens) are never routed around.
+
+**Integrations.** `sidecar/uncloud_engine/integrations/` connects Uncloud to
+things outside it. A connection is not a permission — the gate decides at the
+moment of every action, and a skill inherits nothing. Credentials never enter
+model context, not by redaction but by absence: nothing in the broker returns a
+secret. One connector is built (a documents folder, reading Word, Excel and
+PowerPoint properly); the rest are listed with what each would need.
+
 ## Licence
 
 Not yet chosen.
