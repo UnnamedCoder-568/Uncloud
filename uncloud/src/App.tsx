@@ -5,6 +5,7 @@ import TitleBar, { NavControls, TitleBarSlot } from './components/TitleBar';
 import Panes from './components/Panes';
 import { onHandoffSignal } from './lib/handoff';
 import Onboarding from './views/Onboarding';
+import TermsView from './views/TermsView';
 import ChatView from './views/ChatView';
 import ModelsView from './views/ModelsView';
 import ChiselView from './views/ChiselView';
@@ -16,7 +17,7 @@ import VideoView from './views/VideoView';
 import GuideView from './views/GuideView';
 import OutputsView from './views/OutputsView';
 import SetupView from './views/SetupView';
-import { getSettings, runtimeStatus } from './lib/sidecar';
+import { getLegalState, getSettings, runtimeStatus } from './lib/sidecar';
 import Wordmark from './components/Wordmark';
 
 
@@ -46,6 +47,7 @@ export default function App() {
   const [engineUp, setEngineUp] = useState<boolean | null>(null);
   const [ready, setReady] = useState(false);
   const [onboarded, setOnboarded] = useState(false);
+  const [settled, setSettled] = useState<boolean | null>(null);
   const [engineError, setEngineError] = useState<string | null>(null);
   const [railOpen, setRailOpen] = useState(loadRailOpen);
   const [slot, setSlot] = useState<HTMLDivElement | null>(null);
@@ -112,6 +114,17 @@ export default function App() {
       .catch((e) => setEngineError(String(e)));
   }, [engineUp]);
 
+  // Asked before anything else, including onboarding: choosing a models folder
+  // and downloading weights are both things the terms cover.
+  useEffect(() => {
+    if (!engineUp) return;
+    getLegalState()
+      .then((s) => setSettled(s.settled))
+      // An engine too old to know about terms must not lock the application
+      // out of itself. A missing endpoint is not an unsigned agreement.
+      .catch(() => setSettled(true));
+  }, [engineUp]);
+
   const handleEngineReady = useCallback(() => setEngineUp(true), []);
 
   const splash = (
@@ -136,6 +149,9 @@ export default function App() {
   }
 
   if (!ready) return splash;
+
+  if (settled === null) return splash;
+  if (!settled) return <TermsView onSettled={() => setSettled(true)} />;
 
   if (!onboarded) {
     return <Onboarding onDone={() => setOnboarded(true)} />;

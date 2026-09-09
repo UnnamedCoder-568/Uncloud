@@ -761,13 +761,15 @@ def model_licence(model_id: str) -> dict:
 @app.post("/api/models/licence/acknowledge", dependencies=[Depends(require_token)])
 def acknowledge_model_licence(body: AcknowledgeBody) -> dict:
     """Record that the terms were shown. Grants nothing, widens nothing."""
-    from .legal import acknowledge
+    from .agreements import ledger
 
     profile = _profile(body.model_id)
     if profile is None:
         raise HTTPException(status_code=404, detail="no such model")
-    settings.record_acknowledgement(body.model_id,
-                                    acknowledge(profile).to_dict())
+    # The ledger picks the scope: a specific restriction is recorded against
+    # this model, "nobody checked" is recorded once for the catalogue.
+    made = ledger(settings).acknowledge(profile)
+    settings.record_acknowledgement(made.model_id, made.to_dict())
     return model_licence(body.model_id)
 
 

@@ -3,6 +3,31 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 
+@dataclass(frozen=True)
+class Terms:
+    """What a publisher's licence says, as READ — never as inferred.
+
+    Absent is a value here and the default. `unverified` does not mean
+    forbidden and does not mean allowed; it means nobody has checked, and
+    rendering it as either answer would be the most damaging thing this record
+    could do.
+    """
+
+    id: str = ""
+    name: str = ""
+    #: allowed | conditional | forbidden | research_only | unverified
+    commercial_use: str = "unverified"
+    url: str = ""
+    #: Obligations the licence puts on the USER — revenue caps, attribution,
+    #: field-of-use limits. Shown before installing, because a condition
+    #: nobody read is a breach nobody intended.
+    conditions: tuple[str, ...] = ()
+    #: Who read the licence and when, so a stale reading is visible as one.
+    #: Publishers relicense; a verification with no date is not a verification.
+    verified_by: str = ""
+    verified_on: str = ""
+
+
 @dataclass
 class CatalogEntry:
     id: str
@@ -40,6 +65,10 @@ class CatalogEntry:
     #   edit      — takes a reference image + an instruction (Kontext-style)
     #   inpaint   — takes a reference image + a mask
     capabilities: list[str] = field(default_factory=lambda: ["text2img"])
+    #: The publisher's terms. Populated from `VERIFIED_TERMS` below, so the
+    #: whole licence record is one auditable table rather than a field
+    #: scattered across thirty-three entries.
+    licence: Terms = field(default_factory=Terms)
 
 
 CATALOG: list[CatalogEntry] = [
@@ -429,3 +458,123 @@ def get_catalog() -> list[CatalogEntry]:
 
 def get_entry(catalog_id: str) -> CatalogEntry | None:
     return next((e for e in CATALOG if e.id == catalog_id), None)
+
+
+# --------------------------------------------------------------------- terms
+#: What has actually been read, keyed by catalogue id.
+#:
+#: One table rather than a field on thirty-three entries, because a licence
+#: record is something a person re-checks: publishers relicense, and the
+#: question "what did we verify, and when" should be answerable by reading one
+#: block rather than by grepping.
+#:
+#: **Absence from this table is not an omission to be fixed by guessing.** An
+#: entry with no row reports `unverified`, which is the truth for most of the
+#: catalogue and is neither a yes nor a no. Adding a plausible-looking licence
+#: to make the interface quieter would be the one mistake this whole layer
+#: exists to prevent.
+#:
+#: Three findings worth keeping in view, because each one breaks a rule people
+#: assume holds:
+#:
+#: 1. **Licences split by model SIZE, not family.** FLUX.2 Klein 4B is
+#:    Apache-2.0 and Klein 9B is not. "FLUX.2 Klein is Apache-2.0" is false as
+#:    stated.
+#: 2. **A quantised repack carries its own tag, which can disagree with its
+#:    base.** The Z-Image Turbo build below is tagged tongyi-qianwen while its
+#:    base is Apache-2.0 — so the row describes the repo actually downloaded,
+#:    not the model it came from.
+#: 3. **No declaration is worse than a restrictive one.** A repack that states
+#:    nothing offers no grant to rely on, and where the base forbids commercial
+#:    use that is what carries.
+_READ_BY = "source read of the publisher's model card"
+
+VERIFIED_TERMS: dict[str, Terms] = {
+    # ---------------------------------------------------- permissive, checked
+    "flux2-klein-4b-mlx": Terms(
+        id="apache-2.0", name="Apache 2.0", commercial_use="allowed",
+        url="https://huggingface.co/Runpod/FLUX.2-klein-4B-mflux-4bit",
+        verified_by=_READ_BY, verified_on="2026-09-02"),
+    "flux1-schnell": Terms(
+        id="apache-2.0", name="Apache 2.0", commercial_use="allowed",
+        url="https://huggingface.co/black-forest-labs/FLUX.1-schnell",
+        verified_by=_READ_BY, verified_on="2026-09-02"),
+    "qwen-image": Terms(
+        id="apache-2.0", name="Apache 2.0", commercial_use="allowed",
+        url="https://huggingface.co/Qwen/Qwen-Image",
+        verified_by=_READ_BY, verified_on="2026-09-02"),
+    "wan2.2-ti2v-5b-gguf-q4": Terms(
+        id="apache-2.0", name="Apache 2.0", commercial_use="allowed",
+        url="https://huggingface.co/Wan-AI/Wan2.2-TI2V-5B-Diffusers",
+        verified_by=_READ_BY, verified_on="2026-09-03"),
+
+    # -------------------------------------------------- conditional, checked
+    "z-image-turbo-mlx": Terms(
+        id="tongyi-qianwen-license", name="Tongyi Qianwen Licence",
+        commercial_use="conditional",
+        url="https://huggingface.co/filipstrand/Z-Image-Turbo-mflux-4bit",
+        conditions=(
+            "This 4-bit build is tagged with the Tongyi Qianwen licence even "
+            "though its base, Tongyi-MAI/Z-Image-Turbo, is Apache-2.0. The tag "
+            "on the repository actually being downloaded is what applies.",
+            "The licence sets conditions on commercial use that depend on your "
+            "own circumstances. Read it before publishing work made with this.",
+        ),
+        verified_by=_READ_BY, verified_on="2026-09-02"),
+    "ltx-video": Terms(
+        id="other", name="Lightricks LTX-Video Licence",
+        commercial_use="conditional",
+        url="https://huggingface.co/Lightricks/LTX-Video",
+        conditions=(
+            "Lightricks' own terms, not a standard open-source licence.",
+            "Commercial use is gated by company revenue. Whether you qualify "
+            "depends on facts about your business that this application does "
+            "not have.",
+        ),
+        verified_by=_READ_BY, verified_on="2026-09-03"),
+
+    # ------------------------------------------------ not commercial, checked
+    "flux1-dev": Terms(
+        id="flux-1-dev-non-commercial", name="FLUX.1 [dev] Non-Commercial",
+        commercial_use="forbidden",
+        url="https://huggingface.co/black-forest-labs/FLUX.1-dev",
+        verified_by=_READ_BY, verified_on="2026-09-02"),
+    "flux1-kontext-dev-mlx-q4": Terms(
+        id="flux-1-dev-non-commercial", name="FLUX.1 Kontext [dev] Non-Commercial",
+        commercial_use="forbidden",
+        url="https://huggingface.co/black-forest-labs/FLUX.1-Kontext-dev",
+        conditions=(
+            "Reference editing for commercial work has to go through a "
+            "differently-licensed model; Kontext is not one.",
+        ),
+        verified_by=_READ_BY, verified_on="2026-09-02"),
+    "flux2-klein-9b-mflux-q6": Terms(
+        id="", name="No licence declared", commercial_use="forbidden",
+        url="https://huggingface.co/mflux-community/flux2-klein-9b-mflux-q6",
+        conditions=(
+            "This repack declares no licence at all, so there is no grant to "
+            "rely on — which is a weaker position than a restrictive licence, "
+            "not a stronger one.",
+            "It is derived from FLUX.2 Klein 9B, which does not permit "
+            "commercial use. Klein 4B is Apache-2.0; the licences split by "
+            "model size, not by family.",
+        ),
+        verified_by=_READ_BY, verified_on="2026-09-03"),
+}
+
+
+def _apply_terms() -> None:
+    """Attach the verified terms to their entries.
+
+    Applied once at import. Entries with no row keep the default, which reports
+    `unverified` — the honest answer for most of this catalogue, and the reason
+    the interface asks for one acknowledgement about unread licences rather
+    than pretending to know thirty-three of them.
+    """
+    for entry in CATALOG:
+        found = VERIFIED_TERMS.get(entry.id)
+        if found is not None:
+            entry.licence = found
+
+
+_apply_terms()

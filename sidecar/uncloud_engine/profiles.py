@@ -8,11 +8,12 @@ feasibility can be written once against both products.
 
 Two honest gaps, recorded here rather than papered over:
 
-**Uncloud's catalogue carries no licence data at all.** Thirty-three entries,
-none with terms, one mentioning a restriction in its prose description. Every
-profile therefore reports `UNVERIFIED`, which is the truth: nobody has read
-them. It must not be rendered as permission, and populating it properly is its
-own piece of work.
+**Most of Uncloud's catalogue still has no licence data.** Nine entries have
+been read at source and carry real terms; the other twenty-four report
+`UNVERIFIED`, which is the truth — nobody has checked them. That must not be
+rendered as permission, and it must not be rendered as a refusal either.
+`catalog.VERIFIED_TERMS` is the table, and absence from it is not an omission
+to be fixed by guessing.
 
 **Capability is inferred from `category` and `engine`.** That inference is
 sound for what the catalogue holds today — a `category="image"` entry with
@@ -23,7 +24,15 @@ category with no mapping raises rather than guessing at something plausible.
 from __future__ import annotations
 
 from .catalog import CatalogEntry
-from .foundation import Capability, Cost, Licence, Modality, ModelProfile, reasoning_support
+from .foundation import (
+    Capability,
+    CommercialUse,
+    Cost,
+    Licence,
+    Modality,
+    ModelProfile,
+    reasoning_support,
+)
 
 SOURCE = "uncloud"
 
@@ -136,7 +145,13 @@ def from_catalog(entry: CatalogEntry, *, installed: bool = False,
         #: Empty, and honestly so — see the module docstring. The publisher's
         #: repository is recorded, which is where a person goes to read the
         #: actual terms until this is filled in properly.
-        licence=Licence(url=f"https://huggingface.co/{entry.repo}"),
+        licence=Licence(
+            id=entry.licence.id, name=entry.licence.name,
+            commercial_use=CommercialUse(entry.licence.commercial_use),
+            url=entry.licence.url or f"https://huggingface.co/{entry.repo}",
+            conditions=tuple(entry.licence.conditions),
+            verified_by=entry.licence.verified_by,
+            verified_on=entry.licence.verified_on),
         installed=installed,
         runnable=engine_runs_here(entry.engine) if runnable is None else runnable,
         reason=reason,
