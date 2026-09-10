@@ -86,7 +86,7 @@ async def decide_or_refuse(request: Request, *, timeout: float = 300.0) -> Decis
     """
     try:
         return await asyncio.wait_for(decide(request), timeout=timeout)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         gate = current_gate()
         refused = Decision(False, gate.mode_for(request.category),
                            "nobody answered the approval request", asked=True)

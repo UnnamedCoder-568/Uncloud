@@ -11,8 +11,10 @@ once and reused. Loading stays slow the first time and is then free.
 
 from __future__ import annotations
 
+import contextlib
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 # CLI name -> (module, class, ModelConfig factory). The CLI names come from the
 # catalog, which is how a model already declares which variant it needs.
@@ -83,8 +85,8 @@ def _fix_lokr_dims_for_odd_bit_widths() -> None:
     3, 5 and 6 stop lying.
     """
     try:
-        from mlx import nn
         from mflux.models.common.lora.layer.linear_lokr_layer import LoKrLinear
+        from mlx import nn
     except Exception:  # noqa: BLE001 - a newer mflux may have moved this
         return
     if getattr(LoKrLinear.from_linear, "_uncloud_exact_dims", False):
@@ -117,10 +119,8 @@ class _StepProgress:
         self._on_step = on_step
 
     def call_in_loop(self, t, seed, prompt, latents, config, time_steps) -> None:  # noqa: ANN001
-        try:
+        with contextlib.suppress(Exception):  # progress must never break a render
             self._on_step(int(t) + 1)
-        except Exception:  # noqa: BLE001 - progress must never break a render
-            pass
 
 
 class MfluxRuntime:

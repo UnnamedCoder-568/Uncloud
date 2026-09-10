@@ -24,7 +24,6 @@ from __future__ import annotations
 import os
 import secrets
 import stat
-from pathlib import Path
 
 from .config import CONFIG_DIR
 

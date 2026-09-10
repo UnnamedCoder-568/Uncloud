@@ -9,20 +9,17 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-
+from .config import output_dir_for
+from .flux2_profile import flux2_profile_runtime, profile_for
+from .mflux_runtime import can_run_in_process, mflux_runtime
+from .output_check import summarise_traceback, verify_image
+from .power import keep_awake
 
 # Kontext renders at the source image's dimensions unless told otherwise. A 1792x2390
 # phone-camera or catalogue photo is ~4.3MP, which pushes peak memory past 16GB on a
 # 24GB Mac and drops the machine into swap — measured at 563s/step versus 20s/step at
 # 0.5MP. Cap the working resolution unless the caller asks for something specific.
 MAX_EDIT_PIXELS = 1024 * 1024
-
-
-from .flux2_profile import flux2_profile_runtime, profile_for
-from .mflux_runtime import can_run_in_process, mflux_runtime
-from .output_check import summarise_traceback, verify_image
-from .config import output_dir_for
-from .power import keep_awake
 
 
 def _fit_within_budget(reference_path: str) -> tuple[int, int] | None:
@@ -205,7 +202,8 @@ class ImageEngine:
 
             mflux_bin = _mflux_bin(mflux_cli)
             if not mflux_bin:
-                raise RuntimeError(f"{mflux_cli} not found on PATH — is the `mflux` package installed?")
+                raise RuntimeError(
+                    f"{mflux_cli} not found on PATH — is the `mflux` package installed?")
 
             out_path = output_dir_for() / f"{job.id}.png"
             steps = steps or 28
@@ -243,7 +241,8 @@ class ImageEngine:
             job.status = "error"
             job.error = str(exc)
 
-    async def _stream_mflux(self, job: ImageJob, cmd: list[str], out_path: Path, cli_name: str) -> None:
+    async def _stream_mflux(self, job: ImageJob, cmd: list[str], out_path: Path,
+                            cli_name: str) -> None:
         proc = await asyncio.create_subprocess_exec(
             *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
         )
@@ -403,7 +402,8 @@ class ImageEngine:
         pipe = self._load_pipeline(model_path, text_encoder_path)
         steps = steps or 25
         job.total_steps = steps
-        generator = torch.Generator(device="cpu").manual_seed(seed if seed is not None else int(time.time()))
+        generator = torch.Generator(device="cpu").manual_seed(
+            seed if seed is not None else int(time.time()))
 
         def on_step_end(_pipe, step, _timestep, kwargs):
             job.step = step + 1

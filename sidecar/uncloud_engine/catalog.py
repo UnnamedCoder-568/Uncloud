@@ -41,9 +41,11 @@ class CatalogEntry:
     tags: list[str] = field(default_factory=list)
     context_length: int | None = None
     offline_capable: bool = True
-    single_file: bool = False  # for engine="diffusers": load via from_single_file instead of from_pretrained
+    # for engine="diffusers": load via from_single_file instead of from_pretrained
+    single_file: bool = False
     note: str | None = None  # shown in the UI — hardware caveats, licensing, etc.
-    mflux_cli: str = "mflux-generate"  # for engine="mflux": which mflux CLI binary knows this architecture
+    # for engine="mflux": which mflux CLI binary knows this architecture
+    mflux_cli: str = "mflux-generate"
     # Which mflux base config to build. One CLI covers a whole family — the
     # Klein entry point serves both 4B and 9B — and loading a 4B checkpoint
     # against the 9B config fails on tensor shape. Set it where they differ.
@@ -51,7 +53,8 @@ class CatalogEntry:
     # Generation settings this model was distilled for. A four-step model run at
     # the picker's default of eight is twice the wait for nothing.
     defaults: dict = field(default_factory=dict)
-    fixup: str | None = None  # for engine="mflux": post-download layout fix to apply (see downloader.py)
+    # for engine="mflux": post-download layout fix to apply (see downloader.py)
+    fixup: str | None = None
     # Not every model is one repository. A quantised video stack is the
     # publisher's diffusers skeleton — configs, tokenizer, scheduler, VAE —
     # plus a transformer and text encoder from whoever quantised them, and the
@@ -176,10 +179,12 @@ CATALOG: list[CatalogEntry] = [
         category="text", engine="mlx-vlm",
         repo="mlx-community/gemma-4-26B-A4B-it-qat-4bit",
         size_gb=15.6, context_length=131072,
-        description="Mixture-of-experts with vision built in: 26B total, ~4B active. Reasons and sees, at small-model speed.",
+        description="Mixture-of-experts with vision built in: 26B total, ~4B active. Reasons and "
+                    "sees, at small-model speed.",
         tags=["general", "vision", "reasoning", "apple-silicon", "recommended"],
         capabilities=["text2img"],
-        note="Has an image encoder — Uncloud serves it through mlx-vlm so it can read screenshots and photos.",
+        note="Has an image encoder — Uncloud serves it through mlx-vlm so it can read screenshots "
+             "and photos.",
     ),
     CatalogEntry(
         id="gemma-4-12b-qat-mlx-q4",
@@ -187,7 +192,8 @@ CATALOG: list[CatalogEntry] = [
         category="text", engine="mlx-vlm",
         repo="mlx-community/gemma-4-12B-it-qat-4bit",
         size_gb=11.0, context_length=131072,
-        description="Smaller vision-capable model. Leaves headroom to keep an image model loaded alongside it.",
+        description="Smaller vision-capable model. Leaves headroom to keep an image model loaded "
+                    "alongside it.",
         tags=["general", "vision", "fast", "apple-silicon"],
         capabilities=["text2img"],
     ),
@@ -201,9 +207,11 @@ CATALOG: list[CatalogEntry] = [
         category="text", engine="mlx",
         repo="mlx-community/Qwen3.8-27B-4bit",
         size_gb=16.1, context_length=32768,
-        description="Strongest general reasoning that fits comfortably in 24GB. The daily driver for agent work.",
+        description="Strongest general reasoning that fits comfortably in 24GB. The daily driver "
+                    "for agent work.",
         tags=["general", "reasoning", "apple-silicon", "recommended"],
-        note="~16GB resident — close other heavy apps and expect image models to be unloaded while this runs.",
+        note="~16GB resident — close other heavy apps and expect image models to be unloaded while "
+             "this runs.",
     ),
     CatalogEntry(
         id="qwen3-coder-30b-a3b-mlx-q4",
@@ -211,7 +219,8 @@ CATALOG: list[CatalogEntry] = [
         category="text", engine="mlx",
         repo="mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit-dwq-v2",
         size_gb=17.2, context_length=262144,
-        description="Mixture-of-experts coding model: 30B total, 3B active. Strong C++ — a good fit for Unreal Engine work.",
+        description="Mixture-of-experts coding model: 30B total, 3B active. Strong C++ — a good "
+                    "fit for Unreal Engine work.",
         tags=["coding", "apple-silicon", "recommended"],
         note="~17GB resident. DWQ quantization retains noticeably more quality than plain Q4.",
     ),
@@ -221,7 +230,8 @@ CATALOG: list[CatalogEntry] = [
         category="text", engine="mlx",
         repo="mlx-community/Devstral-Small-2-24B-Instruct-2512-4bit",
         size_gb=15.1, context_length=131072,
-        description="Mistral's agentic coding model, built for multi-file codebase edits rather than snippet completion.",
+        description="Mistral's agentic coding model, built for multi-file codebase edits rather "
+                    "than snippet completion.",
         tags=["coding", "agentic", "apple-silicon"],
     ),
     CatalogEntry(
@@ -230,7 +240,8 @@ CATALOG: list[CatalogEntry] = [
         category="text", engine="mlx",
         repo="mlx-community/Qwen3.5-9B-MLX-4bit",
         size_gb=6.0, context_length=32768,
-        description="Fast general-purpose model, small enough to stay loaded alongside an image model.",
+        description="Fast general-purpose model, small enough to stay loaded alongside an image "
+                    "model.",
         tags=["general", "fast", "apple-silicon"],
     ),
     CatalogEntry(
@@ -294,7 +305,8 @@ CATALOG: list[CatalogEntry] = [
         category="image", engine="mflux",
         repo="mflux-community/krea-2-turbo-mflux-q4",
         size_gb=15.0,
-        description="Krea's aesthetic-first 12.9B DiT model, 4-bit quantized for Apple Silicon via mflux. Best fit for 16-24GB Macs.",
+        description="Krea's aesthetic-first 12.9B DiT model, 4-bit quantized for Apple Silicon via "
+                    "mflux. Best fit for 16-24GB Macs.",
         tags=["recommended", "apple-silicon", "fast"],
         mflux_cli="mflux-generate-krea2",
         fixup="flat-transformer-shards",
@@ -305,7 +317,8 @@ CATALOG: list[CatalogEntry] = [
         category="image", engine="mflux",
         repo="mflux-community/krea-2-turbo-mflux-q8",
         size_gb=22.2,
-        description="Same model at 8-bit — higher fidelity, but ~22GB resident. Only worth it on 32GB+ Macs.",
+        description="Same model at 8-bit — higher fidelity, but ~22GB resident. Only worth it on "
+                    "32GB+ Macs.",
         tags=["quality", "apple-silicon"],
         note="~22GB resident. Measured on a 24GB M5: 80s per step against 5s for Klein 4B, "
      "because it does not fit and pages every step. One 1024x1024 image took 11 minutes. "
@@ -365,7 +378,8 @@ CATALOG: list[CatalogEntry] = [
         repo="LyliaEngine/Pony_Diffusion_V6_XL",
         files=["ponyDiffusionV6XL_v6StartWithThisOne.safetensors"],
         size_gb=6.94,
-        description="SDXL finetune trained across a wide safe/questionable/explicit range. Strong anime/anthro capability.",
+        description="SDXL finetune trained across a wide safe/questionable/explicit range. Strong "
+                    "anime/anthro capability.",
         tags=["uncensored"],
     ),
     # ---- Video diffusion ----

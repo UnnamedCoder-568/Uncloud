@@ -49,9 +49,7 @@ def _bound_names(tree: ast.AST) -> set[str]:
             bound.add(node.id)
         elif isinstance(node, ast.ExceptHandler) and node.name:
             bound.add(node.name)
-        elif isinstance(node, ast.Global):
-            bound |= set(node.names)
-        elif isinstance(node, ast.Nonlocal):
+        elif isinstance(node, (ast.Global, ast.Nonlocal)):
             bound |= set(node.names)
     return bound
 

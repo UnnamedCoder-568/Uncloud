@@ -10,6 +10,7 @@ last one finishes. Opt-in — off unless the user turns it on in Settings.
 
 from __future__ import annotations
 
+import contextlib
 import subprocess
 import sys
 import threading
@@ -75,7 +76,7 @@ class keep_awake:
         self.reason = reason
         self._active = False
 
-    def __enter__(self) -> "keep_awake":
+    def __enter__(self) -> keep_awake:
         global _holders
         from .config import settings
 
@@ -99,10 +100,8 @@ class keep_awake:
             _holders -= 1
             if _holders <= 0:
                 _holders = 0
-                try:
+                with contextlib.suppress(Exception):
                     _end()
-                except Exception:  # noqa: BLE001
-                    pass
 
 
 def is_held() -> bool:

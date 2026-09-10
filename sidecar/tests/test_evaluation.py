@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 from PIL import Image
 
-from uncloud_engine.evaluation import EVALUATORS, IMAGE, NotBlank
 from uncloud_engine.core import NOT_BLANK, Unmeasurable, compare, evaluate
+from uncloud_engine.evaluation import EVALUATORS, IMAGE, NotBlank
 
 
 @pytest.fixture

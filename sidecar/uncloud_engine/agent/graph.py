@@ -38,7 +38,8 @@ class ExecutionGraph:
         return [
             t for t in self.tasks.values()
             if t.status == "pending"
-            and all(self.tasks.get(dep, Task(id=dep, description="", tool_id="")).status == "completed"
+            and all(self.tasks.get(dep, Task(id=dep, description="", tool_id="")).status
+                    == "completed"
                     for dep in t.dependencies)
         ]
 

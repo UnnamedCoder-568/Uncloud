@@ -25,15 +25,16 @@ the encoder entirely.
 
 from __future__ import annotations
 
+import contextlib
 import gc
 import hashlib
 import json
 import os
 import shutil
-import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 # Filenames the manifest is known by. The second form is per-model rather than
 # per-folder, so it is matched as a suffix.
@@ -164,13 +165,11 @@ def _find_base(root: Path, declared: str | None, models_dir: Path | None) -> Pat
                 return current
             if level >= depth:
                 continue
-            try:
+            with contextlib.suppress(OSError):
                 stack.extend(
                     (c, level + 1) for c in current.iterdir()
                     if c.is_dir() and not c.name.startswith(".")
                 )
-            except OSError:
-                pass
     return None
 
 
@@ -344,7 +343,11 @@ def _is_scaled_fp8(path: Path) -> bool:
     from safetensors import safe_open
 
     with safe_open(str(path), framework="pt") as f:
-        return any(k.endswith(".weight_scale") for k in f.keys())
+        # `.keys()` rather than iterating: SIM118 is right about mappings and
+        # wrong here — a safetensors handle exposes keys() and defines no
+        # __iter__, so `for k in f` raises at run time. Nothing in the suite
+        # opens a real checkpoint, so this would have failed in front of a user.
+        return any(k.endswith(".weight_scale") for k in f.keys())  # noqa: SIM118
 
 
 def _load_transformer(profile: Flux2Profile):
@@ -404,9 +407,7 @@ def _truncate_encoder(model):
 
 def _load_text_encoder(profile: Flux2Profile, override: str | None):
     import torch
-    from transformers import AutoModelForCausalLM
-
-    from transformers import AutoModel
+    from transformers import AutoModel, AutoModelForCausalLM
 
     def read(path: Path):
         # The cache holds the truncated base model, so it reloads as one.
@@ -537,8 +538,11 @@ class Flux2ProfileRuntime:
             return self._pipe
 
         import torch
-        from diffusers import (AutoencoderKLFlux2, Flux2KleinPipeline,
-                               FlowMatchEulerDiscreteScheduler)
+        from diffusers import (
+            AutoencoderKLFlux2,
+            FlowMatchEulerDiscreteScheduler,
+            Flux2KleinPipeline,
+        )
 
         self._drop_pipeline()
 

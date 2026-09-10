@@ -106,7 +106,9 @@ def note_recall(key: str = "") -> str:
         return "No notes saved."
     if key:
         entry = notes.get(key)
-        return entry["value"] if entry else f"No note called '{key}'. Saved keys: {', '.join(notes)}"
+        if entry:
+            return entry["value"]
+        return f"No note called '{key}'. Saved keys: {', '.join(notes)}"
     return "\n".join(f"{k}: {v['value'][:300]}" for k, v in notes.items())
 
 

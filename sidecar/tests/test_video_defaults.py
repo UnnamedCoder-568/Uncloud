@@ -13,7 +13,8 @@ class VideoQualityDefaultsTest(unittest.TestCase):
         self.assertIn("jittery", video_engine.DEFAULT_NEGATIVE_PROMPT)
 
     def test_default_frame_count_is_valid_for_ltx(self) -> None:
-        self.assertEqual(video_engine.valid_frames(video_engine.DEFAULT_FRAMES), video_engine.DEFAULT_FRAMES)
+        self.assertEqual(video_engine.valid_frames(video_engine.DEFAULT_FRAMES),
+                         video_engine.DEFAULT_FRAMES)
 
 
 if __name__ == "__main__":

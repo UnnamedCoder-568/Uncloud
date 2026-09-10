@@ -2,15 +2,14 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import AsyncIterator, Callable, Coroutine
+from collections.abc import Callable, Coroutine
 from typing import Any
 
 import httpx
 
-from ..engines import engine_manager
 from ..core import Effort, Plan
-from ..core import parse as parse_effort
 from ..core import translate as translate_effort
+from ..engines import engine_manager
 from .graph import ExecutionGraph, Task
 from .tools import TOOL_SPECS, run_tool
 
@@ -23,8 +22,10 @@ Each step must use exactly one tool. Available tools:
 Respond with ONLY a JSON object, no prose, no markdown fences, in this exact shape:
 {{
   "tasks": {{
-    "t1": {{"description": "...", "tool_id": "shell", "args": {{"command": "..."}}, "dependencies": []}},
-    "t2": {{"description": "...", "tool_id": "fs_write", "args": {{"path": "...", "content": "..."}}, "dependencies": ["t1"]}}
+    "t1": {{"description": "...", "tool_id": "shell", \
+"args": {{"command": "..."}}, "dependencies": []}},
+    "t2": {{"description": "...", "tool_id": "fs_write", \
+"args": {{"path": "...", "content": "..."}}, "dependencies": ["t1"]}}
   }},
   "start_node_ids": ["t1"]
 }}
@@ -32,18 +33,24 @@ Respond with ONLY a JSON object, no prose, no markdown fences, in this exact sha
 To use what an earlier step produced, reference it as {{t1}} inside a later step's args —
 it is replaced with that step's actual output before the step runs. Never write a
 placeholder like "[content from t1]"; write {{t1}} instead. Example:
-  "t1": {{"description": "Read the page", "tool_id": "web_read", "args": {{"url": "..."}}, "dependencies": []}},
-  "t2": {{"description": "Save it", "tool_id": "fs_write", "args": {{"path": "out.txt", "content": "{{{{t1}}}}"}}, "dependencies": ["t1"]}}
+  "t1": {{"description": "Read the page", "tool_id": "web_read", \
+"args": {{"url": "..."}}, "dependencies": []}},
+  "t2": {{"description": "Save it", "tool_id": "fs_write", \
+"args": {{"path": "out.txt", "content": "{{{{t1}}}}"}}, "dependencies": ["t1"]}}
 
-Keep it to the minimum number of steps needed. Prefer fewer, more capable shell commands over many small steps.
+Keep it to the minimum number of steps needed. Prefer fewer, more capable
+shell commands over many small steps.
 
 Guidance:
 - Do not add a shell step to slice or summarise text you already have — pass {{t1}} straight
   into the step that needs it. Shell is for running programs, not for editing strings.
 - Progress is recorded automatically, so you do not need planning steps just to track state.
-- Use note_save for a fact a later step depends on (a path, an ID, a finding), and note_recall to read it back rather than re-deriving it.
-- To work with a web page you only need to read, use web_read. Use browser_open when the page needs JavaScript, or when a later step must click or type.
-- see_image only works when a vision-capable model is loaded; pair it with screen_capture or browser_screenshot."""
+- Use note_save for a fact a later step depends on (a path, an ID, a finding),
+  and note_recall to read it back rather than re-deriving it.
+- To work with a web page you only need to read, use web_read. Use browser_open
+  when the page needs JavaScript, or when a later step must click or type.
+- see_image only works when a vision-capable model is loaded; pair it with
+  screen_capture or browser_screenshot."""
 
 
 def _tools_description(specs: list[dict] | None = None) -> str:
@@ -206,13 +213,13 @@ class Orchestrator:
                 content = (message.get("content") or "").strip()
                 if not content:
                     content = (message.get("reasoning_content") or "").strip()
-        except httpx.TimeoutException:
+        except httpx.TimeoutException as exc:
             raise RuntimeError(
                 "The model took too long to produce a plan. Smaller models can stall on "
                 "long tool lists — try a simpler goal, or load a larger model."
-            )
+            ) from exc
         except httpx.HTTPError as exc:
-            raise RuntimeError(f"Could not reach the loaded model: {exc!r}")
+            raise RuntimeError(f"Could not reach the loaded model: {exc!r}") from exc
 
         parsed = _extract_json(content)
         graph = ExecutionGraph(goal=goal)

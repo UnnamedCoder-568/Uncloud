@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from collections import deque
 from pathlib import Path
 from typing import Any
@@ -119,10 +120,8 @@ async def open_url(url: str) -> str:
         url = "https://" + url
     page = await _ensure_page()
     await page.goto(url, timeout=45000, wait_until="domcontentloaded")
-    try:
+    with contextlib.suppress(Exception):  # long-polling pages never go idle; carry on
         await page.wait_for_load_state("networkidle", timeout=8000)
-    except Exception:  # noqa: BLE001 - long-polling pages never go idle; carry on
-        pass
     return f"Opened {page.url}\nTitle: {await page.title()}\n\n{await _readable(page)}"
 
 
@@ -165,10 +164,8 @@ async def click(target: str) -> str:
     loc = await _resolve(page, target)
     before = page.url
     await loc.click(timeout=15000)
-    try:
+    with contextlib.suppress(Exception):
         await page.wait_for_load_state("networkidle", timeout=8000)
-    except Exception:  # noqa: BLE001
-        pass
     moved = f" (navigated to {page.url})" if page.url != before else ""
     return f"Clicked '{target}'{moved}\n\n{await _readable(page)}"
 
@@ -181,10 +178,8 @@ async def type_text(target: str, text: str, submit: bool = False) -> str:
     await loc.fill(text, timeout=15000)
     if submit:
         await loc.press("Enter")
-        try:
+        with contextlib.suppress(Exception):
             await page.wait_for_load_state("networkidle", timeout=10000)
-        except Exception:  # noqa: BLE001
-            pass
     return f"Typed into '{target}'{' and submitted' if submit else ''}.\n\n{await _readable(page)}"
 
 
@@ -254,13 +249,11 @@ async def evaluate_js(code: str) -> str:
 # ------------------------------------------------------------ synthetic mouse
 
 async def _draw_cursor(page, x: float, y: float, clicking: bool = False) -> None:
-    try:
+    with contextlib.suppress(Exception):  # the overlay is a nicety, never a blocker
         await page.evaluate(
             "([x, y, c]) => window.__uncloudCursor && window.__uncloudCursor(x, y, c)",
             [x, y, clicking],
         )
-    except Exception:  # noqa: BLE001 - the overlay is a nicety, never a blocker
-        pass
 
 
 async def mouse_move(x: float, y: float) -> str:
