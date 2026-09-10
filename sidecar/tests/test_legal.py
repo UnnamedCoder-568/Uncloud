@@ -474,3 +474,19 @@ def test_the_legal_package_would_be_in_the_built_app() -> None:
                      "../../sidecar/uncloud_engine/core/legal/product/*.md",
                      "../../sidecar/uncloud_engine/core/integrations/*.py"):
         assert expected in resources, f"{expected} would be absent from the build"
+
+
+def test_the_build_can_say_what_it_still_needs_before_release() -> None:
+    """Placeholders in a shipped agreement are deliberate and dangerous in the
+    same breath: inventing a legal entity would produce something that looks
+    binding and is not, and leaving them unnoticed is how they reach a
+    customer. The software has to be able to count them."""
+    from uncloud_engine.core.legal import readiness, terms
+
+    summary = readiness.summary(terms.load_all())
+    assert isinstance(summary["ready"], bool)
+    if not summary["ready"]:
+        assert summary["missing"], "unfilled but nothing named"
+        # The binding documents lead: an unfilled blank in something people
+        # sign is a different problem from one in something they read.
+        assert summary["documents"][0]["binding"] is True
