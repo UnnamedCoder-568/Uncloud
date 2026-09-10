@@ -784,6 +784,49 @@ def model_profiles_objects() -> list:
     return out
 
 
+@app.get("/api/release", dependencies=[Depends(require_token)])
+def release_readiness() -> dict:
+    """What still has to be supplied before this build can be sold.
+
+    Legal facts only the publisher can state — the entity, the address, the
+    jurisdiction — plus any provider whose OAuth client has not been
+    registered. Both are placeholders on purpose: an invented company name
+    produces an agreement that looks binding and is not, and invented
+    credentials belonging to Google or Slack would simply not work.
+
+    Counted here because a blank like that reaches release by everybody
+    assuming somebody else had filled it in.
+    """
+    from .core.integrations import registry as integrations
+    from .core.legal import readiness, terms
+
+    legal = readiness.summary(terms.load_all())
+
+    needs_credentials, connected = [], []
+    for provider in integrations._providers():
+        try:
+            connection = provider.connection()
+        except Exception:  # noqa: BLE001 - a provider that cannot answer is not ready
+            needs_credentials.append(provider.name)
+            continue
+        if connection.state.value == "not_configured":
+            needs_credentials.append(provider.name)
+        elif connection.state.value == "connected":
+            connected.append(provider.name)
+
+    return {
+        "ready": legal["ready"] and not needs_credentials,
+        "legal": legal,
+        "integrations": {
+            "needs_credentials": needs_credentials,
+            "connected": connected,
+            "note": "These need an OAuth client registered with the provider. "
+                    "Uncloud does not own credentials belonging to them, and "
+                    "shipping invented ones would not work.",
+        },
+    }
+
+
 @app.get("/api/legal", dependencies=[Depends(require_token)])
 def legal_state() -> dict:
     """Which agreements exist, which are outstanding, and what was accepted.
