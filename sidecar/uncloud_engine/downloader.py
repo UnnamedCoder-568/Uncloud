@@ -7,7 +7,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import httpx
-from huggingface_hub import HfApi
 
 from .catalog import CatalogEntry, get_entry
 from .config import settings
@@ -121,7 +120,8 @@ class DownloadManager:
             state.status = "error"
             state.error = str(exc)
 
-    async def _download_file(self, state: DownloadState, repo: str, filename: str, dest: Path) -> None:
+    async def _download_file(self, state: DownloadState, repo: str, filename: str,
+                             dest: Path) -> None:
         url = HF_RESOLVE.format(repo=repo, file=filename)
         tmp = dest.with_suffix(dest.suffix + ".part")
         resume_from = tmp.stat().st_size if tmp.exists() else 0
@@ -131,8 +131,10 @@ class DownloadManager:
         last_bytes = resume_from
         state.downloaded_bytes = resume_from
 
-        async with httpx.AsyncClient(follow_redirects=True, timeout=None) as client:
-            async with client.stream("GET", url, headers=headers) as resp:
+        async with (
+            httpx.AsyncClient(follow_redirects=True, timeout=None) as client,
+            client.stream("GET", url, headers=headers) as resp,
+        ):
                 resp.raise_for_status()
                 content_range_total = resp.headers.get("Content-Length")
                 if content_range_total:
@@ -147,10 +149,12 @@ class DownloadManager:
                         state.downloaded_bytes += len(chunk)
                         now = time.monotonic()
                         if now - last_tick >= 0.5:
-                            state.speed_bytes_s = (state.downloaded_bytes - last_bytes) / (now - last_tick)
+                            state.speed_bytes_s = (
+                                (state.downloaded_bytes - last_bytes) / (now - last_tick))
                             last_tick, last_bytes = now, state.downloaded_bytes
                             if state.total_bytes:
-                                state.percent = min(99.9, state.downloaded_bytes / state.total_bytes * 100)
+                                state.percent = min(
+                                    99.9, state.downloaded_bytes / state.total_bytes * 100)
 
         tmp.rename(dest)
         state.percent = 100.0

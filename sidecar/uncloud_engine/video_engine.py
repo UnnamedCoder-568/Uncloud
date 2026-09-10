@@ -25,15 +25,14 @@ scattered through the generate path.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
-from .output_check import verify_video
 from .config import output_dir_for
+from .output_check import verify_video
 from .power import keep_awake
-
-
 
 # LTX accepts frame counts of the form 8n+1; anything else is silently padded.
 DEFAULT_FRAMES = 49          # ~2s at 24fps
@@ -224,7 +223,6 @@ class VideoEngine:
         """
         import gc
 
-        import torch
 
         self._pipe.text_encoder = None
         self._loaded_path = None   # force a reload before the next prompt
@@ -245,10 +243,13 @@ class VideoEngine:
         3.4 GB of transformer and 3.7 GB of encoder against 20 GB and 11 GB at
         bfloat16, for the same model.
         """
-        import torch
-        from diffusers import (AutoencoderKLWan, GGUFQuantizationConfig,
-                               UniPCMultistepScheduler, WanPipeline,
-                               WanTransformer3DModel)
+        from diffusers import (
+            AutoencoderKLWan,
+            GGUFQuantizationConfig,
+            UniPCMultistepScheduler,
+            WanPipeline,
+            WanTransformer3DModel,
+        )
         from transformers import AutoTokenizer, UMT5EncoderModel
 
         root = Path(model_path)
@@ -304,7 +305,6 @@ class VideoEngine:
         """
         import gc
 
-        import torch
 
         self._pipe.transformer = None
         self._loaded_path = None   # force a reload before the next prompt
@@ -411,7 +411,6 @@ class VideoEngine:
         try:
             import gc
 
-            import torch
 
             gc.collect()
             free_device_cache()
@@ -511,10 +510,8 @@ class VideoEngine:
             # already walks the clip a frame at a time and completes. Tiling
             # Wan made a decode that works into one that does not.
             if family.name != "wan":
-                try:
+                with contextlib.suppress(Exception):
                     pipe.vae.enable_tiling()
-                except Exception:  # noqa: BLE001
-                    pass
             self._pipe = pipe
             self._loaded_path = model_path
 

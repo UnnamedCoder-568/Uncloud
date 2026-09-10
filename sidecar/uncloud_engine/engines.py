@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import shutil
 import socket
 import subprocess
@@ -65,7 +66,8 @@ class EngineManager:
 
     def _spawn_llama_cpp(self, model_path: str, port: int) -> subprocess.Popen:
         if not LLAMA_SERVER_BIN:
-            raise RuntimeError("llama-server not found on PATH. Install with `brew install llama.cpp`.")
+            raise RuntimeError("llama-server not found on PATH. Install with `brew install "
+                               "llama.cpp`.")
         return subprocess.Popen(
             [LLAMA_SERVER_BIN, "-m", model_path, "--port", str(port), "--host", "127.0.0.1",
              "-ngl", "999", "-c", "8192"],
@@ -98,7 +100,8 @@ class EngineManager:
         async with httpx.AsyncClient() as client:
             while asyncio.get_event_loop().time() < deadline:
                 if active.process.poll() is not None:
-                    out = active.process.stdout.read().decode(errors="ignore") if active.process.stdout else ""
+                    out = (active.process.stdout.read().decode(errors="ignore")
+                           if active.process.stdout else "")
                     raise RuntimeError(f"Engine process exited early:\n{out[-2000:]}")
                 try:
                     r = await client.get(f"{active.base_url}/v1/models", timeout=2.0)
@@ -114,10 +117,8 @@ class EngineManager:
             active.process.terminate()
             active.process.wait(timeout=5)
         except Exception:  # noqa: BLE001
-            try:
+            with contextlib.suppress(Exception):
                 active.process.kill()
-            except Exception:  # noqa: BLE001
-                pass
 
     def stop(self) -> None:
         if self.active:

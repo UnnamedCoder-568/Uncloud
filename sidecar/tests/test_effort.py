@@ -7,8 +7,6 @@ almost all of them, and that where it cannot the plan says so out loud.
 
 from __future__ import annotations
 
-import pytest
-
 from uncloud_engine.chat import build_chat_payload
 from uncloud_engine.core import (
     BASE_OUTPUT_TOKENS,

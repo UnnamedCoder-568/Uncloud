@@ -6,8 +6,8 @@ import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
-
-
+from .config import output_dir_for
+from .power import keep_awake
 
 # Logic Pro imports either happily; 44.1kHz/24-bit is the usual session default.
 SAMPLE_RATES = [44100, 48000, 96000]
@@ -20,10 +20,6 @@ QUALITY_PRESETS = {"draft": 4, "standard": 8, "high": 16, "max": 32}
 
 # Demucs' four-stem model. Names match what it writes to disk.
 STEM_NAMES = ("drums", "bass", "vocals", "other")
-
-
-from .config import output_dir_for
-from .power import keep_awake
 
 
 @dataclass
@@ -201,7 +197,8 @@ class MusicEngine:
         return max(candidates, key=lambda p: p.stat().st_mtime)
 
     @staticmethod
-    def _transcode(src: Path, dest: Path, sample_rate: int, bit_depth: int, fmt: str = "wav") -> None:
+    def _transcode(src: Path, dest: Path, sample_rate: int, bit_depth: int,
+                   fmt: str = "wav") -> None:
         import numpy as np
         import soundfile as sf
 
@@ -216,7 +213,8 @@ class MusicEngine:
         _write_audio(audio, sample_rate, dest, bit_depth, fmt)
 
     @staticmethod
-    def _separate(wav_path: str, sample_rate: int, bit_depth: int, fmt: str = "wav") -> dict[str, str]:
+    def _separate(wav_path: str, sample_rate: int, bit_depth: int,
+                  fmt: str = "wav") -> dict[str, str]:
         """Split into drums/bass/vocals/other so the result is actually mixable
         in Logic rather than a single frozen stereo file."""
         import subprocess

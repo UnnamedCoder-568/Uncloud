@@ -87,7 +87,8 @@ def save_character(
     slug = slug or _slugify(name)
     char = Character(
         slug=slug, name=name.strip() or slug, description=description.strip(),
-        tags=tags or [], created_at=(_read(slug) or Character(slug, name)).created_at or time.time(),
+        tags=tags or [],
+        created_at=(_read(slug) or Character(slug, name)).created_at or time.time(),
     )
     char.dir.mkdir(parents=True, exist_ok=True)
     (char.dir / "character.json").write_text(json.dumps({

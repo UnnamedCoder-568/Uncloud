@@ -70,7 +70,8 @@ _JEWELLERY_SHOTS = [
              "clean studio backdrop, soft directional lighting that flatters the metal."),
     ShotType("macro", "Macro detail",
              "Extreme macro close-up of the piece filling the frame, showing link shape, "
-             "clasp and surface finish, crisp reflections, shallow depth of field.", aspect="square"),
+             "clasp and surface finish, crisp reflections, shallow depth of "
+             "field.", aspect="square"),
     ShotType("flat_lay", "Flat lay",
              "Arrange the piece on a plain neutral surface photographed from directly above, "
              "gently coiled, evenly lit, no model.", aspect="square"),

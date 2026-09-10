@@ -116,8 +116,8 @@ def install_gate(gate: Gate | None) -> None:
 def current_gate() -> Gate:
     if _gate is None:
         raise Ungoverned(
-            "No approval gate is installed. Every tool call has to be decided "
-            "by one; a tool layer without it is not a smaller feature, it is an "
+            "No approval gate is installed. Every tool call has to be decided by one; a tool layer "
+            "without it is not a smaller feature, it is an "
             "ungoverned one.")
     return _gate
 
@@ -172,24 +172,28 @@ TOOL_SPECS = [
     {
         "id": "capability", "name": "Use a Capability",
         "description": "Do something through whichever connected integration "
-                       "can. Give a capability such as email.send, "
-                       "spreadsheet.read or code.issue.create, and the "
-                       "arguments that capability takes. Name a provider only "
-                       "if the user asked for a specific one.",
+                       "can. Give a capability such as email.send, spreadsheet.read or "
+                       "code.issue.create, and the arguments that capability takes. Name a "
+                       "provider only if the user asked for a specific one.",
         "args": ["capability", "arguments", "provider"],
     },
     {"id": "integrations", "name": "Integrations",
      "description": "List what this computer is connected to — document folders, "
-                    "accounts — and which actions each one offers. Use the action "
-                    "ids it returns to actually do something.",
+                    "accounts — and which actions each one offers. Use the action ids it returns "
+                    "to actually do something.",
      "args": []},
     {"id": "fs_read", "name": "Read File", "description": "Read a text file.", "args": ["path"]},
-    {"id": "fs_write", "name": "Write File", "description": "Write a text file.", "args": ["path", "content"]},
-    {"id": "fs_list", "name": "List Directory", "description": "List a directory's contents.", "args": ["path"]},
-    {"id": "http_fetch", "name": "Fetch URL", "description": "GET a URL and return the raw body. Prefer web_read for web pages.", "args": ["url"]},
+    {"id": "fs_write", "name": "Write File", "description": "Write a text file.",
+     "args": ["path", "content"]},
+    {"id": "fs_list", "name": "List Directory",
+     "description": "List a directory's contents.", "args": ["path"]},
+    {"id": "http_fetch", "name": "Fetch URL",
+     "description": "GET a URL and return the raw body. Prefer web_read for web pages.",
+     "args": ["url"]},
     {
         "id": "web_read", "name": "Read Web Page",
-        "description": "Fetch a web page and return its main content as clean readable text, without navigation or markup.",
+        "description": "Fetch a web page and return its main content as clean readable text, "
+                       "without navigation or markup.",
         "args": ["url"],
     },
     {
@@ -199,67 +203,95 @@ TOOL_SPECS = [
     },
     {
         "id": "video_info", "name": "Video Info",
-        "description": "Duration, resolution and frame rate of a video file. Check this before pulling frames so you know where to look.",
+        "description": "Duration, resolution and frame rate of a video file. Check this before "
+                       "pulling frames so you know where to look.",
         "args": ["path"],
     },
     {
         "id": "video_frames", "name": "Extract Video Frames",
-        "description": "Pull still frames from a video and save them as images, then use see_image to look at them. This is how to watch a video: sample frames across it, or densely around one moment. 'start' and 'duration' are seconds; 'count' is how many frames to take.",
+        "description":
+            "Pull still frames from a video and save them as images, then use see_image to look at "
+            "them. This is how to watch a video: sample frames across it, or densely around one "
+            "moment. 'start' and 'duration' are seconds; 'count' is how many frames to take.",
         "args": ["path", "start", "duration", "count"],
     },
     {
         "id": "skill_list", "name": "List Skills",
-        "description": "List the skills available — saved procedures for tasks this user does often. Check this first when a goal sounds like something that might already have a written method.",
+        "description":
+            "List the skills available — saved procedures for tasks this user does often. Check "
+            "this first when a goal sounds like something that might already have a "
+            "written method.",
         "args": [],
     },
     {
         "id": "skill_read", "name": "Read Skill",
-        "description": "Read a skill's full instructions by name, then follow them. Skills are guidance, not commands — carry them out with the normal tools.",
+        "description": "Read a skill's full instructions by name, then follow them. Skills are "
+                       "guidance, not commands — carry them out with the normal tools.",
         "args": ["name"],
     },
     {
         "id": "skill_save", "name": "Save Skill",
-        "description": "Write down a procedure as a reusable skill, when the user asks you to remember how something is done. Save instructions a person could follow, never code to run. 'tools' optionally lists the tool ids it expects to use, so it can be offered only where they are available.",
+        "description":
+            "Write down a procedure as a reusable skill, when the user asks you to remember how "
+            "something is done. Save instructions a person could follow, never code to run. "
+            "'tools' optionally lists the tool ids it expects to use, so it can be offered only "
+            "where they are available.",
         "args": ["name", "description", "instructions", "tools (optional)"],
     },
     {
         "id": "browser_console", "name": "Read Browser Console",
-        "description": "Read the browser console: JavaScript errors, warnings and logs from the current page. Use to debug a page that misbehaves. 'level' optionally filters to error, warning or log.",
+        "description":
+            "Read the browser console: JavaScript errors, warnings and logs from the current page. "
+            "Use to debug a page that misbehaves. 'level' optionally filters to error, warning or "
+            "log.",
         "args": ["level"],
     },
     {
         "id": "browser_network", "name": "Read Network Requests",
-        "description": "List the network requests the page made, with status codes and failures. 'contains' optionally filters by URL substring.",
+        "description": "List the network requests the page made, with status codes and failures. "
+                       "'contains' optionally filters by URL substring.",
         "args": ["contains"],
     },
     {
         "id": "browser_eval", "name": "Run JavaScript",
-        "description": "Run JavaScript in the current page and return the result, e.g. 'document.title' or 'document.querySelectorAll(\'a\').length'. Use for things the page does not show as text.",
+        "description":
+            "Run JavaScript in the current page and return the result, e.g. "
+            "'document.title' or 'document.querySelectorAll(\'a\').length'. Use for "
+            "things the page does not show as text.",
         "args": ["code"],
     },
     {
         "id": "browser_move", "name": "Move Pointer",
-        "description": "Move the browser's pointer to pixel coordinates. This is the agent's own pointer inside the page, not the machine's mouse, so it never fights the user for control. Pair with screenshot_page and see_image to work visually.",
+        "description":
+            "Move the browser's pointer to pixel coordinates. This is the agent's own pointer "
+            "inside the page, not the machine's mouse, so it never fights the user for control. "
+            "Pair with screenshot_page and see_image to work visually.",
         "args": ["x", "y"],
     },
     {
         "id": "browser_click_at", "name": "Click At Coordinates",
-        "description": "Click at pixel coordinates in the page. Use when an element has no usable text or selector — read a screenshot first to find the position. Prefer browser_click when the target has a visible label.",
+        "description":
+            "Click at pixel coordinates in the page. Use when an element has no usable text or "
+            "selector — read a screenshot first to find the position. Prefer browser_click when "
+            "the target has a visible label.",
         "args": ["x", "y", "button", "clicks"],
     },
     {
         "id": "browser_drag", "name": "Drag Pointer",
-        "description": "Press at one point, drag to another and release. For sliders, canvases and drag-and-drop.",
+        "description": "Press at one point, drag to another and release. For sliders, canvases and "
+                       "drag-and-drop.",
         "args": ["x1", "y1", "x2", "y2"],
     },
     {
         "id": "browser_scroll_at", "name": "Scroll At",
-        "description": "Scroll the page by a pixel amount at a position. Positive dy scrolls down. Use for panes that scroll independently.",
+        "description": "Scroll the page by a pixel amount at a position. Positive dy scrolls down. "
+                       "Use for panes that scroll independently.",
         "args": ["x", "y", "dy"],
     },
     {
         "id": "fs_edit", "name": "Edit File",
-        "description": "Replace an exact string in a file. Use to change part of a file without rewriting all of it.",
+        "description": "Replace an exact string in a file. Use to change part of a file without "
+                       "rewriting all of it.",
         "args": ["path", "old", "new"],
     },
     {
@@ -269,22 +301,25 @@ TOOL_SPECS = [
     },
     {
         "id": "fs_grep", "name": "Search In Files",
-        "description": "Search file contents for a regular expression and return matching lines with their file and line number.",
+        "description": "Search file contents for a regular expression and return matching lines "
+                       "with their file and line number.",
         "args": ["pattern", "path (optional)", "glob (optional)"],
     },
     {
         "id": "app_open", "name": "Open On This Mac",
         "description": (
-            "Open a URL or a file in the user's own default browser or app, or launch "
-            "an application by name. Use this when asked to open something on their "
-            "machine — Safari, Finder, a document. Different from browser_open, which "
-            "drives a separate automated browser the user cannot see."
+            "Open a URL or a file in the user's own default browser or app, or launch an "
+            "application by name. Use this when asked to open something on their machine — Safari, "
+            "Finder, a document. Different from browser_open, which drives a separate automated "
+            "browser the user cannot see."
         ),
         "args": ["target", "app"],
     },
     {
         "id": "browser_open", "name": "Open In Browser",
-        "description": "Open a URL in a real browser session and return the page's visible text. Use instead of web_read when the page needs JavaScript, or when you intend to click or type next.",
+        "description":
+            "Open a URL in a real browser session and return the page's visible text. Use instead "
+            "of web_read when the page needs JavaScript, or when you intend to click or type next.",
         "args": ["url"],
     },
     {
@@ -294,17 +329,21 @@ TOOL_SPECS = [
     },
     {
         "id": "browser_links", "name": "List Page Links",
-        "description": "List the visible links on the current page with their URLs, to choose where to go next.",
+        "description": "List the visible links on the current page with their URLs, to choose "
+                       "where to go next.",
         "args": [],
     },
     {
         "id": "browser_click", "name": "Click In Browser",
-        "description": "Click something on the current page. 'target' can be visible text (e.g. 'Sign in') or a CSS selector.",
+        "description": "Click something on the current page. 'target' can be visible text (e.g. "
+                       "'Sign in') or a CSS selector.",
         "args": ["target"],
     },
     {
         "id": "browser_type", "name": "Type In Browser",
-        "description": "Type into a field on the current page. 'target' can be the field's label, placeholder or a CSS selector. Set submit to true to press Enter afterwards.",
+        "description":
+            "Type into a field on the current page. 'target' can be the field's label, placeholder "
+            "or a CSS selector. Set submit to true to press Enter afterwards.",
         "args": ["target", "text", "submit (optional)"],
     },
     {
@@ -314,22 +353,26 @@ TOOL_SPECS = [
     },
     {
         "id": "plan_set", "name": "Write Plan",
-        "description": "Write down the plan before starting work: the overall goal and an ordered list of steps. Do this first on any task with more than two steps.",
+        "description": "Write down the plan before starting work: the overall goal and an ordered "
+                       "list of steps. Do this first on any task with more than two steps.",
         "args": ["goal", "steps (list of strings)"],
     },
     {
         "id": "plan_show", "name": "Check Plan",
-        "description": "Re-read the saved plan and see which steps are done, in progress, or still outstanding. Use this whenever you lose track of where you are.",
+        "description": "Re-read the saved plan and see which steps are done, in progress, or still "
+                       "outstanding. Use this whenever you lose track of where you are.",
         "args": [],
     },
     {
         "id": "plan_update", "name": "Update Plan",
-        "description": "Mark a step's status: todo, doing, done or blocked. Add a note explaining what happened. Do this after finishing each step.",
+        "description": "Mark a step's status: todo, doing, done or blocked. Add a note explaining "
+                       "what happened. Do this after finishing each step.",
         "args": ["n", "status", "note (optional)"],
     },
     {
         "id": "note_save", "name": "Remember Fact",
-        "description": "Save a fact worth not re-deriving later — a file path, an ID, a finding. Give it a short key.",
+        "description": "Save a fact worth not re-deriving later — a file path, an ID, a finding. "
+                       "Give it a short key.",
         "args": ["key", "value"],
     },
     {
@@ -339,23 +382,27 @@ TOOL_SPECS = [
     },
     {
         "id": "see_image", "name": "Look At Image",
-        "description": "Look at an image file and answer a question about it. Works on screenshots, photos and generated images. Requires a vision-capable model to be loaded.",
+        "description":
+            "Look at an image file and answer a question about it. Works on screenshots, photos "
+            "and generated images. Requires a vision-capable model to be loaded.",
         "args": ["path", "question (optional)"],
     },
     {
         "id": "screen_capture", "name": "Capture Screen",
-        "description": "Take a screenshot of the whole screen and return its path. Pair with see_image to look at it.",
+        "description": "Take a screenshot of the whole screen and return its path. Pair with "
+                       "see_image to look at it.",
         "args": [],
     },
     {
         "id": "generate_image", "name": "Generate Image",
         "description": (
-            "Invoke a locally installed image diffusion model to generate a picture. "
-            "'model' is optional — a name or catalog id (e.g. 'krea', 'pony'); omit to use "
-            "whichever image model is installed. Saves a PNG and returns its path."
+            "Invoke a locally installed image diffusion model to generate a picture. 'model' is "
+            "optional — a name or catalog id (e.g. 'krea', 'pony'); omit to use whichever image "
+            "model is installed. Saves a PNG and returns its path."
         ),
         "args": ["prompt", "model (optional)", "negative_prompt (optional)", "steps (optional)",
-                  "guidance (optional)", "width (optional)", "height (optional)", "seed (optional)"],
+                  "guidance (optional)", "width (optional)", "height (optional)",
+                  "seed (optional)"],
     },
 ]
 
@@ -368,9 +415,11 @@ def _resolve_image_model(name: str | None):
         return models[0]
     needle = name.strip().lower()
     for m in models:
-        if needle == m.id.lower() or needle == (m.catalog_id or "").lower() or needle in m.name.lower():
+        if (needle == m.id.lower() or needle == (m.catalog_id or "").lower()
+                or needle in m.name.lower()):
             return m
-    raise RuntimeError(f"No installed image model matches '{name}'. Installed: {', '.join(m.name for m in models)}")
+    installed = ", ".join(m.name for m in models)
+    raise RuntimeError(f"No installed image model matches '{name}'. Installed: {installed}")
 
 
 def _resolve_path(raw: str) -> Path:
@@ -378,9 +427,10 @@ def _resolve_path(raw: str) -> Path:
     if not p.is_absolute():
         p = WORKSPACE_DIR / p
     p = p.resolve()
-    if not settings.agent_device_access:
-        if WORKSPACE_DIR.resolve() not in p.parents and p != WORKSPACE_DIR.resolve():
-            raise PermissionError(
+    if (not settings.agent_device_access
+            and WORKSPACE_DIR.resolve() not in p.parents
+            and p != WORKSPACE_DIR.resolve()):
+        raise PermissionError(
                 f"'{raw}' is outside the agent workspace. Enable full device access in "
                 "Settings to let Agent Mode touch the rest of the filesystem."
             )
@@ -529,13 +579,15 @@ async def run_tool(tool_id: str, args: dict[str, Any], *, origin: str = "") -> s
         if tool_id == "plan_set":
             steps = args.get("steps", [])
             if isinstance(steps, str):  # small models often send a newline/comma list
-                steps = [s.strip("-• ").strip() for s in re.split(r"[\n;]|(?<=[a-z])\s*,\s*(?=[A-Z])", steps) if s.strip()]
+                parts = re.split(r"[\n;]|(?<=[a-z])\s*,\s*(?=[A-Z])", steps)
+                steps = [s.strip("-• ").strip() for s in parts if s.strip()]
             return memory.plan_set(args.get("goal", ""), list(steps))
         if tool_id == "plan_show":
             return memory.plan_show()
         if tool_id == "plan_update":
             return memory.plan_update(
-                int(args.get("n", 0)), str(args.get("status", "")).strip().lower(), args.get("note", ""),
+                int(args.get("n", 0)), str(args.get("status", "")).strip().lower(),
+                args.get("note", ""),
             )
         if tool_id == "note_save":
             return memory.note_save(args.get("key", ""), args.get("value", ""))
@@ -579,8 +631,8 @@ async def _see_image(path: str, question: str) -> str:
         raise RuntimeError("No model is loaded. Start one from the Chat tab first.")
     if not engine_manager.supports_vision:
         raise RuntimeError(
-            "The loaded model is text-only and cannot see images. Load a vision-capable "
-            "model (e.g. Gemma 4 26B-A4B or Gemma 4 12B) from the Models tab."
+            "The loaded model is text-only and cannot see images. Load a vision-capable model "
+            "(e.g. Gemma 4 26B-A4B or Gemma 4 12B) from the Models tab."
         )
 
     p = _resolve_path(path)
@@ -599,7 +651,8 @@ async def _see_image(path: str, question: str) -> str:
                     "role": "user",
                     "content": [
                         {"type": "text", "text": question or "Describe this image in detail."},
-                        {"type": "image_url", "image_url": {"url": f"data:image/{mime};base64,{b64}"}},
+                        {"type": "image_url",
+                         "image_url": {"url": f"data:image/{mime};base64,{b64}"}},
                     ],
                 }],
                 "max_tokens": 1024,
@@ -635,9 +688,9 @@ async def _shell(command: str) -> str:
     )
     try:
         stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=120)
-    except asyncio.TimeoutError:
+    except TimeoutError as exc:
         proc.kill()
-        raise RuntimeError("Command timed out after 120s")
+        raise RuntimeError("Command timed out after 120s") from exc
     out = stdout.decode(errors="ignore")[-8000:]
     if proc.returncode != 0:
         raise RuntimeError(f"Exit {proc.returncode}: {out}")
@@ -680,7 +733,8 @@ async def _web_read(url: str) -> str:
     import trafilatura
 
     async with httpx.AsyncClient(follow_redirects=True, timeout=25) as client:
-        resp = await client.get(url, headers={"User-Agent": "Mozilla/5.0 (compatible; Uncloud/0.1)"})
+        resp = await client.get(
+            url, headers={"User-Agent": "Mozilla/5.0 (compatible; Uncloud/0.1)"})
         resp.raise_for_status()
         html = resp.text
 
@@ -766,7 +820,7 @@ def _fs_grep(pattern: str, path: str, glob: str) -> str:
     try:
         rx = re.compile(pattern)
     except re.error as exc:
-        raise ValueError(f"Invalid regular expression: {exc}")
+        raise ValueError(f"Invalid regular expression: {exc}") from exc
 
     targets = [root] if root.is_file() else sorted(root.rglob(glob))
     out: list[str] = []
@@ -1003,7 +1057,8 @@ async def _video_info(path: str) -> str:
         if st.get("codec_type") == "video":
             rate = st.get("r_frame_rate", "0/1")
             try:
-                num, den = rate.split("/"); fps = float(num) / float(den or 1)
+                num, den = rate.split("/")
+                fps = float(num) / float(den or 1)
             except (ValueError, ZeroDivisionError):
                 fps = 0.0
             lines.append(f"video: {st.get('width')}x{st.get('height')} @ {fps:.0f} fps")

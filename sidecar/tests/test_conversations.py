@@ -8,7 +8,6 @@ different key, or interrupted halfway through.
 
 from __future__ import annotations
 
-import json
 import secrets
 
 import pytest

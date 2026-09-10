@@ -1,12 +1,9 @@
 from __future__ import annotations
 
 import uuid
-from pathlib import Path
 from typing import Any
 
 from .config import output_dir_for
-
-
 
 _whisper: dict[str, Any] = {}
 _kokoro: dict[str, Any] = {}
@@ -49,9 +46,8 @@ def _get_kokoro_pipeline():
     if "pipeline" in _kokoro:
         return _kokoro["pipeline"]
 
-    from kokoro import KPipeline
-
     import huggingface_hub.constants as hub
+    from kokoro import KPipeline
 
     was_offline = hub.HF_HUB_OFFLINE
     hub.HF_HUB_OFFLINE = True

@@ -10,8 +10,6 @@ for approval of an action.
 from __future__ import annotations
 
 import ast
-import hashlib
-import sys
 from pathlib import Path
 
 import pytest

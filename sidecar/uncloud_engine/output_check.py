@@ -68,7 +68,8 @@ def verify_image(path: str | Path, *, what: str = "image") -> dict:
     except Exception as exc:  # noqa: BLE001 - unreadable is itself a failure
         raise DegenerateOutput(f"The {what} file could not be read back: {exc}") from exc
 
-    if s["stddev"] < MIN_STDDEV or s["distinct"] < MIN_DISTINCT or s["top_share"] > MAX_SINGLE_COLOUR_SHARE:
+    if (s["stddev"] < MIN_STDDEV or s["distinct"] < MIN_DISTINCT
+            or s["top_share"] > MAX_SINGLE_COLOUR_SHARE):
         raise DegenerateOutput(
             f"The model produced a blank {what} (variation {s['stddev']:.1f}, "
             f"{s['distinct']} distinct tones, {s['top_share']*100:.1f}% one colour). "

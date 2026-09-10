@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -7,7 +8,8 @@ from pathlib import Path
 from .catalog import get_catalog
 from .flux2_profile import read_profile
 
-DIFFUSION_HINTS = ("qwen-image", "hidream", "flux", "sdxl", "sd3", "stable-diffusion", "video", "wan2", "cogvideo", "ltx", "krea", "klein", "pony")
+DIFFUSION_HINTS = ("qwen-image", "hidream", "flux", "sdxl", "sd3", "stable-diffusion",
+                   "video", "wan2", "cogvideo", "ltx", "krea", "klein", "pony")
 STT_HINTS = ("whisper",)
 TTS_HINTS = ("kokoro", "tts", "xtts", "piper", "bark")
 VOICE_HINTS = STT_HINTS + TTS_HINTS
@@ -73,10 +75,8 @@ def _dir_size_gb(path: Path) -> float:
             continue
         seen.add(key)
         for name in files:
-            try:
+            with contextlib.suppress(OSError):
                 total += os.stat(os.path.join(root, name)).st_size
-            except OSError:
-                pass
     return total / (1024 ** 3)
 
 
@@ -474,8 +474,11 @@ def scan_library(models_dir: Path) -> list[LocalModel]:
             is_diffusers_pipeline = model_index_json.exists() and has_safetensors
             is_mlx_model = config_json.exists() and has_safetensors and not is_diffusers_pipeline
 
-            if is_mlx_model and child.name.lower() in ("text_encoder", "text_encoder_2", "vae", "tokenizer", "scheduler", "transformer"):
-                is_mlx_model = False  # a bare component folder inside something else, not a model of its own
+            if is_mlx_model and child.name.lower() in (
+                    "text_encoder", "text_encoder_2", "vae", "tokenizer", "scheduler",
+                    "transformer"):
+                # a bare component folder inside something else, not a model of its own
+                is_mlx_model = False
 
             if not (is_diffusers_pipeline or is_mlx_model):
                 stack.append(child)  # not a model root itself — keep looking inside it
@@ -569,7 +572,8 @@ def _guess_arch(lowered_name: str) -> str:
 def _guess_role(lowered_name: str) -> str:
     if "vae" in lowered_name:
         return "vae"
-    if any(h in lowered_name for h in ("text_encoder", "text-encoder", "qwen", "clip", "t5", "encoder")):
+    if any(h in lowered_name for h in
+           ("text_encoder", "text-encoder", "qwen", "clip", "t5", "encoder")):
         return "text_encoder"
     return "diffusion"
 

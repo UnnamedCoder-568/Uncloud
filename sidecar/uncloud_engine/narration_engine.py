@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import shutil
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
-
+from .config import output_dir_for
+from .power import keep_awake
 
 VOICES_DIR = Path.home() / ".uncloud" / "voices"
 VOICES_DIR.mkdir(parents=True, exist_ok=True)
@@ -108,10 +110,6 @@ def install_engine(name: str, on_line=None) -> None:
         raise RuntimeError(
             f"{spec['label']} finished installing but its interpreter is still "
             f"not at {spec['python']}.")
-
-
-from .config import output_dir_for
-from .power import keep_awake
 
 
 #: What each engine's environment must be holding. VibeVoice's streaming
@@ -406,13 +404,12 @@ class NarrationEngine:
 
         for line in (proc.stdout or "").splitlines():
             if line.startswith("DURATION::"):
-                try:
+                with contextlib.suppress(ValueError):
                     job.duration_s = float(line.split("DURATION::", 1)[1])
-                except ValueError:
-                    pass
 
         if not dest.exists():
-            raise RuntimeError(f"VibeVoice produced no audio (ran {time.monotonic() - started:.0f}s)")
+            raise RuntimeError(
+                f"VibeVoice produced no audio (ran {time.monotonic() - started:.0f}s)")
         job.stage = "writing wav"
         return str(dest)
 

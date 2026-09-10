@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import re
 import secrets
@@ -10,35 +11,46 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import (
+    Depends,
+    FastAPI,
+    File,
+    Form,
+    Header,
+    HTTPException,
+    Query,
+    UploadFile,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
+from . import characters, product_studio, voice_engine
+from . import conversations as conversations_store
+from . import music_engine as music_engine_mod
+from . import narration_engine as narration_engine_mod
+from . import profiles as uncloud_profiles
+from . import video_engine as video_engine_mod
 from .agent import approval as agent_approval
 from .agent import tools as agent_tools
 from .agent.graph import ExecutionGraph
 from .agent.orchestrator import orchestrator
 from .agent.tools import TOOL_SPECS
-from . import profiles as uncloud_profiles
-from .core import AuditLog, Denied, Gate, Mode, Risk, dump_policy, load_policy
-from .core.integrations import credentials as integration_credentials
-from .core.integrations import registry as integration_registry
-from .core import Request as PermissionRequest
 from .catalog import get_catalog, get_entry
 from .chat import build_chat_payload
-from . import conversations as conversations_store
 from .config import CONFIG_DIR, settings
+from .core import AuditLog, Denied, Gate, Mode, Risk, dump_policy, load_policy
+from .core import Request as PermissionRequest
+from .core.integrations import credentials as integration_credentials
+from .core.integrations import registry as integration_registry
 from .downloader import download_manager
 from .engines import engine_manager
 from .image_engine import image_engine
-from .library import invalidate_library_cache, scan_library_cached, scan_components
-from . import characters, product_studio, voice_engine
-from . import music_engine as music_engine_mod
+from .library import invalidate_library_cache, scan_components, scan_library_cached
 from .music_engine import music_engine
-from . import narration_engine as narration_engine_mod
 from .narration_engine import narration_engine
-from . import video_engine as video_engine_mod
 
 app = FastAPI(title="Uncloud Engine")
 app.add_middleware(
@@ -186,10 +198,8 @@ def _install_signal_handlers() -> None:
         raise SystemExit(0)
 
     for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
-        try:
+        with contextlib.suppress(ValueError, OSError):
             signal.signal(sig, _handle)
-        except (ValueError, OSError):
-            pass
 
 
 _install_signal_handlers()
@@ -279,8 +289,7 @@ def system_budget(frames: int = 0, width: int = 0, height: int = 0,
     job is refused with a message, but a discrete GPU can take the machine down
     with it.
     """
-    from .budget import (estimate_video_gb, memory_budget, resident_weights_gb,
-                         video_capability)
+    from .budget import estimate_video_gb, memory_budget, resident_weights_gb, video_capability
 
     out: dict = {"budget": memory_budget()}
     # Whether this machine can run video at all, independent of the job asked
@@ -1024,8 +1033,7 @@ def integrations_disconnect(body: ConnectBody) -> dict:
     provider was unreachable, and left the connection looking live, would be
     worse than one that tidied up locally.
     """
-    from .core.auth import ProviderConfig, disconnect
-    from .core.auth import forget_provider_config
+    from .core.auth import ProviderConfig, disconnect, forget_provider_config
     from .core.integrations import credentials as broker
     from .core.integrations import get
 
@@ -1375,7 +1383,7 @@ async def start_download(body: DownloadBody) -> dict:
     try:
         state = download_manager.start(body.catalog_id)
     except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     return state.to_dict()
 
 
@@ -1401,7 +1409,7 @@ async def start_engine(body: EngineStartBody) -> dict:
     try:
         active = await engine_manager.start(body.model_path, body.engine)
     except RuntimeError as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
     return {"running": True, "port": active.port, "engine": active.engine}
 
 
@@ -1490,7 +1498,8 @@ async def generate_image(body: ImageGenerateBody) -> dict:
     entry = get_entry(body.catalog_id) if body.catalog_id else None
     job = image_engine.start(
         body.model_path, body.engine, body.prompt, negative_prompt=body.negative_prompt,
-        steps=body.steps, guidance=body.guidance, width=body.width, height=body.height, seed=body.seed,
+        steps=body.steps, guidance=body.guidance, width=body.width,
+        height=body.height, seed=body.seed,
         mflux_cli=body.mflux_cli or (entry.mflux_cli if entry else "mflux-generate"),
         mflux_base=body.mflux_base or (entry.mflux_base if entry else None),
         lora_paths=body.lora_paths, lora_scales=body.lora_scales,
@@ -1578,9 +1587,10 @@ async def product_generate(body: ProductGenerateBody) -> list[dict]:
                 extra=body.extra,
             )
         except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         shot = product_studio.get_shot(body.category, shot_id)
-        width, height = product_studio.ASPECT_SIZES.get(shot.aspect if shot else "portrait", (768, 1024))
+        width, height = product_studio.ASPECT_SIZES.get(
+            shot.aspect if shot else "portrait", (768, 1024))
         job = image_engine.start_edit(
             body.model_path, instruction, body.reference_path,
             steps=body.steps, guidance=body.guidance,
@@ -1612,7 +1622,7 @@ def save_char(body: CharacterBody) -> dict:
             body.name, body.description, body.tags, body.reference_path, body.slug,
         )
     except FileNotFoundError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return char.to_dict()
 
 
@@ -1646,7 +1656,7 @@ def export_images(body: ExportBody) -> dict:
     try:
         dest.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
-        raise HTTPException(status_code=400, detail=f"Cannot write to {dest}: {exc}")
+        raise HTTPException(status_code=400, detail=f"Cannot write to {dest}: {exc}") from exc
 
     written: list[str] = []
     for i, job_id in enumerate(body.job_ids, 1):
@@ -1779,9 +1789,13 @@ class MusicGenerateBody(BaseModel):
 @app.post("/api/music/generate", dependencies=[Depends(require_token)])
 async def generate_music_track(body: MusicGenerateBody) -> dict:
     if body.sample_rate not in music_engine_mod.SAMPLE_RATES:
-        raise HTTPException(status_code=400, detail=f"sample_rate must be one of {music_engine_mod.SAMPLE_RATES}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"sample_rate must be one of {music_engine_mod.SAMPLE_RATES}")
     if body.bit_depth not in music_engine_mod.BIT_DEPTHS:
-        raise HTTPException(status_code=400, detail=f"bit_depth must be one of {music_engine_mod.BIT_DEPTHS}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"bit_depth must be one of {music_engine_mod.BIT_DEPTHS}")
     job = music_engine.start(
         body.model_dir, body.prompt, lyrics=body.lyrics, instrumental=body.instrumental,
         duration=body.duration, bpm=body.bpm, keyscale=body.keyscale, steps=body.steps,
@@ -1929,7 +1943,7 @@ def save_narration_voice(body: VoiceBody) -> dict:
     try:
         voice = narration_engine_mod.save_voice(body.name, body.sample_path, body.notes)
     except FileNotFoundError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return voice.to_dict()
 
 
@@ -1980,7 +1994,7 @@ async def speak_text(body: SpeakBody) -> FileResponse:
     try:
         out_path = await asyncio.to_thread(voice_engine.speak, body.text, body.voice, body.speed)
     except Exception as exc:  # noqa: BLE001 - surface synthesis failures (e.g. missing espeak-ng)
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
     return FileResponse(out_path, media_type="audio/wav")
 
 
@@ -2136,7 +2150,12 @@ def read_conversation(conversation_id: str) -> dict:
     try:
         conversation = conversations_store.load(conversation_id)
     except ValueError:
-        raise HTTPException(status_code=400, detail="Not a conversation id")
+        # `from None`, unlike everywhere else here: a malformed id is a
+        # validation failure whose original exception says nothing the message
+        # does not, and chaining it puts a parser traceback in the log for
+        # somebody mistyping a URL.
+        raise HTTPException(status_code=400,
+                            detail="Not a conversation id") from None
     except Exception as exc:  # noqa: BLE001 - a damaged file is not a crash
         raise HTTPException(
             status_code=422,
@@ -2158,7 +2177,12 @@ def write_conversation(conversation_id: str, body: ConversationBody) -> dict:
     try:
         existing = conversations_store.load(conversation_id)
     except ValueError:
-        raise HTTPException(status_code=400, detail="Not a conversation id")
+        # `from None`, unlike everywhere else here: a malformed id is a
+        # validation failure whose original exception says nothing the message
+        # does not, and chaining it puts a parser traceback in the log for
+        # somebody mistyping a URL.
+        raise HTTPException(status_code=400,
+                            detail="Not a conversation id") from None
     except Exception:  # noqa: BLE001 - overwrite a file we cannot read
         existing = None
 
@@ -2181,7 +2205,12 @@ def remove_conversation(conversation_id: str) -> dict:
     try:
         return {"deleted": conversations_store.delete(conversation_id)}
     except ValueError:
-        raise HTTPException(status_code=400, detail="Not a conversation id")
+        # `from None`, unlike everywhere else here: a malformed id is a
+        # validation failure whose original exception says nothing the message
+        # does not, and chaining it puts a parser traceback in the log for
+        # somebody mistyping a URL.
+        raise HTTPException(status_code=400,
+                            detail="Not a conversation id") from None
 
 
 # ------------------------------------------------------------------- agent
@@ -2239,10 +2268,8 @@ async def agent_ws(websocket: WebSocket) -> None:
         # Some exceptions (httpx timeouts especially) stringify to nothing, which
         # would surface in the UI as a blank error. Always send something useful.
         message = str(exc).strip() or f"{type(exc).__name__} (no further detail)"
-        try:
+        with contextlib.suppress(Exception):
             await websocket.send_json({"type": "error", "message": message})
-        except Exception:  # noqa: BLE001
-            pass
 
 
 def main() -> None:
