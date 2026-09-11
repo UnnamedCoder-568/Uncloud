@@ -12,12 +12,12 @@ import type { ReactNode } from 'react';
 import Wordmark from './Wordmark';
 import {
   MessageSquare, Boxes, Workflow, ImageIcon, Clapperboard, Mic, Music,
-  Settings, HelpCircle, FolderOpen, GraduationCap, ChefHat, Gauge,
+  Settings, HelpCircle, FolderOpen, ChefHat,
 } from 'lucide-react';
 
 export type View =
   | 'chat' | 'models' | 'chisel' | 'image' | 'video' | 'music' | 'voice'
-  | 'outputs' | 'training' | 'quantize' | 'recipes' | 'guide' | 'settings';
+  | 'outputs' | 'recipes' | 'guide' | 'settings';
 
 type Icon = React.ComponentType<{ size?: number; strokeWidth?: number }>;
 
@@ -27,11 +27,8 @@ const GROUPS: { label?: string; items: { id: View; label: string; icon: Icon }[]
       { id: 'chat', label: 'Chat', icon: MessageSquare },
       { id: 'models', label: 'Models', icon: Boxes },
       { id: 'chisel', label: 'Chisel', icon: Workflow },
-      { id: 'training', label: 'Training', icon: GraduationCap },
-      // Beside Training deliberately: both are slow, deliberate operations on
-      // a model, decided by a person. Neither belongs next to a download
-      // button, which is where this one used to live.
-      { id: 'quantize', label: 'Quantize', icon: Gauge },
+      // Training and quantising are not here: they are things you do TO a
+      // model, so they are tabs inside Models. The rail lists subjects.
       { id: 'recipes', label: 'Recipes', icon: ChefHat },
     ],
   },
