@@ -124,10 +124,11 @@ def test_a_category_that_needs_asking_raises_when_nothing_can_ask(gate) -> None:
         asyncio.run(tools.run_tool("web_search", {"query": "anything"}))
 
 
-def test_reading_does_not_interrupt(gate, tmp_path) -> None:
+def test_reading_does_not_interrupt(gate, tmp_path, monkeypatch) -> None:
     """Reading is allowed by default on purpose: a tool that cannot look at
     anything cannot help, and prompting for every read teaches people to click
     through the prompts that matter."""
+    monkeypatch.setattr(tools, "WORKSPACE_DIR", tmp_path)
     target = tmp_path / "note.txt"
     target.write_text("hello")
     assert "hello" in asyncio.run(tools.run_tool("fs_read", {"path": str(target)}))
