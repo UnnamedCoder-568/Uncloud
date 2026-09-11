@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import os
 import shutil
 import time
 import uuid
@@ -26,27 +27,40 @@ QUALITY_PRESETS = {"fast": 5, "balanced": 20, "high": 40, "max": 64}
 # in its own environment — the same isolation used for ACE-Step.
 _SIDE = Path(__file__).resolve().parent.parent
 
+
+def _venv_python(venv: Path, *, windows: bool | None = None) -> Path:
+    """Return the interpreter uv creates on either desktop platform."""
+    if windows is None:
+        windows = os.name == "nt"
+    return venv / ("Scripts/python.exe" if windows else "bin/python")
+
+
+_REALTIME_VENV = _SIDE / ".venv-vibevoice"
+_QUALITY_VENV = _SIDE / ".venv-vibevoice-hq"
+
 # Two engines, because the two checkpoints need incompatible package versions.
 #   realtime — Microsoft's current package, streaming 0.5B. Fast, slightly compressed.
 #   quality  — community fork, full 1.5B with the semantic tokenizer. Fuller, slower.
 ENGINES = {
     "realtime": {
         "label": "Realtime (0.5B)",
-        "python": _SIDE / ".venv-vibevoice" / "bin" / "python",
+        "venv": _REALTIME_VENV,
+        "python": _venv_python(_REALTIME_VENV),
         "runner": _SIDE / "scripts" / "vibevoice_runner.py",
         "voice_kind": "cache",   # prefilled .pt
         "note": "Faster than real time. Slightly compressed sound.",
     },
     "quality": {
         "label": "Quality (1.5B)",
-        "python": _SIDE / ".venv-vibevoice-hq" / "bin" / "python",
+        "venv": _QUALITY_VENV,
+        "python": _venv_python(_QUALITY_VENV),
         "runner": _SIDE / "scripts" / "vibevoice_hq_runner.py",
         "voice_kind": "audio",   # raw reference recording
         "note": "Fuller, more natural. Noticeably slower.",
     },
 }
 
-VIBEVOICE_VENV = ENGINES["realtime"]["python"].parent.parent
+VIBEVOICE_VENV = _REALTIME_VENV
 
 #: What each engine needs installed into its own environment.
 #:
@@ -81,9 +95,14 @@ def install_engine(name: str, on_line=None) -> None:
     if spec is None:
         raise ValueError(f"No narration engine called {name!r}")
     requirement = REQUIREMENTS[name]
-    venv = Path(spec["python"]).parent.parent
+    venv = Path(spec["venv"])
 
-    uv = shutil.which("uv") or "uv"
+    uv = os.environ.get("UNCLOUD_UV") or shutil.which("uv")
+    if not uv:
+        raise RuntimeError(
+            "Uncloud could not find its bundled uv runtime. Reinstall the app "
+            "and try again."
+        )
     steps = [
         [uv, "venv", str(venv), "--python", "3.12"],
         [uv, "pip", "install", "--python", str(venv), requirement],

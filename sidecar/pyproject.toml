@@ -1,7 +1,7 @@
 [project]
-name = "astro-engine"
-version = "0.1.0"
-description = "Add your description here"
+name = "uncloud-engine"
+version = "0.3.0rc1"
+description = "Local inference engine for the Uncloud desktop application"
 readme = "README.md"
 # Bounded, not just floored. Unbounded, uv on a clean machine picks the newest
 # Python it can find, and several dependencies here — curated-tokenizers among
@@ -42,6 +42,12 @@ dependencies = [
     "trafilatura>=2.2.0",
     "uvicorn[standard]>=0.52.3",
     "websockets>=17.0.1",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4,<10",
+    "ruff>=0.13,<1",
 ]
 
 # Matched to Uncloud Studio's configuration deliberately. Core is byte-identical

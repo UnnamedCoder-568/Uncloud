@@ -60,7 +60,7 @@ def _modules() -> list[pathlib.Path]:
 
 @pytest.mark.parametrize("path", _modules(), ids=lambda p: p.name)
 def test_module_defines_every_name_it_loads(path: pathlib.Path) -> None:
-    tree = ast.parse(path.read_text())
+    tree = ast.parse(path.read_text(encoding="utf-8"))
     bound = _bound_names(tree)
     unresolved = sorted({
         node.id for node in ast.walk(tree)

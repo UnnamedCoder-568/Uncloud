@@ -1,50 +1,153 @@
-name: Build
+name: Test and release
 
-# Tauri cannot cross-compile: a Windows .exe needs the MSVC toolchain and a Linux
-# build needs GTK/webkit2gtk, so each artifact is built on its own runner. Pushing
-# a tag (v0.1.0) produces a draft release with all three.
 on:
-  workflow_dispatch:
+  pull_request:
   push:
+    branches: [main]
     tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: uncloud-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+env:
+  UV_VERSION: '0.12.13'
+  PYTHON_VERSION: '3.12'
+  NODE_VERSION: '22'
 
 jobs:
-  build:
-    # tauri-action creates the draft release and uploads the installers to it.
-    # GitHub defaults the Actions token to read-only, which fails at that step.
-    permissions:
-      contents: write
+  quality:
+    name: Source tests
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7.0.1
 
+      - name: Install Linux build libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            build-essential \
+            libssl-dev \
+            libxdo-dev \
+            libgtk-3-dev \
+            libsndfile1
+
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: uncloud/package-lock.json
+
+      - name: Test frontend
+        working-directory: uncloud
+        run: |
+          npm ci
+          npm test
+          npm run lint
+          npm run build
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - uses: astral-sh/setup-uv@v10.1.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+
+      - name: Verify engine lock and release manifest
+        run: |
+          uv lock --check --directory sidecar
+          python scripts/verify_release.py --tag "${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}"
+
+      # Unit tests do not load model weights. Release jobs separately install
+      # the complete locked engine on Windows and Linux before publication.
+      - name: Test Python engine
+        env:
+          PYTHONPATH: sidecar
+        run: |
+          uv run --no-project --python 3.12 \
+            --with 'pytest>=8.4,<10' \
+            --with 'cryptography>=44' \
+            --with 'fastapi>=0.141.1' \
+            --with 'httpx>=0.28.1' \
+            --with 'keyring>=25.6' \
+            --with pillow \
+            --with 'pydantic>=2.13.4' \
+            --with 'python-multipart>=0.0.32' \
+            --with 'soundfile>=0.14.0' \
+            --with 'uvicorn>=0.52.3' \
+            --with 'websockets>=17.0.1' \
+            pytest -q sidecar/tests
+          uv run --no-project --python 3.12 --with 'ruff>=0.13,<1' \
+            ruff check sidecar/uncloud_engine sidecar/tests scripts
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu
+          components: rustfmt
+
+      - uses: swatinem/rust-cache@v2.9.2
+        with:
+          workspaces: uncloud/src-tauri
+
+      - name: Stage Linux runtime for desktop tests
+        run: bash uncloud/scripts/stage_uv.sh x86_64-unknown-linux-gnu
+
+      - name: Test desktop shell
+        working-directory: uncloud/src-tauri
+        run: |
+          cargo fmt --check
+          cargo test --locked --target x86_64-unknown-linux-gnu
+
+  build:
+    name: ${{ matrix.label }}
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+    needs: quality
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: macos-latest
+          - label: Windows x64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+            bundle: nsis
+            artifact: Uncloud-Windows-x64.exe
+            kind: windows
+          - label: Linux x64
+            os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            bundle: appimage
+            artifact: Uncloud-Linux-x64.AppImage
+            kind: linux
+          - label: macOS Apple Silicon
+            os: macos-latest
             target: aarch64-apple-darwin
-            uv_target: aarch64-apple-darwin
-            label: macOS (Apple Silicon)
-          - os: macos-latest
+            bundle: dmg
+            artifact: Uncloud-macOS-Apple-Silicon.dmg
+            kind: macos
+          - label: macOS Intel
+            os: macos-latest
             target: x86_64-apple-darwin
-            uv_target: x86_64-apple-darwin
-            label: macOS (Intel)
-          - os: ubuntu-22.04
-            target: ''
-            uv_target: x86_64-unknown-linux-gnu
-            label: Linux
-          - os: windows-latest
-            target: ''
-            uv_target: x86_64-pc-windows-msvc
-            label: Windows
-
-    runs-on: ${{ matrix.os }}
-    name: ${{ matrix.label }}
+            bundle: dmg
+            artifact: Uncloud-macOS-Intel.dmg
+            kind: macos
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
 
-      # webkit2gtk 4.1 is the Tauri v2 dependency; 4.0 is for v1 and will not link.
-      - name: Install Linux system dependencies
-        if: matrix.os == 'ubuntu-22.04'
+      - name: Install Linux package libraries
+        if: matrix.kind == 'linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -53,54 +156,113 @@ jobs:
             librsvg2-dev \
             patchelf \
             build-essential \
-            curl wget file libssl-dev libxdo-dev libgtk-3-dev
+            curl \
+            file \
+            libssl-dev \
+            libxdo-dev \
+            libgtk-3-dev \
+            libsndfile1 \
+            xvfb
+
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: uncloud/package-lock.json
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
 
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
 
-      - uses: actions/setup-node@v4
+      - uses: swatinem/rust-cache@v2.9.2
         with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: uncloud/package-lock.json
+          workspaces: uncloud/src-tauri
+          key: ${{ matrix.target }}
 
       - name: Install frontend dependencies
         working-directory: uncloud
         run: npm ci
 
-      # Ship uv inside the app so a clean machine needs nothing preinstalled:
-      # uv fetches its own Python, then builds the engine environment on first run.
-      - name: Bundle uv
+      - name: Download and verify bundled uv
+        shell: bash
+        run: bash uncloud/scripts/stage_uv.sh "${{ matrix.target }}"
+
+      - name: Build native package
+        working-directory: uncloud
+        run: npm run tauri build -- --target "${{ matrix.target }}" --bundles "${{ matrix.bundle }}"
+
+      - name: Verify Windows installer
+        if: matrix.kind == 'windows'
+        shell: pwsh
+        run: |
+          $bundle = Get-ChildItem "uncloud/src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*-setup.exe" | Select-Object -First 1
+          if (-not $bundle) { throw 'Tauri did not produce an NSIS installer' }
+          ./scripts/verify_windows_bundle.ps1 -Bundle $bundle.FullName -Output "release/${{ matrix.artifact }}"
+
+      - name: Verify Linux AppImage
+        if: matrix.kind == 'linux'
         shell: bash
         run: |
-          set -euo pipefail
-          T="${{ matrix.uv_target }}"
-          dest=uncloud/src-tauri/binaries
-          mkdir -p "$dest"
-          base="https://github.com/astral-sh/uv/releases/latest/download"
-          if [[ "$T" == *windows* ]]; then
-            curl -fsSL -o uv.zip "$base/uv-$T.zip"
-            unzip -j -o uv.zip 'uv.exe' -d "$dest"
-          else
-            curl -fsSL -o uv.tar.gz "$base/uv-$T.tar.gz"
-            tar -xzf uv.tar.gz
-            mv "uv-$T/uv" "$dest/uv"
-            chmod +x "$dest/uv"
-          fi
-          ls -la "$dest"
+          bundle="$(find "uncloud/src-tauri/target/${{ matrix.target }}/release/bundle/appimage" \
+            -maxdepth 1 -type f -name '*.AppImage' -print -quit)"
+          test -n "$bundle"
+          bash scripts/verify_linux_bundle.sh "$bundle" "release/${{ matrix.artifact }}"
 
-      - uses: swatinem/rust-cache@v2
-        with:
-          workspaces: uncloud/src-tauri
+      - name: Verify macOS DMG contents
+        if: matrix.kind == 'macos'
+        shell: bash
+        run: |
+          bundle="$(find "uncloud/src-tauri/target/${{ matrix.target }}/release/bundle/dmg" \
+            -maxdepth 1 -type f -name '*.dmg' -print -quit)"
+          test -n "$bundle"
+          bash scripts/verify_macos_bundle.sh "$bundle" "release/${{ matrix.artifact }}"
 
-      - uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/upload-artifact@v7.0.1
         with:
-          projectPath: uncloud
-          tagName: ${{ github.ref_name }}
-          releaseName: 'Uncloud ${{ github.ref_name }}'
-          releaseDraft: true
-          prerelease: false
-          args: ${{ matrix.target && format('--target {0}', matrix.target) || '' }}
+          name: uncloud-${{ matrix.kind }}-${{ matrix.target }}
+          path: release/${{ matrix.artifact }}
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Publish GitHub release
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: actions/download-artifact@v8.0.1
+        with:
+          pattern: uncloud-*
+          path: release
+          merge-multiple: true
+
+      - name: Create checksums
+        working-directory: release
+        run: |
+          find . -maxdepth 1 -type f -name 'Uncloud-*' -printf '%f\n' |
+            sort |
+            xargs sha256sum > SHA256SUMS.txt
+          test "$(wc -l < SHA256SUMS.txt)" -eq 4
+
+      - name: Publish tested artifacts
+        uses: softprops/action-gh-release@v3.0.3
+        with:
+          name: Uncloud ${{ github.ref_name }}
+          body_path: .github/release-notes.md
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          fail_on_unmatched_files: true
+          files: |
+            release/Uncloud-Windows-x64.exe
+            release/Uncloud-Linux-x64.AppImage
+            release/Uncloud-macOS-Apple-Silicon.dmg
+            release/Uncloud-macOS-Intel.dmg
+            release/SHA256SUMS.txt
