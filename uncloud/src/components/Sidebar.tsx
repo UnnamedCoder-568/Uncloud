@@ -12,12 +12,12 @@ import type { ReactNode } from 'react';
 import Wordmark from './Wordmark';
 import {
   MessageSquare, Boxes, Workflow, ImageIcon, Clapperboard, Mic, Music,
-  Settings, HelpCircle, FolderOpen, GraduationCap, ChefHat,
+  Settings, HelpCircle, FolderOpen, GraduationCap, ChefHat, Gauge,
 } from 'lucide-react';
 
 export type View =
   | 'chat' | 'models' | 'chisel' | 'image' | 'video' | 'music' | 'voice'
-  | 'outputs' | 'training' | 'recipes' | 'guide' | 'settings';
+  | 'outputs' | 'training' | 'quantize' | 'recipes' | 'guide' | 'settings';
 
 type Icon = React.ComponentType<{ size?: number; strokeWidth?: number }>;
 
@@ -28,6 +28,10 @@ const GROUPS: { label?: string; items: { id: View; label: string; icon: Icon }[]
       { id: 'models', label: 'Models', icon: Boxes },
       { id: 'chisel', label: 'Chisel', icon: Workflow },
       { id: 'training', label: 'Training', icon: GraduationCap },
+      // Beside Training deliberately: both are slow, deliberate operations on
+      // a model, decided by a person. Neither belongs next to a download
+      // button, which is where this one used to live.
+      { id: 'quantize', label: 'Quantize', icon: Gauge },
       { id: 'recipes', label: 'Recipes', icon: ChefHat },
     ],
   },

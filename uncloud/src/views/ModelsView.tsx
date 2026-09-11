@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
-import { Check, Download, FolderCog, HardDrive, Loader2, CheckCircle2, XCircle } from 'lucide-react';
-import Quantize from '../components/Quantize';
+import {
+  Check, Download, FolderCog, Gauge, HardDrive, Loader2, CheckCircle2, XCircle,
+} from 'lucide-react';
+import { quantisable } from '../components/Quantize';
 import { getCatalog, getLibrary, startDownload, listDownloads, getSettings, setModelsDir as saveModelsDir,
          acknowledgeModelLicence, getModelLicence, type ModelLicence } from '../lib/sidecar';
 import type { CatalogEntry, LocalModel, DownloadState } from '../lib/sidecar';
@@ -178,7 +180,19 @@ export default function ModelsView() {
           </button>
         </section>
 
-        <Quantize models={library} onBuilt={refresh} />
+        {/* Quantising has its own screen now. Mounted in both places it would
+            poll for the same jobs twice, and a person would have two doors to
+            the same operation without knowing they were the same. */}
+        {quantisable(library).length > 0 && (
+          <p className="text-[11.5px] text-[var(--text-faint)] mb-8 leading-relaxed">
+            <Gauge size={12} className="inline-block mr-1.5 -mt-0.5" />
+            {quantisable(library).length === 1
+              ? 'One installed model can be quantised'
+              : `${quantisable(library).length} installed models can be quantised`}
+            {' '}to load faster and hold less memory — see <strong>Quantize</strong> in
+            the sidebar.
+          </p>
+        )}
 
         {filteredLocal.length > 0 && (
           <section className="mb-8">
