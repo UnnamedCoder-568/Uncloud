@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Fail CI when release metadata or bundled runtime files drift apart."""
 
 from __future__ import annotations
