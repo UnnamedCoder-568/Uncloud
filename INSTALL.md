@@ -3,7 +3,7 @@
 ## Normal tester installation
 
 Testers should use a package from the
-[v0.3.0-test.1 prerelease](https://github.com/aswinajith96-gif/Uncloud/releases/tag/v0.3.0-test.1).
+[v0.3.0-test.2 prerelease](https://github.com/aswinajith96-gif/Uncloud/releases/tag/v0.3.0-test.2).
 Building from source is not required.
 
 ### Windows x64

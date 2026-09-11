@@ -4,15 +4,15 @@ Uncloud is a local-first AI studio for chat, image generation, video, voice,
 model management, and agent workflows. The desktop interface runs on your
 machine and talks to a private Python engine on localhost.
 
-> **Tester release:** v0.3.0-test.1 is an early prerelease. Windows and Linux
+> **Tester release:** v0.3.0-test.2 is an early prerelease. Windows and Linux
 > packages are intended for external testing and are not code-signed.
 
 ## Download
 
 | Platform | Download | Run |
 | --- | --- | --- |
-| Windows 10/11 x64 | [Uncloud-Windows-x64.exe](https://github.com/aswinajith96-gif/Uncloud/releases/download/v0.3.0-test.1/Uncloud-Windows-x64.exe) | Open the installer, then launch Uncloud from the Start menu. |
-| Linux x64 | [Uncloud-Linux-x64.AppImage](https://github.com/aswinajith96-gif/Uncloud/releases/download/v0.3.0-test.1/Uncloud-Linux-x64.AppImage) | Make it executable and run it. |
+| Windows 10/11 x64 | [Uncloud-Windows-x64.exe](https://github.com/aswinajith96-gif/Uncloud/releases/download/v0.3.0-test.2/Uncloud-Windows-x64.exe) | Open the installer, then launch Uncloud from the Start menu. |
+| Linux x64 | [Uncloud-Linux-x64.AppImage](https://github.com/aswinajith96-gif/Uncloud/releases/download/v0.3.0-test.2/Uncloud-Linux-x64.AppImage) | Make it executable and run it. |
 
 All release downloads, including the existing macOS builds and SHA-256
 checksums, are on the [Releases page](https://github.com/aswinajith96-gif/Uncloud/releases).

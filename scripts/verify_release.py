@@ -24,7 +24,7 @@ def fail(message: str) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--tag", default="", help="tag being released, such as v0.3.0-test.1")
+    parser.add_argument("--tag", default="", help="tag being released, such as v0.3.0-test.2")
     args = parser.parse_args()
 
     package = load_json(ROOT / "uncloud" / "package.json")
@@ -46,8 +46,8 @@ def main() -> None:
     if len(set(versions.values())) != 1:
         fail("version mismatch: " + ", ".join(f"{name}={value}" for name, value in versions.items()))
     version = next(iter(versions.values()))
-    if engine["project"]["version"] != "0.3.0rc1":
-        fail("sidecar/pyproject.toml must use the PEP 440 equivalent 0.3.0rc1")
+    if engine["project"]["version"] != "0.3.0rc2":
+        fail("sidecar/pyproject.toml must use the PEP 440 equivalent 0.3.0rc2")
     if args.tag and args.tag != f"v{version}":
         fail(f"tag {args.tag!r} does not match v{version}")
 
