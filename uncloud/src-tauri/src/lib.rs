@@ -35,11 +35,10 @@ async fn start_runtime(
     }
 
     let spawn_app = app.clone();
-    let (child, info) = tauri::async_runtime::spawn_blocking(move || {
-        sidecar::spawn_sidecar(&spawn_app)
-    })
-    .await
-    .map_err(|e| format!("Start task failed: {e}"))??;
+    let (child, info) =
+        tauri::async_runtime::spawn_blocking(move || sidecar::spawn_sidecar(&spawn_app))
+            .await
+            .map_err(|e| format!("Start task failed: {e}"))??;
 
     if let Err(e) = sidecar::wait_healthy(info.port, 120).await {
         *state.error.lock().unwrap() = Some(e.clone());
