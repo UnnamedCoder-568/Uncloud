@@ -67,7 +67,7 @@ export default function SetupView({ onReady }: { onReady: () => void }) {
     { label: 'uv (package manager)', ok: status.uv_found,
       detail: status.uv_found ? 'Found' : 'Not installed' },
     { label: 'Dependencies', ok: status.deps_ready,
-      detail: status.deps_ready ? 'Installed' : 'About 1.6 GB, downloaded once' },
+      detail: status.deps_ready ? 'Installed' : 'Several GB, downloaded once' },
   ] : [];
 
   return (
@@ -79,7 +79,8 @@ export default function SetupView({ onReady }: { onReady: () => void }) {
         <p className="mt-2 text-sm text-[var(--text-dim)] leading-relaxed">
           Uncloud ships as a small app. The engine that runs the models is
           installed here on first launch, so the download stays a few megabytes
-          instead of a few gigabytes. This happens once.
+          instead of a few gigabytes. This happens once and needs an internet
+          connection; Python and the package manager are already included.
         </p>
 
         <div className="mt-6 card p-4 flex flex-col gap-3">

@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Uncloud",
-  "version": "0.2.0",
+  "version": "0.3.0-test.1",
   "identifier": "com.uncloud.app",
   "build": {
     "frontendDist": "../dist",
@@ -31,6 +31,10 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "category": "Productivity",
+    "shortDescription": "A local-first AI studio",
+    "longDescription": "Run chat, image, video, voice, and agent workflows on your own machine.",
+    "homepage": "https://github.com/aswinajith96-gif/Uncloud",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -44,10 +48,13 @@
     "resources": {
       "../../sidecar/README.md": "engine/README.md",
       "../../sidecar/pyproject.toml": "engine/pyproject.toml",
-      "../../sidecar/scripts/*.py": "engine/scripts/",
+      "../../sidecar/scripts/acestep_runner.py": "engine/scripts/acestep_runner.py",
+      "../../sidecar/scripts/vibevoice_hq_runner.py": "engine/scripts/vibevoice_hq_runner.py",
+      "../../sidecar/scripts/vibevoice_runner.py": "engine/scripts/vibevoice_runner.py",
       "../../sidecar/uncloud_engine/*.py": "engine/uncloud_engine/",
       "../../sidecar/uncloud_engine/agent/*.py": "engine/uncloud_engine/agent/",
       "../../sidecar/uncloud_engine/core/*.py": "engine/uncloud_engine/core/",
+      "../../sidecar/uncloud_engine/core/README.md": "engine/uncloud_engine/core/README.md",
       "../../sidecar/uncloud_engine/core/auth/*.py": "engine/uncloud_engine/core/auth/",
       "../../sidecar/uncloud_engine/core/integrations/*.py": "engine/uncloud_engine/core/integrations/",
       "../../sidecar/uncloud_engine/core/integrations/providers/*.py": "engine/uncloud_engine/core/integrations/providers/",
@@ -57,8 +64,7 @@
       "../../sidecar/uncloud_engine/core/legal/documents/*.json": "engine/uncloud_engine/core/legal/documents/",
       "../../sidecar/uncloud_engine/core/legal/product/*.md": "engine/uncloud_engine/core/legal/product/",
       "../../sidecar/uncloud_engine/training/*.py": "engine/uncloud_engine/training/",
-      "../../sidecar/uv.lock": "engine/uv.lock",
-      "binaries/uv": "uv"
+      "../../sidecar/uv.lock": "engine/uv.lock"
     },
     "macOS": {
       "signingIdentity": "-"

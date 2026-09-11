@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -67,7 +68,9 @@ def _write_audio(audio, sample_rate: int, dest: Path, bit_depth: int, fmt: str =
 # virtualenv and is driven through its CLI — the same isolation the app already uses for
 # llama-server and mflux.
 ACESTEP_VENV = Path(__file__).resolve().parent.parent / ".venv-acestep"
-ACESTEP_PYTHON = ACESTEP_VENV / "bin" / "python"
+ACESTEP_PYTHON = ACESTEP_VENV / (
+    "Scripts/python.exe" if os.name == "nt" else "bin/python"
+)
 ACESTEP_RUNNER = Path(__file__).resolve().parent.parent / "scripts" / "acestep_runner.py"
 
 
