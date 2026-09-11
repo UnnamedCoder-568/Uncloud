@@ -19,6 +19,18 @@ import type { LocalModel, QuantizeBase, QuantizeJob } from '../lib/sidecar';
  * choice is the highest precision that still fits.
  */
 
+/** Models this can actually work on.
+ *
+ *  Exported because the screen around it has to answer the same question
+ *  before it can say anything useful when the answer is none — and two copies
+ *  of this filter would eventually disagree about what is quantisable.
+ */
+export function quantisable(models: LocalModel[]): LocalModel[] {
+  return models.filter(
+    (m) => m.category === 'image' && !m.mflux_base && m.size_gb > 1,
+  );
+}
+
 // What a model of this size costs to hold, roughly, at a given bit width.
 function estimate(model: LocalModel, bits: number): string {
   if (!model.size_gb) return '';
@@ -65,9 +77,7 @@ export default function Quantize({ models, onBuilt }: {
 
   // Anything already stored as MLX shards is done; offering to requantise it
   // would just be a lossy copy of a lossy copy.
-  const candidates = models.filter(
-    (m) => m.category === 'image' && !m.mflux_base && m.size_gb > 1,
-  );
+  const candidates = quantisable(models);
 
   useEffect(() => {
     getQuantizeBases()

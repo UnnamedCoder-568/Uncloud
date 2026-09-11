@@ -12,6 +12,7 @@ import ModelsView from './views/ModelsView';
 import ChiselView from './views/ChiselView';
 import SettingsView from './views/SettingsView';
 import TrainingView from './views/TrainingView';
+import QuantizeView from './views/QuantizeView';
 import RecipesView from './views/RecipesView';
 import ImageView from './views/ImageView';
 import VoiceView from './views/VoiceView';
@@ -36,6 +37,7 @@ const PANES: { id: View; render: () => React.ReactElement }[] = [
   { id: 'outputs', render: () => <OutputsView /> },
   { id: 'guide', render: () => <GuideView /> },
   { id: 'training', render: () => <TrainingView /> },
+  { id: 'quantize', render: () => <QuantizeView /> },
   { id: 'recipes', render: () => <RecipesView /> },
   { id: 'settings', render: () => <SettingsView /> },
 ];
