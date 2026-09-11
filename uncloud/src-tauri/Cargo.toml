@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "0.3.0-test.1"
+version = "0.3.0-test.2"
 description = "Local-first AI studio desktop application"
 authors = ["Uncloud contributors"]
 license = ""
