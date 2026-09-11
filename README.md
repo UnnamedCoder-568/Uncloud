@@ -4,8 +4,8 @@ Uncloud is a local-first AI studio for chat, image generation, video, voice,
 model management, and agent workflows. The desktop interface runs on your
 machine and talks to a private Python engine on localhost.
 
-> **Tester release:** v0.3.0-test.2 is an early prerelease. Windows and Linux
-> packages are intended for external testing and are not code-signed.
+> **Tester release:** v0.3.0-test.2 is an early prerelease. Windows, Linux, and
+> macOS packages are intended for external testing and are not code-signed.
 
 ## Download
 
@@ -13,9 +13,11 @@ machine and talks to a private Python engine on localhost.
 | --- | --- | --- |
 | Windows 10/11 x64 | [Uncloud-Windows-x64.exe](https://github.com/aswinajith96-gif/Uncloud/releases/download/v0.3.0-test.2/Uncloud-Windows-x64.exe) | Open the installer, then launch Uncloud from the Start menu. |
 | Linux x64 | [Uncloud-Linux-x64.AppImage](https://github.com/aswinajith96-gif/Uncloud/releases/download/v0.3.0-test.2/Uncloud-Linux-x64.AppImage) | Make it executable and run it. |
+| macOS Apple Silicon | [Uncloud-macOS-Apple-Silicon.dmg](https://github.com/aswinajith96-gif/Uncloud/releases/download/v0.3.0-test.2/Uncloud-macOS-Apple-Silicon.dmg) | Open the DMG, then drag Uncloud to Applications. |
+| macOS Intel | [Uncloud-macOS-Intel.dmg](https://github.com/aswinajith96-gif/Uncloud/releases/download/v0.3.0-test.2/Uncloud-macOS-Intel.dmg) | Open the DMG, then drag Uncloud to Applications. |
 
-All release downloads, including the existing macOS builds and SHA-256
-checksums, are on the [Releases page](https://github.com/aswinajith96-gif/Uncloud/releases).
+All release downloads and SHA-256 checksums are also on the
+[Releases page](https://github.com/aswinajith96-gif/Uncloud/releases).
 
 On Linux:
 
@@ -62,7 +64,7 @@ application and its core engine do not require a development environment.
 Use the [GitHub issue tracker](https://github.com/aswinajith96-gif/Uncloud/issues).
 Include:
 
-- Windows or Linux version;
+- Windows, Linux, or macOS version;
 - CPU, GPU, and memory;
 - the downloaded filename;
 - what you expected, what happened, and steps to reproduce;
