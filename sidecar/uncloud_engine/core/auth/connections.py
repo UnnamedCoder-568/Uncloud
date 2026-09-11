@@ -48,13 +48,13 @@ _TOKENS = "auth.tokens"
 _SECRET = "auth.secret"
 _CONFIG = "auth.config"
 
-_locks: dict[str, threading.Lock] = {}
+_locks: dict[str, threading.RLock] = {}
 _locks_guard = threading.Lock()
 
 
-def _lock_for(provider: str) -> threading.Lock:
+def _lock_for(provider: str) -> threading.RLock:
     with _locks_guard:
-        return _locks.setdefault(provider, threading.Lock())
+        return _locks.setdefault(provider, threading.RLock())
 
 
 # ------------------------------------------------------------ configuration
@@ -223,16 +223,21 @@ def authorize(provider: str, kind: AuthKind, defaults: ProviderConfig,
     if kind is AuthKind.NONE:
         return {}
 
-    tokens = _read_tokens(provider)
-    if tokens is None:
-        raise AuthError(
-            f"{provider} is not connected.",
-            remedy="Connect it in Settings → Integrations.",
-            needs_reauthentication=True)
+    # Reading and refreshing share the provider lock. Credential backends can
+    # briefly remove the old value while replacing it; without this outer lock,
+    # another caller can observe that tiny window as "not connected". The lock
+    # is re-entrant because _renew also guards direct callers.
+    with _lock_for(provider):
+        tokens = _read_tokens(provider)
+        if tokens is None:
+            raise AuthError(
+                f"{provider} is not connected.",
+                remedy="Connect it in Settings → Integrations.",
+                needs_reauthentication=True)
 
-    if kind is not AuthKind.TOKEN and tokens.expired:
-        tokens = _renew(provider, tokens, defaults,
-                        client_factory=client_factory)
+        if kind is not AuthKind.TOKEN and tokens.expired:
+            tokens = _renew(provider, tokens, defaults,
+                            client_factory=client_factory)
 
     return {"Authorization": f"{tokens.token_type} {tokens.access_token}"}
 
