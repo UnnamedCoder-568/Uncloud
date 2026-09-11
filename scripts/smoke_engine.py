@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Exercise first-run setup and the engine handshake using packaged files."""
 
 from __future__ import annotations
