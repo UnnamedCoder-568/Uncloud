@@ -333,7 +333,9 @@ fn refresh_engine(app: &AppHandle) {
     if dev_sidecar_dir().is_some() {
         return; // a live checkout is the source of truth; never overwrite it
     }
-    let Some(bundled) = bundled_engine(app) else { return };
+    let Some(bundled) = bundled_engine(app) else {
+        return;
+    };
     let target = engine_home();
     if !target.join("pyproject.toml").is_file() {
         return; // nothing installed yet — setup will do the first install
@@ -356,7 +358,14 @@ pub fn spawn_sidecar(app: &AppHandle) -> Result<(Child, SidecarInfo), String> {
 
     let mut command = Command::new(&uv);
     command
-        .args(["run", "--locked", "--no-dev", "python", "-m", "uncloud_engine.main"])
+        .args([
+            "run",
+            "--locked",
+            "--no-dev",
+            "python",
+            "-m",
+            "uncloud_engine.main",
+        ])
         .current_dir(&dir)
         .env("PATH", child_path_env())
         // Optional runtimes are installed after first launch. They must be
@@ -385,7 +394,11 @@ pub fn spawn_sidecar(app: &AppHandle) -> Result<(Child, SidecarInfo), String> {
     let stdout = child.stdout.take().ok_or("Engine produced no stdout")?;
     let mut reader = BufReader::new(stdout);
     let mut first_line = String::new();
-    if reader.read_line(&mut first_line).map_err(|e| e.to_string())? == 0 {
+    if reader
+        .read_line(&mut first_line)
+        .map_err(|e| e.to_string())?
+        == 0
+    {
         return Err("Engine exited before printing a handshake".into());
     }
 
@@ -422,7 +435,6 @@ pub async fn wait_healthy(port: u16, timeout_secs: u64) -> Result<(), String> {
     }
     Err("Timed out waiting for the engine to report healthy".into())
 }
-
 
 /// Ask the engine and everything it started to stop, then insist.
 ///
