@@ -1,10 +1,10 @@
 [package]
 name = "app"
-version = "0.2.0"
-description = "A Tauri App"
-authors = ["you"]
+version = "0.3.0-test.1"
+description = "Local-first AI studio desktop application"
+authors = ["Uncloud contributors"]
 license = ""
-repository = ""
+repository = "https://github.com/aswinajith96-gif/Uncloud"
 edition = "2021"
 rust-version = "1.77.2"
 

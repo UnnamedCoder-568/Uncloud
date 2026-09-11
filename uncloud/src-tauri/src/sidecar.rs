@@ -197,12 +197,22 @@ pub fn ensure_engine_source(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(target)
 }
 
-fn child_path_env() -> String {
-    let extra = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin";
-    match std::env::var("PATH") {
-        Ok(existing) if !existing.is_empty() => format!("{extra}:{existing}"),
-        _ => extra.to_string(),
+fn child_path_env() -> std::ffi::OsString {
+    let existing = std::env::var_os("PATH").unwrap_or_default();
+    if cfg!(windows) {
+        return existing;
     }
+
+    let mut paths = vec![
+        PathBuf::from("/opt/homebrew/bin"),
+        PathBuf::from("/usr/local/bin"),
+        PathBuf::from("/usr/bin"),
+        PathBuf::from("/bin"),
+        PathBuf::from("/usr/sbin"),
+        PathBuf::from("/sbin"),
+    ];
+    paths.extend(std::env::split_paths(&existing));
+    std::env::join_paths(paths).unwrap_or(existing)
 }
 
 /// Create the environment and install dependencies, streaming `uv`'s output to
@@ -221,7 +231,7 @@ pub fn install_engine(app: &AppHandle) -> Result<(), String> {
     emit(&format!("Installing into {}", dir.display()));
 
     let mut child = Command::new(&uv)
-        .args(["sync"])
+        .args(["sync", "--locked", "--no-dev"])
         .current_dir(&dir)
         .env("PATH", child_path_env())
         // uv installs a matching interpreter itself, so the machine needs no Python.
@@ -257,24 +267,19 @@ pub fn install_engine(app: &AppHandle) -> Result<(), String> {
     }
     emit("Dependencies installed.");
 
-    // The optional voice environments, while there is a connection by
-    // definition. VibeVoice pins library versions the main engine cannot use,
-    // so it cannot live in the same environment — but leaving it for later
-    // meant the Voice tab greeted people with a path to an interpreter that
-    // had never been built, and the way to fix it was two commands in a file
-    // they had no reason to read.
-    //
-    // Failure here is NOT fatal. Narration is one feature; refusing to finish
-    // setup because an optional voice engine did not build would cost the user
-    // the whole application to save them a tab.
+    // Preserve the established macOS first-run experience. Windows and Linux
+    // install these optional, platform-sensitive voice environments from the
+    // Voice tab instead of making the core setup depend on them.
+    #[cfg(target_os = "macos")]
     for (name, requirement) in [
-        // The [streamingtts] extra is what pins transformers to 4.51.3. Without
-        // it the loose constraint resolves to whatever is current, and
-        // VibeVoice's streaming KV-cache patch fails on a layout that changed
-        // after 4.51 — the run reaches generation and then dies on tensor
-        // sizes.
-        ("vibevoice", "vibevoice[streamingtts] @ git+https://github.com/microsoft/VibeVoice"),
-        ("vibevoice-hq", "vibevoice[streamingtts] @ git+https://github.com/vibevoice-community/VibeVoice"),
+        (
+            "vibevoice",
+            "vibevoice[streamingtts] @ git+https://github.com/microsoft/VibeVoice",
+        ),
+        (
+            "vibevoice-hq",
+            "vibevoice[streamingtts] @ git+https://github.com/vibevoice-community/VibeVoice",
+        ),
     ] {
         let venv = dir.join(format!(".venv-{name}"));
         if venv.join("bin").join("python").is_file() {
@@ -289,7 +294,13 @@ pub fn install_engine(app: &AppHandle) -> Result<(), String> {
             .status();
         let installed = made.is_ok_and(|c| c.success())
             && Command::new(&uv)
-                .args(["pip", "install", "--python", &venv.to_string_lossy(), requirement])
+                .args([
+                    "pip",
+                    "install",
+                    "--python",
+                    &venv.to_string_lossy(),
+                    requirement,
+                ])
                 .current_dir(&dir)
                 .env("PATH", child_path_env())
                 .status()
@@ -303,6 +314,7 @@ pub fn install_engine(app: &AppHandle) -> Result<(), String> {
             ));
         }
     }
+
     Ok(())
 }
 
@@ -344,9 +356,13 @@ pub fn spawn_sidecar(app: &AppHandle) -> Result<(Child, SidecarInfo), String> {
 
     let mut command = Command::new(&uv);
     command
-        .args(["run", "python", "-m", "uncloud_engine.main"])
+        .args(["run", "--locked", "--no-dev", "python", "-m", "uncloud_engine.main"])
         .current_dir(&dir)
         .env("PATH", child_path_env())
+        // Optional runtimes are installed after first launch. They must be
+        // able to reuse the copy of uv shipped with the app even when the
+        // tester has no package manager on PATH.
+        .env("UNCLOUD_UV", &uv)
         .env("UV_PYTHON_DOWNLOADS", "automatic")
         // A force quit or a crash never runs our exit handler. The engine
         // watches this pid and shuts itself down when it disappears.
