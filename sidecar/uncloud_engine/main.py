@@ -197,7 +197,12 @@ def _install_signal_handlers() -> None:
         stop_all_blocking()
         raise SystemExit(0)
 
-    for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+    signals = [signal.SIGTERM, signal.SIGINT]
+    sighup = getattr(signal, "SIGHUP", None)
+    if sighup is not None:
+        signals.append(sighup)
+
+    for sig in signals:
         with contextlib.suppress(ValueError, OSError):
             signal.signal(sig, _handle)
 

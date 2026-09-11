@@ -1,168 +1,146 @@
 # Installing Uncloud
 
-Uncloud runs entirely on your own machine. Nothing is sent to a server.
+## Normal tester installation
 
-> **First launch sets itself up.** The download is small because the AI engine is
-> assembled on your machine rather than shipped prebuilt. Uncloud opens to a setup
-> screen, installs what it needs — roughly 1.6 GB, once — and starts. Nothing else
-> is required: Python and `uv` both come from the app.
->
-> Model weights are separate again, and are downloaded from the Models tab.
+Testers should use a package from the
+[v0.3.0-test.1 prerelease](https://github.com/aswinajith96-gif/Uncloud/releases/tag/v0.3.0-test.1).
+Building from source is not required.
 
----
+### Windows x64
 
-## macOS
+1. Download `Uncloud-Windows-x64.exe`.
+2. Run the installer.
+3. If SmartScreen appears, confirm the file came from this repository, check
+   its SHA-256 value against `SHA256SUMS.txt`, then choose
+   **More info → Run anyway**.
+4. Launch Uncloud from the Start menu.
 
-**Apple Silicon (M1–M5)** — download `Uncloud_x.y.z_aarch64.dmg`
-**Intel** — download `Uncloud_x.y.z_x64.dmg`
+Windows 11 includes the WebView2 runtime. On Windows 10, install the
+[WebView2 Evergreen Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)
+only if Uncloud opens without a visible window.
 
-1. Open the `.dmg` and drag **Uncloud** into Applications.
-2. First launch: right-click the app → **Open** → **Open**. macOS blocks unsigned
-   apps on a normal double-click; this is expected for a build that isn't
-   notarised through the App Store.
-3. If the app opens but the engine never starts, grant it disk access:
-   **System Settings → Privacy & Security → Full Disk Access → +** → Uncloud.
-   This is required whenever your models live on an external drive — a
-   Finder-launched app cannot read removable volumes without it.
+### Linux x64
 
-## Linux
-
-Three formats are built for **x86_64 (Intel/AMD)**: `.AppImage`, `.deb`, and `.rpm`.
-
-> **ARM machines — including NVIDIA DGX Spark — are not covered by these downloads.**
-> CI builds x86_64 only, so an ARM box has to build from source:
->
-> ```bash
-> git clone https://github.com/aswinajith96-gif/Uncloud.git
-> cd Uncloud/uncloud && npm ci && npm run tauri build
-> ```
->
-> The Rust and web toolchains are both ARM-native, so this works; it just takes
-> about ten minutes rather than being a download.
+Download `Uncloud-Linux-x64.AppImage`, then:
 
 ```bash
-chmod +x uncloud_*.AppImage
-./uncloud_*.AppImage
+chmod +x Uncloud-Linux-x64.AppImage
+./Uncloud-Linux-x64.AppImage
 ```
 
-Debian and Ubuntu can use the `.deb` instead (Fedora and RHEL: the `.rpm`):
+The AppImage targets x86_64 distributions compatible with Ubuntu 22.04 or newer.
+If the system cannot mount AppImages, use:
 
 ```bash
-sudo dpkg -i uncloud_*.deb
-sudo apt-get install -f      # pulls any missing dependencies
+./Uncloud-Linux-x64.AppImage --appimage-extract-and-run
 ```
 
-If the window fails to appear, the usual cause is a missing webview:
+If the window cannot start because WebKitGTK is missing:
 
 ```bash
+sudo apt-get update
 sudo apt-get install libwebkit2gtk-4.1-0
 ```
 
-## Windows
+Other distributions should install their equivalent WebKitGTK 4.1 runtime.
 
-Download and run `Uncloud_x.y.z_x64-setup.exe`.
+### First-run engine setup
 
-SmartScreen will warn about an unrecognised publisher, because the build is not
-code-signed. **More info → Run anyway.**
+Select **Install and start** in the setup screen. The application copies its
+bundled engine to `~/.uncloud/engine`, then its bundled uv downloads:
 
-Windows 11 already includes WebView2. On Windows 10 you may need
-[the WebView2 runtime](https://developer.microsoft.com/microsoft-edge/webview2/).
+- a managed CPython 3.12 runtime;
+- the exact packages recorded in `sidecar/uv.lock`;
+- platform-specific wheels needed by the local inference engine.
+
+No developer tools are required. The first setup needs internet access, several
+gigabytes of free disk space, and may take several minutes. Optional music,
+narration, browser, and GGUF runtimes can require additional downloads.
+
+User data is stored under `~/.uncloud/`. Models are stored in the folder chosen
+during onboarding.
+
+### Tester troubleshooting
+
+- **Setup failed:** keep the final 30–50 lines shown in the setup screen and try
+  once more after checking network access and free disk space.
+- **Windows shows no window:** install WebView2 and relaunch.
+- **Linux reports FUSE errors:** use `--appimage-extract-and-run`.
+- **GGUF chat says llama-server is missing:** install a compatible llama.cpp
+  runtime and make `llama-server` available on `PATH`.
+- **Model will not load:** confirm the model supports the current platform and
+  that system RAM or GPU VRAM is sufficient.
+
+Report reproducible defects through the
+[issue tracker](https://github.com/aswinajith96-gif/Uncloud/issues).
 
 ---
 
-## Engine setup
+## Developer/source installation
 
-**The desktop app does this for you on first launch** — skip this section unless
-you are running headless, on ARM, or the setup screen failed and you want to do
-it by hand.
+Source development requires:
 
-The engine needs Python 3.12 and [`uv`](https://docs.astral.sh/uv/); `uv` will
-fetch a suitable Python itself.
+- Node.js 22 and npm;
+- Rust stable and Cargo;
+- uv 0.12.13 or newer;
+- Python 3.12, which uv can download automatically;
+- the native Tauri build libraries for the host platform.
+
+### Linux build libraries
 
 ```bash
-# 1. install uv
-curl -LsSf https://astral.sh/uv/install.sh | sh        # macOS / Linux
-# Windows (PowerShell):
-#   powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
+sudo apt-get update
+sudo apt-get install -y \
+  libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev \
+  patchelf build-essential curl file libssl-dev libxdo-dev libgtk-3-dev
+```
 
-# 2. clone this repository
+### Development setup
+
+```bash
 git clone https://github.com/aswinajith96-gif/Uncloud.git
 cd Uncloud/sidecar
-
-# 3. install the engine
 uv sync
+
+cd ../uncloud
+npm ci
+npm run tauri dev
 ```
 
-The app looks for an engine at `~/.uncloud/engine`, and uses a repository
-checkout instead when it finds one.
-
-### Optional extras
-
-Each of these is only needed for the feature beside it, and each lives in its own
-environment because they pin conflicting versions of torch and transformers.
+Run checks from the repository root:
 
 ```bash
-# GGUF chat models
-brew install llama.cpp                     # macOS
-# Linux: build from https://github.com/ggml-org/llama.cpp
+cd uncloud
+npm test
+npm run lint
+npm run build
 
-# audio handling
-brew install ffmpeg espeak-ng              # macOS
-sudo apt-get install ffmpeg espeak-ng      # Linux
+cd ../sidecar
+uv run pytest
+uv run ruff check .
 
-# music generation
-uv venv .venv-acestep --python 3.12
-uv pip install --python .venv-acestep "ace-step @ git+https://github.com/ace-step/ACE-Step-1.5"
-
-# narration — fast streaming engine
-uv venv .venv-vibevoice --python 3.12
-uv pip install --python .venv-vibevoice "vibevoice @ git+https://github.com/microsoft/VibeVoice"
-
-# narration — higher-quality engine (community fork; Microsoft's repo no longer
-# ships the non-streaming model)
-uv venv .venv-vibevoice-hq --python 3.12
-uv pip install --python .venv-vibevoice-hq "vibevoice @ git+https://github.com/vibevoice-community/VibeVoice"
-
-# browser control for the agent
-uv run playwright install chromium
+cd ../uncloud/src-tauri
+cargo fmt --check
+cargo test --locked
 ```
 
----
+### Local package builds
 
-## First run
+The release workflow performs native builds on GitHub-hosted runners. Local
+packaging is for development only:
 
-1. Open Uncloud and choose a folder for your models. Point it at an existing
-   folder if you already have `.gguf` or diffusers models — they'll be detected.
-2. Open **Models** and download something to start with. Good first picks:
-   - **Chat** — Gemma 4 12B QAT (11 GB), which can also read images
-   - **Images** — Krea 2 Turbo Q4 (15 GB)
-3. Everything else is optional and can be added later.
+```bash
+# Linux x64
+bash uncloud/scripts/stage_uv.sh x86_64-unknown-linux-gnu
+cd uncloud
+npm run tauri build -- --target x86_64-unknown-linux-gnu --bundles appimage
 
-## Hardware
+# Windows x64, from Git Bash or the CI shell
+bash uncloud/scripts/stage_uv.sh x86_64-pc-windows-msvc
+cd uncloud
+npm run tauri build -- --target x86_64-pc-windows-msvc --bundles nsis
+```
 
-| Memory | What's comfortable |
-| --- | --- |
-| 16 GB | Chat models up to ~9B, small image models |
-| 24 GB | One large model at a time — a 27B chat model *or* an image model |
-| 32 GB+ | Larger models, more headroom for several at once |
-
-Uncloud unloads the chat model before generating images, video, music or
-narration, because on a 24 GB machine they cannot coexist. Exceeding physical
-memory doesn't fail gracefully — it drops into swap and slows down by an order
-of magnitude.
-
-Apple Silicon uses MLX where possible. On Linux and Windows those models are
-unavailable and the equivalent PyTorch paths are used instead; with an NVIDIA
-GPU those are typically faster than the Apple ones.
-
-## Where your files go
-
-| | |
-| --- | --- |
-| Settings | `~/.uncloud/settings.json` |
-| Generated output | `~/.uncloud/outputs/` |
-| Saved characters | `~/.uncloud/characters/` |
-| Saved voices | `~/.uncloud/voices/` |
-| Agent workspace | `~/.uncloud/workspace/` |
-| AI engine | `~/.uncloud/engine/` |
-| Models | wherever you chose during setup |
+Pushing a version tag runs source tests, builds each native package, inspects
+its installed contents, starts the packaged application and engine, creates
+checksums, and publishes the GitHub prerelease only if every platform passes.
