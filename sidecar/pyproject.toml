@@ -1,6 +1,6 @@
 [project]
 name = "uncloud-engine"
-version = "0.3.0rc1"
+version = "0.3.0rc2"
 description = "Local inference engine for the Uncloud desktop application"
 readme = "README.md"
 # Bounded, not just floored. Unbounded, uv on a clean machine picks the newest
