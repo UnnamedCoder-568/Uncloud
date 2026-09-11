@@ -2,7 +2,8 @@
 
 Uncloud is a local-first AI studio for chat, image generation, video, voice,
 model management, and agent workflows. The desktop interface runs on your
-machine and talks to a private Python engine on localhost.
+machine and talks to a private Python engine on localhost 
+Created by Aswin Ajith.
 
 > **Tester release:** v0.3.0-test.2 is an early prerelease. Windows, Linux, and
 > macOS packages are intended for external testing and are not code-signed.
