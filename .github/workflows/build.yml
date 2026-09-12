@@ -90,6 +90,29 @@ jobs:
           uv run --no-project --python 3.12 --with 'ruff>=0.13,<1' \
             ruff check sidecar/uncloud_engine sidecar/tests scripts
 
+      - name: The engine must resolve on every platform we ship to
+        working-directory: sidecar
+        # The check that was missing when a macOS Intel .dmg shipped whose
+        # engine could not install. Nothing else here resolves the Python
+        # dependencies FOR the target — the engine installs on the customer's
+        # machine at first launch — so a platform with no wheel for one of them
+        # built cleanly, went green, and failed on first open.
+        #
+        # Resolution only: no downloads, seconds, and it catches exactly the
+        # missing-wheel case. Windows and Linux only, because this runner is
+        # macOS and already resolves natively; uv's cross-resolution pins macOS
+        # to a 13.0 deployment target while these wheels start at 14.0, so
+        # asking it about macOS answers the wrong question.
+        run: |
+          set -euo pipefail
+          out="$(mktemp -d)"
+          for platform in x86_64-pc-windows-msvc x86_64-unknown-linux-gnu; do
+            echo "── $platform"
+            uv pip compile pyproject.toml \
+              --python-platform "$platform" --python-version 3.12 \
+              -q -o "$out/$platform.txt"
+          done
+
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-unknown-linux-gnu
@@ -136,12 +159,13 @@ jobs:
             bundle: dmg
             artifact: Uncloud-macOS-Apple-Silicon.dmg
             kind: macos
-          - label: macOS Intel
-            os: macos-latest
-            target: x86_64-apple-darwin
-            bundle: dmg
-            artifact: Uncloud-macOS-Intel.dmg
-            kind: macos
+          # No macOS Intel. PyTorch stopped publishing macOS x86_64 wheels
+          # after 2.2.2 — zero at 2.13 and 2.14 — and this engine requires
+          # torch>=2.13.0 unconditionally, so `uv sync` cannot resolve there
+          # and the engine never installs. The .dmg built and the workflow went
+          # green; the failure was reserved for the customer's first launch.
+          # Apple Silicon is unaffected. Restore if torch ships x86_64 macOS
+          # wheels again, or if torch becomes optional here.
 
     steps:
       - uses: actions/checkout@v7.0.1
