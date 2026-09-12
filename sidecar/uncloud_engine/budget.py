@@ -15,6 +15,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from .core import placement
+
 # Which runtimes exist on which machines. mflux and MLX are Apple Silicon and
 # nothing else — they are not slower elsewhere, they do not install. Everything
 # below them runs anywhere torch does.
@@ -258,6 +260,49 @@ def estimate_video_gb(frames: int, width: int, height: int,
     }
 
 
+def _video_components(weights_gb: float, vae_gb: float
+                      ) -> list[placement.Component]:
+    """The parts that are actually resident, as sizes the planner can arrange.
+
+    Two, not three: the text encoder is dropped once the prompt is embedded —
+    see `resident_weights_gb`, which excludes it for the same reason — so what
+    remains is the transformer and the VAE.
+
+    Splitting them is what makes an offload worth anything here. The two peaks
+    do not coincide: denoising holds the transformer, the decode holds the VAE.
+    A placement that swaps them between the phases pays the larger of the two
+    rather than their sum.
+    """
+    return [
+        placement.Component("transformer", round(max(weights_gb - vae_gb, 0.1), 2),
+                            role="transformer"),
+        placement.Component("VAE", round(vae_gb, 2), role="decoder"),
+    ]
+
+
+def _placement_for(frames: int, width: int, height: int, weights_gb: float,
+                   family: str, vae_gb: float, measured: dict) -> placement.Plan:
+    """How this clip would be arranged on this machine, if at all."""
+    estimate = estimate_video_gb(frames, width, height, weights_gb, family, vae_gb)
+    machine = measured.get("machine") or {}
+    # Everything that is not weights, taken as one figure from the estimate
+    # rather than recomputed. That keeps the RESIDENT threshold bit-for-bit
+    # what it has always been — parts plus this equals the estimate's own
+    # total — so no machine that was refused today becomes accepted because
+    # the arithmetic moved. What is new is only the arrangement considered
+    # when resident does not fit.
+    activations = max(estimate["total_gb"] - weights_gb, 0.0)
+    return placement.plan(
+        _video_components(weights_gb, vae_gb),
+        activations_gb=activations,
+        hardware=placement.Hardware(
+            device=measured.get("device", "cpu"),
+            accelerator_gb=measured.get("budget_gb", 0.0),
+            host_gb=measured.get("available_gb", 0.0),
+            unified=bool(measured.get("unified")),
+            disk_gb=float(machine.get("disk_free_gb") or 0.0)))
+
+
 # What the Video tab offers, smallest first. Kept here rather than in the view
 # because whether a machine can run video at all is a question about the
 # machine, and the answer has to be the same in both places.
@@ -270,7 +315,8 @@ VIDEO_SIZES = ((448, 256), (512, 320), (640, 384), (704, 480), (960, 544),
 _USABLE_PIXELS = {"wan": 1216 * 704, "ltx": 0}
 
 
-def video_capability(weights_gb: float = 6.0, family: str = "ltx") -> dict:
+def video_capability(weights_gb: float = 6.0, family: str = "ltx",
+                     vae_gb: float = 1.4) -> dict:
     """How far this machine gets with video, if anywhere.
 
     A machine that cannot hold even the shortest draft clip should not be shown
@@ -281,7 +327,8 @@ def video_capability(weights_gb: float = 6.0, family: str = "ltx") -> dict:
     Returns the largest length and size that fit, so the answer can be "2s at
     512x320" rather than a bare yes or no.
     """
-    budget = memory_budget()["budget_gb"]
+    measured = memory_budget()
+    budget = measured["budget_gb"]
     if not budget:
         return {"runnable": True, "budget_gb": 0.0, "reason": "unknown"}
 
@@ -293,7 +340,21 @@ def video_capability(weights_gb: float = 6.0, family: str = "ltx") -> dict:
     usable = _USABLE_PIXELS.get(family, 0)
 
     def fits(frames: int, width: int, height: int) -> bool:
-        return estimate_video_gb(frames, width, height, weights_gb, family)["total_gb"] <= budget
+        """Whether a clip runs here, under ANY arrangement of the model.
+
+        This used to compare the total against the accelerator budget alone,
+        which on a discrete card is free VRAM. That refused every job whose
+        parts could not all be resident at once — including the ones the video
+        loader already runs by holding one component at a time, because it
+        calls `enable_model_cpu_offload` for exactly that case. The gate and
+        the loader disagreed and the gate was the one the user heard.
+
+        The planner is asked instead, so a machine is told no only when no
+        arrangement works. On shared-memory machines it returns the same answer
+        as before, because there offloading frees nothing.
+        """
+        return _placement_for(frames, width, height, weights_gb, family,
+                              vae_gb, measured).feasible
 
     smallest_frames, (smallest_w, smallest_h) = VIDEO_FRAMES[0], VIDEO_SIZES[0]
     if not fits(smallest_frames, smallest_w, smallest_h):
@@ -313,12 +374,20 @@ def video_capability(weights_gb: float = 6.0, family: str = "ltx") -> dict:
     longest = max(f for f in VIDEO_FRAMES if fits(f, smallest_w, smallest_h))
     largest = max((s for s in VIDEO_SIZES if fits(smallest_frames, *s)),
                   key=lambda s: s[0] * s[1])
+    # How the largest offered clip would actually be arranged. Reported rather
+    # than kept internal: a machine running this by moving parts between
+    # memories is slower, and an interface that says "compatible" without
+    # saying "and slower" has misled somebody who then waits six minutes.
+    arrangement = _placement_for(smallest_frames, *largest, weights_gb, family,
+                                 vae_gb, measured)
     out = {
         "runnable": True,
         "budget_gb": round(budget, 1),
         "weights_gb": round(weights_gb, 1),
         "longest_frames_at_min_size": longest,
         "largest_size_at_min_frames": list(largest),
+        "placement": arrangement.to_dict(),
+        "adaptive": arrangement.degraded,
     }
     if usable and largest[0] * largest[1] < usable:
         out["runnable"] = False
