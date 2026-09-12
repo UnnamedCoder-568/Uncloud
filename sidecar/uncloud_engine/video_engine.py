@@ -31,6 +31,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .config import output_dir_for
+from .core import placement
 from .output_check import verify_video
 from .power import keep_awake
 
@@ -166,12 +167,17 @@ class VideoJob:
     total_steps: int = 0
     output_path: str | None = None
     error: str | None = None
+    #: How the model's parts were arranged for this run — resident, or one of
+    #: the offloads. Reported so a clip that took six minutes can say why it
+    #: was not ninety seconds.
+    placement: str = ""
 
     def to_dict(self) -> dict:
         return {
             "id": self.id, "prompt": self.prompt, "status": self.status,
             "stage": self.stage, "step": self.step, "total_steps": self.total_steps,
             "output_path": self.output_path, "error": self.error,
+            "placement": self.placement,
             "done": self.status in ("done", "error"),
         }
 
@@ -461,6 +467,20 @@ class VideoEngine:
             job.error = str(exc)
             self.unload()
 
+    def _arrangement(self, model_path: str, family: str, frames: int,
+                     width: int, height: int):
+        """How this clip's parts should be placed on this machine.
+
+        Asked of the same planner the capability gate uses, so what the user
+        was told is possible is what actually gets set up. Two answers to that
+        question is how a gate and a loader come to disagree.
+        """
+        from .budget import _placement_for, memory_budget, resident_weights_gb
+
+        return _placement_for(frames, width, height,
+                              resident_weights_gb(model_path), family,
+                              1.4, memory_budget())
+
     def _generate(self, job, model_path, prompt, negative_prompt, frames, fps,
                   width, height, steps, guidance, seed) -> str:
         import torch
@@ -489,19 +509,34 @@ class VideoEngine:
                 pipe = self._build_wan(model_path, marker, torch.bfloat16)
             else:
                 pipe = LTXPipeline.from_pretrained(model_path, torch_dtype=torch.bfloat16)
-            # Offloading components back to the CPU between stages is how you
-            # fit a pipeline into a small VRAM budget — on a discrete GPU. On
-            # Apple Silicon the CPU and GPU share one pool, so it frees nothing
-            # and buys a real copy: measured 2.32ms per 8MB round trip, about
-            # 3.4 GB/s, for the ~15GB of components here. Load straight to the
-            # device and let the shared memory do its job.
-            if device == "mps":
-                pipe = pipe.to(device)
-            else:
+            # How the parts are arranged is decided by the planner, not by the
+            # device string. It used to be the latter: anything that was not
+            # Apple Silicon got component offloading whether it needed it or
+            # not, and a machine with room to hold the whole pipeline paid for
+            # moving it anyway.
+            #
+            # The reasoning the device check encoded is kept, in the planner:
+            # on Apple Silicon the CPU and GPU share one pool, so offloading
+            # frees nothing and buys a real copy — measured at 2.32ms per 8MB
+            # round trip, about 3.4 GB/s, for the ~15GB of components here.
+            # There the plan comes back RESIDENT or it does not run at all.
+            arrangement = self._arrangement(model_path, family.name,
+                                            frames, width, height)
+            job.placement = arrangement.placement.value
+            if arrangement.placement is placement.Placement.SEQUENTIAL_OFFLOAD:
+                job.stage = "loading model (a layer at a time — slower)"
+                try:
+                    pipe.enable_sequential_cpu_offload(device=device)
+                except Exception:  # noqa: BLE001 - older diffusers, or no support
+                    pipe.enable_model_cpu_offload(device=device)
+            elif arrangement.placement is placement.Placement.MODEL_OFFLOAD:
+                job.stage = "loading model (a part at a time)"
                 try:
                     pipe.enable_model_cpu_offload(device=device)
                 except Exception:  # noqa: BLE001 - fall back to a plain move
                     pipe = pipe.to(device)
+            else:
+                pipe = pipe.to(device)
             # The decode is the peak here, as it is for images — but the fix
             # does not transfer. LTX tiles its decode and wants tiling on.
             # Wan's tiled_decode runs out of memory on Metal at every tile size

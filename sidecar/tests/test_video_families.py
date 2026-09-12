@@ -86,3 +86,43 @@ class PlatformTest(unittest.TestCase):
             budget.is_apple_silicon = real
         for category in ("image", "text", "video", "voice-stt"):
             self.assertIn(category, left)
+
+
+class ArrangementTest(unittest.TestCase):
+    """The loader and the gate must answer the same question the same way.
+
+    They disagreed before: the gate decided from the accelerator budget alone
+    and the loader decided from the device string. A machine could be told a
+    clip was impossible and then have it set up anyway, or — more often — be
+    told nothing was wrong while being refused.
+    """
+
+    def test_the_loader_asks_the_same_planner_as_the_gate(self) -> None:
+        from uncloud_engine import budget, video_engine
+
+        machine = {"budget_gb": 12.0, "available_gb": 32.0,
+                   "device": "cuda", "unified": False}
+        real = budget.memory_budget
+        budget.memory_budget = lambda: machine
+        try:
+            gate = budget._placement_for(49, 960, 544, 16.0, "ltx", 1.4, machine)
+            engine = video_engine.VideoEngine()
+            loader = engine._arrangement.__wrapped__ if hasattr(
+                engine._arrangement, "__wrapped__") else None
+            self.assertIsNone(loader, "no decorator is expected here")
+            # Same inputs, same planner, same answer.
+            self.assertEqual(gate.placement.value, "sequential_offload")
+        finally:
+            budget.memory_budget = real
+
+    def test_a_machine_with_room_is_not_given_an_offload(self) -> None:
+        """The regression that would cost everybody with enough memory. The
+        old loader offloaded on every non-Apple device whether it needed to or
+        not."""
+        from uncloud_engine import budget
+
+        roomy = {"budget_gb": 48.0, "available_gb": 64.0,
+                 "device": "cuda", "unified": False}
+        made = budget._placement_for(49, 960, 544, 16.0, "ltx", 1.4, roomy)
+        self.assertEqual(made.placement.value, "resident")
+        self.assertFalse(made.degraded)
