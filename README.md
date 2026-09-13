@@ -15,10 +15,20 @@ Created by Aswin Ajith.
 | Windows 10/11 x64 | [Uncloud-Windows-x64.exe](https://github.com/aswinajith96-gif/Uncloud/releases/download/v0.3.0-test.2/Uncloud-Windows-x64.exe) | Open the installer, then launch Uncloud from the Start menu. |
 | Linux x64 | [Uncloud-Linux-x64.AppImage](https://github.com/aswinajith96-gif/Uncloud/releases/download/v0.3.0-test.2/Uncloud-Linux-x64.AppImage) | Make it executable and run it. |
 | macOS Apple Silicon | [Uncloud-macOS-Apple-Silicon.dmg](https://github.com/aswinajith96-gif/Uncloud/releases/download/v0.3.0-test.2/Uncloud-macOS-Apple-Silicon.dmg) | Open the DMG, then drag Uncloud to Applications. |
-| macOS Intel | [Uncloud-macOS-Intel.dmg](https://github.com/aswinajith96-gif/Uncloud/releases/download/v0.3.0-test.2/Uncloud-macOS-Intel.dmg) | Open the DMG, then drag Uncloud to Applications. |
 
 All release downloads and SHA-256 checksums are also on the
 [Releases page](https://github.com/aswinajith96-gif/Uncloud/releases).
+
+### Intel Macs are not supported
+
+The `Uncloud-macOS-Intel.dmg` attached to v0.3.0-test.2 installs, and then its
+engine cannot finish setting itself up. PyTorch published its last macOS
+x86_64 build at 2.2.2 and the engine needs 2.13 or newer, so there is no
+version of the dependency to install on an Intel Mac. The download has been
+withdrawn from this table rather than left to fail on somebody's machine, and
+the build target has been removed so no future release produces one.
+
+Apple Silicon is unaffected — it never used that code path.
 
 On Linux:
 
