@@ -20,7 +20,7 @@ import pytest
 torch = pytest.importorskip("torch")
 safetensors = pytest.importorskip("safetensors.torch")
 
-from uncloud_engine import recast as recast_module  # noqa: E402
+from uncloud_engine.core import recast as recast_module  # noqa: E402
 
 
 def build(root, *, dtype="float32", component="text_encoder", shards=2,
@@ -160,3 +160,26 @@ def test_a_half_written_copy_is_never_left_behind(tmp_path, monkeypatch) -> None
 
     leftovers = [p.name for p in tmp_path.iterdir() if p.name.startswith(".")]
     assert leftovers == [], f"staging was left behind: {leftovers}"
+
+
+# ------------------------------------------------------------------ replacing
+def test_replacing_leaves_one_complete_copy_and_no_debris(tmp_path) -> None:
+    """Only right straight after a download, where nobody has invested
+    anything in those bytes but the bandwidth."""
+    folder = build(tmp_path)
+    found = recast_module.recast(tmp_path, replace=True)
+
+    assert found.written == folder
+    written = safetensors.load_file(str(folder / "model-0.safetensors"))
+    assert written["layer0.weight"].dtype is torch.bfloat16
+    assert json.loads((folder / "config.json").read_text())["torch_dtype"] == "bfloat16"
+
+    leftovers = [p.name for p in tmp_path.iterdir() if p.name.startswith(".")]
+    assert leftovers == [], f"debris left behind: {leftovers}"
+    assert not (tmp_path / "text_encoder-bfloat16").exists()
+
+
+def test_replacing_keeps_the_files_that_are_not_weights(tmp_path) -> None:
+    folder = build(tmp_path)
+    recast_module.recast(tmp_path, replace=True)
+    assert (folder / "tokenizer_stub.txt").read_text() == "carried across unchanged"
