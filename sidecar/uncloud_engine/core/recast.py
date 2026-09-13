@@ -31,6 +31,11 @@ from pathlib import Path
 WIDE = {"float32", "fp32", "float64"}
 TARGET = "bfloat16"
 
+#: Below this, the rewrite costs more attention than the saving is worth. A
+#: 200 MB component recast saves 100 MB and a fraction of a second, which is
+#: not worth a progress bar or the risk of touching somebody's model.
+WORTH_RECASTING_GB = 1.0
+
 
 @dataclass
 class Recast:
@@ -52,7 +57,7 @@ class Recast:
 
     @property
     def worthwhile(self) -> bool:
-        return not self.skipped and self.before_gb > 1.0
+        return not self.skipped and self.before_gb > WORTH_RECASTING_GB
 
     def to_dict(self) -> dict:
         return {
@@ -112,7 +117,7 @@ def inspect(model_path: str | Path, component: str = "text_encoder") -> Recast:
 
 
 def recast(model_path: str | Path, component: str = "text_encoder", *,
-           into: str | Path | None = None,
+           into: str | Path | None = None, replace: bool = False,
            on_progress=None) -> Recast:
     """Write a bfloat16 copy of one component beside the original.
 
@@ -120,6 +125,12 @@ def recast(model_path: str | Path, component: str = "text_encoder", *,
     to be present afterwards, at the new precision, with its shape intact. A
     half-written component that looks finished is worse than no recast, because
     it fails at load time on somebody's machine rather than here.
+
+    `replace` swaps the original out afterwards, and is only right immediately
+    after a download: nobody has invested anything in those bytes but the
+    bandwidth, and keeping the float32 beside its own bfloat16 copy doubles
+    what the install costs on disk for no benefit. Everywhere else the original
+    stays, because it is somebody's forty-minute download.
     """
     import torch
     from safetensors.torch import load_file, save_file
@@ -177,6 +188,17 @@ def recast(model_path: str | Path, component: str = "text_encoder", *,
         shutil.move(str(staging), str(destination))
         found.written = destination
         found.after_gb = _folder_gb(destination)
+
+        if replace:
+            # Swap rather than delete-then-move: for the moment between them
+            # there is always one complete copy on disk, so an interruption
+            # leaves a working model rather than a folder with no encoder.
+            retired = folder.with_name(f".{folder.name}.replaced")
+            shutil.rmtree(retired, ignore_errors=True)
+            shutil.move(str(folder), str(retired))
+            shutil.move(str(destination), str(folder))
+            shutil.rmtree(retired, ignore_errors=True)
+            found.written = folder
         return found
     finally:
         shutil.rmtree(staging, ignore_errors=True)
