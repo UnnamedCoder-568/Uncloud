@@ -3,7 +3,7 @@
 ## Normal tester installation
 
 Testers should use a package from the
-[v0.3.0-test.2 prerelease](https://github.com/aswinajith96-gif/Uncloud/releases/tag/v0.3.0-test.2).
+[v0.3.0-test.2 prerelease](https://github.com/UnnamedCoder-568/Uncloud/releases/tag/v0.3.0-test.2).
 Building from source is not required.
 
 ### Windows x64
@@ -72,7 +72,7 @@ during onboarding.
   that system RAM or GPU VRAM is sufficient.
 
 Report reproducible defects through the
-[issue tracker](https://github.com/aswinajith96-gif/Uncloud/issues).
+[issue tracker](https://github.com/UnnamedCoder-568/Uncloud/issues).
 
 ---
 
@@ -98,7 +98,7 @@ sudo apt-get install -y \
 ### Development setup
 
 ```bash
-git clone https://github.com/aswinajith96-gif/Uncloud.git
+git clone https://github.com/UnnamedCoder-568/Uncloud.git
 cd Uncloud/sidecar
 uv sync
 
