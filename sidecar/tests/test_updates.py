@@ -79,7 +79,7 @@ def test_a_plaintext_link_is_stripped_even_on_a_trusted_host() -> None:
 
 def test_a_trusted_release_link_survives() -> None:
     report = updates.read(
-        manifest(entry(url="https://github.com/aswinajith96-gif/Uncloud/releases")),
+        manifest(entry(url="https://github.com/UnnamedCoder-568/Uncloud/releases")),
         product="uncloud", current_version="0.1.0")
     assert report.items[0].url.endswith("/releases")
 

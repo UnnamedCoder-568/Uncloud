@@ -9,7 +9,7 @@ application.
 The macOS builds remain available as the existing known-good baseline.
 
 Please report defects through the repository's
-[issue tracker](https://github.com/aswinajith96-gif/Uncloud/issues), including
+[issue tracker](https://github.com/UnnamedCoder-568/Uncloud/issues), including
 your operating system, hardware, and the steps that reproduced the problem.
 
 Unsigned test builds may trigger Windows SmartScreen or macOS Gatekeeper.
