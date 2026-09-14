@@ -4,6 +4,7 @@ import { FolderOpen, Trash2, Loader2, RefreshCw, FolderCog } from 'lucide-react'
 import { listOutputs, outputBlobUrl, revealOutput, deleteOutput, setOutputDir } from '../lib/sidecar';
 import type { OutputFile } from '../lib/sidecar';
 import { formatBytes } from '../lib/format';
+import { inDesktop } from '../lib/platform';
 
 const FILTERS = [
   { id: '', label: 'Everything' },
@@ -117,15 +118,19 @@ export default function OutputsView() {
             <h1 className="text-2xl font-semibold">Outputs</h1>
             <button
               onClick={changeFolder}
-              title="Choose where generated work is saved"
-              className="flex items-center gap-1.5 text-[11px] text-[var(--text-faint)] font-mono mt-1 truncate hover:text-[var(--text-dim)] transition"
+              disabled={!inDesktop()}
+              title={inDesktop() ? 'Choose where generated work is saved'
+                                 : 'Changed on the computer running Uncloud'}
+              className="flex items-center gap-1.5 text-[11px] text-[var(--text-faint)] font-mono mt-1 max-w-full truncate hover:text-[var(--text-dim)] transition"
             >
               <FolderCog size={11} className="shrink-0" />
               <span className="truncate">{root}</span>
             </button>
             {root.includes('/.uncloud/outputs') && (
               <p className="text-[11px] text-amber-400/80 mt-1">
-                Still the default hidden folder — click the path to pick somewhere you'll open.
+                {inDesktop()
+                  ? "Still the default hidden folder — click the path to pick somewhere you'll open."
+                  : 'Still the default hidden folder. Choose another on the computer running Uncloud.'}
               </p>
             )}
           </div>

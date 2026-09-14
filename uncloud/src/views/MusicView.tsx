@@ -5,6 +5,7 @@ import {
 } from '../lib/sidecar';
 import Dictate from '../components/Dictate';
 import type { MusicOptions, MusicJob, LocalModel } from '../lib/sidecar';
+import { SplitTabs, useSplit } from '../components/Split';
 
 type Mode = 'song' | 'instrumental';
 
@@ -87,9 +88,12 @@ export default function MusicView() {
   const mins = Math.floor(duration / 60);
   const secs = duration % 60;
 
+  const split = useSplit(busy);
+
   return (
-    <div className="h-full flex">
-      <div className="w-[340px] shrink-0 border-r border-[var(--border-soft)] overflow-y-auto p-4 flex flex-col gap-5">
+    <div className="h-full flex split">
+      <SplitTabs split={split} labels={['Settings', 'Track']} />
+      <div className={`w-[340px] shrink-0 border-r border-[var(--border-soft)] overflow-y-auto p-4 flex flex-col gap-5 split-pane${split.on(0)}`}>
         {/* model */}
         <div className="relative">
           <label className="text-[10px] uppercase tracking-[0.18em] text-[var(--text-faint)]">Model</label>
@@ -232,7 +236,7 @@ export default function MusicView() {
           </label>
         </div>
 
-        <label className="flex items-center gap-2 text-xs text-[var(--text-dim)] cursor-pointer select-none">
+        <label className="flex items-center gap-2 text-xs text-[var(--text-dim)] cursor-pointer select-none max-md:min-h-11">
           <input type="checkbox" checked={wantStems} onChange={(e) => setWantStems(e.target.checked)} />
           <Layers size={13} /> Split into stems
         </label>
@@ -248,7 +252,7 @@ export default function MusicView() {
       </div>
 
       {/* result */}
-      <div className="flex-1 min-w-0 overflow-y-auto p-6">
+      <div className={`flex-1 min-w-0 overflow-y-auto p-6 split-pane${split.on(1)}`}>
         {mixUrl ? (
           <div className="max-w-xl flex flex-col gap-5">
             <div className="card p-4">

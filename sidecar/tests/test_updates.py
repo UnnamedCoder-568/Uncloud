@@ -14,8 +14,10 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
+import pytest
+
 from uncloud_engine.core import updates
-from uncloud_engine.core.updates import Kind, Version
+from uncloud_engine.core.updates import MANIFEST_HOSTS, Kind, Policy, Version, accepts, read
 
 
 def manifest(*items, product="uncloud", **extra) -> dict:
@@ -223,3 +225,115 @@ def test_a_report_serialises_for_an_interface() -> None:
     assert row["items"][0]["kind"] == "patch"
     assert row["items"][0]["severity"] == "recommended"
     assert row["items"][0]["replaces_installation"] is True
+
+
+# ------------------------------------------------------------------- policy
+
+def _v(text: str):
+    return Version.parse(text)
+
+
+def test_continuous_takes_every_newer_version_including_majors() -> None:
+    assert accepts(Policy.CONTINUOUS, _v("1.4.0"), _v("1.4.1"))
+    assert accepts(Policy.CONTINUOUS, _v("1.4.0"), _v("2.0.0"))
+    assert not accepts(Policy.CONTINUOUS, _v("1.4.0"), _v("1.4.0"))
+    assert not accepts(Policy.CONTINUOUS, _v("1.4.0"), _v("1.3.9"))
+
+
+def test_within_major_takes_fixes_and_never_the_next_version() -> None:
+    """A bought Studio 1 is kept Studio 1. Studio 2 is announced, not installed."""
+    assert accepts(Policy.WITHIN_MAJOR, _v("1.4.0"), _v("1.9.2"))
+    assert not accepts(Policy.WITHIN_MAJOR, _v("1.9.2"), _v("2.0.0"))
+    assert not accepts(Policy.WITHIN_MAJOR, _v("1.9.2"), _v("1.9.1"))
+
+
+def test_a_major_update_item_is_dropped_but_its_announcement_survives() -> None:
+    manifest = {"product": "studio", "items": [
+        {"id": "v2", "kind": "minor", "title": "Studio 2", "version": "2.0.0"},
+        {"id": "fix", "kind": "patch", "title": "A fix", "version": "1.0.1"},
+        {"id": "hello-2", "kind": "major_announcement", "title": "Studio 2 is out",
+         "version": "2.0.0", "url": "https://uncloud.com/studio"},
+    ]}
+    report = read(manifest, product="studio", current_version="1.0.0",
+                  policy=Policy.WITHIN_MAJOR)
+    ids = {i.id: i for i in report.items}
+    assert set(ids) == {"fix", "hello-2"}
+    assert not ids["hello-2"].replaces_installation
+
+
+# -------------------------------------------------------------------- fetch
+def test_fetch_refuses_plain_http_and_foreign_hosts_without_a_request(monkeypatch) -> None:
+    from uncloud_engine.core import updates as module
+
+    def exploded(*args, **kwargs):
+        raise AssertionError("no request may be made")
+
+    # fetch imports urllib when called, so patching the module itself covers it.
+    import urllib.request
+
+    monkeypatch.setattr(urllib.request, "urlopen", exploded)
+    assert module.fetch("http://raw.githubusercontent.com/x.json") is None
+    assert module.fetch("https://evil.example/x.json") is None
+    assert module.fetch("https://raw.githubusercontent.com.evil.example/x.json") is None
+
+
+class _Response:
+    def __init__(self, body: bytes, url: str) -> None:
+        self._body, self._url = body, url
+
+    def read(self, n: int) -> bytes:
+        return self._body[:n]
+
+    def geturl(self) -> str:
+        return self._url
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc) -> None:
+        return None
+
+
+def _serve(monkeypatch, body: bytes, final_url: str) -> None:
+    import urllib.request
+
+    monkeypatch.setattr(urllib.request, "urlopen",
+                        lambda request, timeout=0: _Response(body, final_url))
+
+
+def test_fetch_parses_json_from_an_allowed_host(monkeypatch) -> None:
+    from uncloud_engine.core.updates import fetch
+
+    url = "https://raw.githubusercontent.com/o/r/main/updates/uncloud.json"
+    _serve(monkeypatch, b'{"product": "uncloud", "items": []}', url)
+    assert fetch(url) == {"product": "uncloud", "items": []}
+    assert "raw.githubusercontent.com" in MANIFEST_HOSTS
+
+
+def test_a_redirect_off_the_allowlist_is_refused(monkeypatch) -> None:
+    from uncloud_engine.core.updates import fetch
+
+    _serve(monkeypatch, b'{"items": []}', "https://evil.example/landed.json")
+    assert fetch("https://github.com/o/r/releases/latest/download/updates.json") is None
+
+
+@pytest.mark.parametrize("body", [b"<html>not json</html>", b"{" * 10, b"x" * (600 * 1024)])
+def test_fetch_is_quiet_on_anything_that_is_not_a_manifest(monkeypatch, body) -> None:
+    from uncloud_engine.core.updates import fetch
+
+    url = "https://raw.githubusercontent.com/o/r/main/u.json"
+    _serve(monkeypatch, body, url)
+    assert fetch(url) is None
+
+
+def test_fetch_is_quiet_offline(monkeypatch) -> None:
+    import urllib.error
+    import urllib.request
+
+    from uncloud_engine.core.updates import fetch
+
+    def offline(*a, **k):
+        raise urllib.error.URLError("no route")
+
+    monkeypatch.setattr(urllib.request, "urlopen", offline)
+    assert fetch("https://raw.githubusercontent.com/o/r/main/u.json") is None

@@ -64,3 +64,7 @@ uncloud/src-tauri/vendor/
 *.log
 .idea/
 .vscode/
+
+# `models/` above keeps downloaded weights out of git. It also matched Core's
+# source package for identifying models, which is code and must be committed.
+!sidecar/uncloud_engine/core/models/

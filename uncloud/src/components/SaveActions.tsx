@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { open, save } from '@tauri-apps/plugin-dialog';
-import { Check, FolderOpen, Loader2, Save, SaveAll, Trash2 } from 'lucide-react';
-import { deleteOutput, getSettings, revealOutput, saveCopy } from '../lib/sidecar';
+import { Check, Download, FolderOpen, Loader2, Save, SaveAll, Trash2 } from 'lucide-react';
+import { deleteOutput, getSettings, outputBlob, revealOutput, saveCopy } from '../lib/sidecar';
+import { downloadBlob, inDesktop } from '../lib/platform';
 
 /**
  * Save / Save as / Reveal / Discard for one finished piece of generated work.
@@ -34,7 +35,7 @@ export default function SaveActions({
   /** Clear the result from the view — the file behind it is gone. */
   onDiscarded?: () => void;
 }) {
-  const [busy, setBusy] = useState<'save' | 'saveAs' | 'discard' | null>(null);
+  const [busy, setBusy] = useState<'save' | 'saveAs' | 'download' | 'discard' | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
@@ -56,6 +57,20 @@ export default function SaveActions({
       if (typeof dest !== 'string' || !dest) return;
       const result = await saveCopy(path!, dest, which === 'save');
       setSaved(result.path);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  /** On a paired device "save a copy" means onto that device. Folders on the
+   *  computer are not somewhere a phone can choose. */
+  async function download() {
+    setBusy('download');
+    setError(null);
+    try {
+      downloadBlob(await outputBlob(path!), name);
     } catch (e) {
       setError(String(e));
     } finally {
@@ -90,7 +105,15 @@ export default function SaveActions({
 
   return (
     <div className="flex flex-col items-center gap-1">
-      <div className="flex items-center gap-1">
+      <div className="flex flex-wrap justify-center items-center gap-1">
+        {!inDesktop() && (
+          <button className={button} onClick={download} disabled={busy !== null}
+                  title="Download to this device">
+            {busy === 'download' ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
+            Download
+          </button>
+        )}
+        {inDesktop() && <>
         <button className={button} onClick={() => run('save')} disabled={busy !== null}
                 title="Copy to a folder, keeping the name">
           {busy === 'save' ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
@@ -105,6 +128,7 @@ export default function SaveActions({
                 title="Show the file in Finder">
           <FolderOpen size={13} /> Reveal
         </button>
+        </>}
         <button
           className={`${button} ${confirming ? 'text-rose-400' : 'hover:text-rose-400'}`}
           onClick={discard}

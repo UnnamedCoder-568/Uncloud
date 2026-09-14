@@ -5,6 +5,7 @@ import {
 } from '../lib/sidecar';
 import Dictate from '../components/Dictate';
 import type { LocalModel, VideoJob, MemoryBudget } from '../lib/sidecar';
+import { SplitTabs, useSplit } from '../components/Split';
 
 /** LTX honours frame counts of the form 8n+1; anything else is padded silently. */
 const FRAME_CHOICES = [
@@ -152,9 +153,12 @@ export default function VideoView() {
     );
   }
 
+  const split = useSplit(busy);
+
   return (
-    <div className="h-full flex">
-      <div className="w-[320px] shrink-0 border-r border-[var(--border-soft)] overflow-y-auto p-4 flex flex-col gap-5">
+    <div className="h-full flex split">
+      <SplitTabs split={split} labels={['Settings', 'Video']} />
+      <div className={`w-[320px] shrink-0 border-r border-[var(--border-soft)] overflow-y-auto p-4 flex flex-col gap-5 split-pane${split.on(0)}`}>
         <div className="relative">
           <label className="text-[10px] uppercase tracking-[0.18em] text-[var(--text-faint)]">Model</label>
           <button
@@ -302,7 +306,7 @@ export default function VideoView() {
         </button>
       </div>
 
-      <div className="flex-1 min-w-0 flex flex-col">
+      <div className={`flex-1 min-w-0 flex flex-col split-pane${split.on(1)}`}>
         <div className="p-6 pb-3">
           <div className="flex items-center justify-between">
             <label className="text-[10px] uppercase tracking-[0.18em] text-[var(--text-faint)]">Prompt</label>

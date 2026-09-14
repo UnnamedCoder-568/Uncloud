@@ -16,9 +16,9 @@ from fastapi import (
     FastAPI,
     File,
     Form,
-    Header,
     HTTPException,
     Query,
+    Request,
     UploadFile,
     WebSocket,
     WebSocketDisconnect,
@@ -60,13 +60,60 @@ app.add_middleware(
 )
 
 
-def require_token(authorization: str | None = Header(default=None)) -> None:
-    if authorization != f"Bearer {settings.token}":
+# The LAN surface, when this process was started with --lan. None otherwise,
+# and None means none of it exists: no routes, no listener, no cookie accepted.
+_lan: Any = None
+
+
+def _same(given: str, expected: str) -> bool:
+    """Constant-time, and safe on input that is not ASCII. `compare_digest` on
+    str raises for non-ASCII, which turned a malformed header into a 500."""
+    return secrets.compare_digest(given.encode("utf-8", "surrogateescape"),
+                                  expected.encode("utf-8"))
+
+
+def authorised(request: Any) -> bool:
+    """The desktop shell's bearer token, or a device paired over the LAN."""
+    header = request.headers.get("authorization") or ""
+    if _same(header, f"Bearer {settings.token}"):
+        return True
+    if _lan is None:
+        return False
+    from .core.lan.web import session_of
+
+    return session_of(request, _lan) is not None
+
+
+def require_token(request: Request) -> None:
+    # Was a plain `!=`, which leaks how much of the token matched through
+    # timing. Harmless on loopback with a per-launch token; not harmless once a
+    # network can reach this.
+    if not authorised(request):
         raise HTTPException(status_code=401, detail="Invalid or missing token")
 
 
-def require_token_ws(token: str = Query(default="")) -> bool:
-    return secrets.compare_digest(token, settings.token)
+def require_desktop(request: Request) -> None:
+    """The desktop shell only — not a device paired over the network.
+
+    For the few actions whose subject is the computer's own disk rather than
+    the work done in the app: pointing at an arbitrary folder and writing
+    files into it is a decision made at the computer, which is why the phone
+    interface never offers it. Enforced here as well, because a hidden button
+    is not a boundary.
+    """
+    if not _same(request.headers.get("authorization") or "", f"Bearer {settings.token}"):
+        raise HTTPException(status_code=403,
+                            detail="This is only available on the computer running Uncloud.")
+
+
+def require_token_ws(websocket: WebSocket) -> bool:
+    if _same(websocket.query_params.get("token", ""), settings.token):
+        return True
+    if _lan is None:
+        return False
+    from .core.lan.web import session_of
+
+    return session_of(websocket, _lan) is not None
 
 
 # ----------------------------------------------------------------- approvals
@@ -348,6 +395,7 @@ def get_settings() -> dict:
         "output_dir": str(settings.output_dir),
         "output_dir_is_default": settings.output_dir_is_default,
         "hf_token_set": settings.hf_token_set,
+        "check_updates": settings.check_updates,
     }
 
 
@@ -1361,6 +1409,127 @@ def library() -> list[dict]:
     return [m.to_dict() for m in scan_library_cached(settings.models_dir)]
 
 
+# ------------------------------------------------------------ adding a model
+class ModelPathBody(BaseModel):
+    path: str
+
+
+class ImportModelBody(BaseModel):
+    path: str
+    name: str = ""
+    #: A base model chosen by the person, where the files leave it open.
+    family: str = ""
+    #: Look up missing configuration on huggingface.co. Off unless asked.
+    online: bool = False
+    #: What the person says the licence is. "unknown" unless they say otherwise;
+    #: never filled in on their behalf.
+    licence: str = "unknown"
+
+
+def _existing(raw: str) -> Path:
+    path = Path(raw).expanduser()
+    if not raw.strip() or not path.exists():
+        raise HTTPException(status_code=404, detail="Nothing exists at that path.")
+    return path
+
+
+@app.post("/api/models/inspect", dependencies=[Depends(require_desktop)])
+def inspect_model(body: ModelPathBody) -> dict:
+    """What a file or folder is, what it is missing, and whether it will run.
+    Reads headers and configs only, and writes nothing."""
+    from .model_import import inspect
+
+    return inspect(str(_existing(body.path)))
+
+
+@app.post("/api/models/import", dependencies=[Depends(require_desktop)])
+def import_model_route(body: ImportModelBody) -> dict:
+    import os
+
+    from .model_import import import_model, inspect
+
+    path = _existing(body.path)
+    preview = inspect(str(path))
+    files = [s["file"] for s in preview["plan"] if s["action"] in ("create", "copy")]
+    files.append("uncloud-model.json")
+    # Writing into somebody's folder is a write, whoever asked for it: the same
+    # gate as everything else that changes what is on disk.
+    gated("import_model", Risk.WRITE,
+          f"Add {path.name} to the library, writing {', '.join(files)} beside it",
+          preview={"path": str(path), "files": files}, origin="models")
+    if body.online:
+        gated("model_lookup", Risk.NETWORK,
+              f"Look up missing configuration for {path.name} on huggingface.co",
+              preview={"host": "huggingface.co", "files": "JSON configuration only"},
+              origin="models")
+
+    result = import_model(str(path), name=body.name.strip()[:120], family=body.family,
+                          online=body.online, licence=(body.licence or "unknown")[:80],
+                          token=os.environ.get("HF_TOKEN") if body.online else None)
+    model_path = Path(result["identification"]["path"])
+    try:
+        model_path.resolve().relative_to(settings.models_dir.resolve())
+    except ValueError:
+        settings.remember_imported(str(model_path))
+    invalidate_library_cache()
+    return result
+
+
+@app.post("/api/models/forget", dependencies=[Depends(require_desktop)])
+def forget_model(body: ModelPathBody) -> dict:
+    """Stop listing a model added from outside the models folder. Its files,
+    including the ones import wrote, are left exactly where they are."""
+    forgotten = settings.forget_imported(body.path)
+    invalidate_library_cache()
+    return {"forgotten": forgotten}
+
+
+# ------------------------------------------------------------------ updates
+_update_checks = None
+
+
+def update_checks():
+    global _update_checks
+    if _update_checks is None:
+        from .update_checks import UpdateChecks
+
+        _update_checks = UpdateChecks(CONFIG_DIR / "updates.json")
+    return _update_checks
+
+
+@app.get("/api/updates", dependencies=[Depends(require_token)])
+def get_updates() -> dict:
+    """Notices for this install, checking first if a check is due and enabled."""
+    return update_checks().report(enabled=settings.check_updates)
+
+
+@app.post("/api/updates/check", dependencies=[Depends(require_desktop)])
+def check_updates_now() -> dict:
+    """A check a person asked for, so it runs even with automatic checks off."""
+    return update_checks().report(enabled=settings.check_updates, force=True)
+
+
+class DismissBody(BaseModel):
+    id: str
+
+
+@app.post("/api/updates/dismiss", dependencies=[Depends(require_token)])
+def dismiss_update(body: DismissBody) -> dict:
+    """Hide a notice. A critical one comes back — Core decides that, not this."""
+    update_checks().dismiss(body.id[:200])
+    return update_checks().report(enabled=settings.check_updates)
+
+
+class CheckUpdatesBody(BaseModel):
+    enabled: bool
+
+
+@app.post("/api/settings/check_updates", dependencies=[Depends(require_desktop)])
+def set_check_updates(body: CheckUpdatesBody) -> dict:
+    settings.set_check_updates(body.enabled)
+    return {"check_updates": settings.check_updates}
+
+
 @app.get("/api/image/components", dependencies=[Depends(require_token)])
 def image_components() -> list[dict]:
     return [c.to_dict() for c in scan_components(settings.models_dir)]
@@ -2264,7 +2433,7 @@ def remove_conversation(conversation_id: str) -> dict:
 # ------------------------------------------------------------------- agent
 @app.websocket("/ws/agent")
 async def agent_ws(websocket: WebSocket) -> None:
-    if not require_token_ws(websocket.query_params.get("token", "")):
+    if not require_token_ws(websocket):
         await websocket.close(code=4401)
         return
     await websocket.accept()
@@ -2320,17 +2489,38 @@ async def agent_ws(websocket: WebSocket) -> None:
             await websocket.send_json({"type": "error", "message": message})
 
 
+def _web_dist() -> Path | None:
+    """The built frontend, for serving to other devices.
+
+    The desktop shell passes where its bundled copy is; a checkout falls back
+    to the Vite output beside the engine.
+    """
+    import os
+
+    for candidate in (os.environ.get("UNCLOUD_WEB_DIST"),
+                      Path(__file__).resolve().parents[2] / "uncloud" / "dist"):
+        if candidate and (Path(candidate) / "index.html").is_file():
+            return Path(candidate)
+    return None
+
+
 def main() -> None:
     import atexit
 
-    import uvicorn
+    from .core.lan import Lan
+    from .core.lan import run as lan_run
+    from .core.lan import web as lan_web
+
+    argv = sys.argv[1:]
+    verb = lan_run.command(argv, config_dir=CONFIG_DIR, product="Uncloud", slug="uncloud")
+    if verb is not None:
+        sys.exit(verb)
 
     atexit.register(engine_manager.stop)
 
     port = 0
-    for arg in sys.argv[1:]:
-        if arg.startswith("--port="):
-            port = int(arg.split("=", 1)[1])
+    if (given := lan_run.option(argv, "port")) is not None:
+        port = int(given)
     if not port:
         import socket
 
@@ -2338,10 +2528,38 @@ def main() -> None:
             s.bind(("127.0.0.1", 0))
             port = s.getsockname()[1]
 
+    global _lan
+    if lan_run.lan_requested(argv):
+        from .core.lan import candidates
+
+        found = candidates()
+        _lan = Lan(product="Uncloud", slug="uncloud", config_dir=CONFIG_DIR,
+                   port=lan_run.lan_port("uncloud", lan_run.option(argv, "lan-port"),
+                                         [i.address for i in found]),
+                   chosen=found)
+        app.include_router(lan_web.router(_lan, authorised))
+        dist = _web_dist()
+        if dist is not None:
+            lan_web.serve_frontend(app, dist)
+
     # Handshake line consumed by the Tauri parent process to learn our port/token.
     print(json.dumps({"port": port, "token": settings.token}), flush=True)
 
-    uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
+    if _lan is not None:
+        offer = _lan.offer()
+        # Only to a terminal. When the desktop app started this, stderr may be
+        # captured to a log that outlives the code; the app asks for a code over
+        # its own authenticated connection instead.
+        if sys.stderr.isatty():
+            print(_lan.banner(offer), file=sys.stderr, flush=True)
+        else:
+            print("Uncloud is on the local network. Run `pair` in a terminal, or "
+                  "open Settings > Devices, for a pairing code.", file=sys.stderr, flush=True)
+        if _web_dist() is None:
+            print("No built frontend was found, so paired devices get the API only. "
+                  "Build it with `npm run build` in uncloud/.", file=sys.stderr, flush=True)
+
+    lan_run.serve(app, port=port, lan=_lan)
 
 
 if __name__ == "__main__":

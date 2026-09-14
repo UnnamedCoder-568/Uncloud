@@ -130,7 +130,20 @@ def read_marker(model_path: str) -> dict:
 
 
 def family_for(model_path: str) -> Family:
-    return FAMILIES.get(read_marker(model_path).get("family", ""), FAMILIES["ltx"])
+    """The loader family: from the folder's marker, else from its own pipeline.
+
+    Defaulting to LTX when there was no marker meant a Wan pipeline without
+    one was opened with LTXPipeline. The pipeline class it declares says which
+    it is, so that is asked before any default.
+    """
+    declared = read_marker(model_path).get("family", "")
+    if declared in FAMILIES:
+        return FAMILIES[declared]
+    from .core.models import identify
+    from .model_import import VIDEO_FAMILIES
+
+    detected = VIDEO_FAMILIES.get(identify(Path(model_path), sizes=False).family, "")
+    return FAMILIES.get(detected, FAMILIES["ltx"])
 
 
 def free_device_cache() -> None:

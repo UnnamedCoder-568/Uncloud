@@ -13,8 +13,6 @@ one to end up standing in for the other.
 
 from __future__ import annotations
 
-from importlib import metadata
-
 from .config import Settings
 from .core.legal import Acceptance, Ledger, Register, Store, load_all
 from .core.legal.disclosure import Acknowledgement
@@ -26,10 +24,9 @@ def _app_version() -> str:
     Best effort. A missing version makes the record slightly less useful in a
     support conversation; failing to start over it would be absurd.
     """
-    try:
-        return metadata.version("astro-engine")
-    except Exception:  # noqa: BLE001 - never worth a startup failure
-        return ""
+    from .update_checks import app_version
+
+    return app_version()
 
 
 class SettingsStore(Store):

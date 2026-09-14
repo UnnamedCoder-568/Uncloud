@@ -346,6 +346,41 @@ fn refresh_engine(app: &AppHandle) {
 }
 
 /// Spawn the engine and block until it prints its handshake line.
+/// Where the choice to be reachable on the local network is recorded.
+///
+/// A marker file owned by the shell, not a setting inside the engine, because
+/// the choice decides how the engine is STARTED: `--lan` is a launch flag, so
+/// the only thing that can honour it is whatever launches.
+fn network_marker(app: &AppHandle) -> Option<PathBuf> {
+    app.path().app_config_dir().ok().map(|dir| dir.join("lan-enabled"))
+}
+
+pub fn network_access_enabled(app: &AppHandle) -> bool {
+    network_marker(app).is_some_and(|marker| marker.is_file())
+}
+
+pub fn set_network_access(app: &AppHandle, enabled: bool) -> Result<(), String> {
+    let marker = network_marker(app).ok_or("No configuration directory is available.")?;
+    if enabled {
+        if let Some(parent) = marker.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        std::fs::write(&marker, b"").map_err(|e| e.to_string())
+    } else {
+        match std::fs::remove_file(&marker) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.to_string()),
+            _ => Ok(()),
+        }
+    }
+}
+
+/// The frontend build, bundled as a resource so paired devices can be served
+/// the same interface this window shows. Absent in development until built.
+fn web_dist(app: &AppHandle) -> Option<PathBuf> {
+    let dir = app.path().resource_dir().ok()?.join("web");
+    dir.join("index.html").is_file().then_some(dir)
+}
+
 pub fn spawn_sidecar(app: &AppHandle) -> Result<(Child, SidecarInfo), String> {
     // Before resolving, so the engine about to run is this build's.
     refresh_engine(app);
@@ -376,8 +411,21 @@ pub fn spawn_sidecar(app: &AppHandle) -> Result<(Child, SidecarInfo), String> {
         // A force quit or a crash never runs our exit handler. The engine
         // watches this pid and shuts itself down when it disappears.
         .env("UNCLOUD_PARENT_PID", std::process::id().to_string())
+        // The installed application's version. The engine runs as an
+        // uninstalled project, so it has no package metadata to read one from:
+        // consent records went out with an empty version and an update check
+        // would have had nothing to compare against.
+        .env("UNCLOUD_APP_VERSION", app.package_info().version.to_string())
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit());
+
+    if let Some(dist) = web_dist(app) {
+        command.env("UNCLOUD_WEB_DIST", dist);
+    }
+    // Nothing reaches the network unless the person turned it on.
+    if network_access_enabled(app) {
+        command.arg("--lan");
+    }
 
     // Own process group: the engine spawns model servers of its own, and
     // killing only the engine would leave those holding their memory.

@@ -159,30 +159,24 @@ def _gguf_architecture(path: Path) -> tuple[str | None, str | None]:
         return None, None
 
 
-def _classify_gguf(path: Path) -> tuple[str, str, str | None]:
-    """Returns (category, engine, note) for a .gguf file, from its header."""
-    arch, name = _gguf_architecture(path)
-    lowered_name = (name or "").lower()
+def _classify_gguf(path: Path) -> tuple[str, str, str | None, bool]:
+    """(category, engine, note, ready) for a .gguf file, from its header.
 
-    # A language-model architecture whose own name says encoder is a pipeline
-    # component, not something to load on its own.
-    if "text encoder" in lowered_name or "text_encoder" in lowered_name:
-        return ("component", "text-encoder",
-                "Text encoder for a diffusion pipeline — pair it with a model, "
-                "not selectable on its own.")
-    if arch in _DIFFUSION_ARCHS:
-        return ("image", "gguf-diffusion",
-                "Quantised diffusion transformer. Needs the matching VAE, tokenizer "
-                "and text encoder from a full pipeline alongside it.")
-    if arch and arch.startswith(_LM_ARCH_PREFIXES):
-        return "text", "gguf", None
+    Through Core's identifier, which reads the architecture rather than trusting
+    the name. The table this replaced knew flux and sd*, so a Z-Image GGUF —
+    architecture lumina2 — was filed as a chat model, and a Wan one was filed
+    correctly only by luck of its filename, with a note claiming the header
+    could not be read when it had been.
+    """
+    from .core.models import identify
+    from .model_import import verdict
 
-    # Header unreadable or unfamiliar: fall back to the old filename guess, but
-    # say so rather than presenting it as a confident classification.
-    if any(h in path.name.lower() for h in DIFFUSION_HINTS):
-        return ("image", "gguf-diffusion",
-                "Guessed from the filename — the GGUF header could not be read.")
-    return "text", "gguf", None
+    identification = identify(path, sizes=False)
+    v = verdict(identification)
+    note = v.note or None
+    if identification.warnings and not note:
+        note = identification.warnings[0]
+    return v.category, v.engine, note, v.runnable
 
 
 # A checkpoint written by `mflux-save` has no manifest at the root — just
@@ -274,13 +268,16 @@ def read_mlx_checkpoint(child: Path) -> MlxCheckpoint | None:
     fine-tune gets its own entry in the picker without a second copy of the
     weights, which for these models is tens of gigabytes.
     """
-    marker = child / MLX_MARKER
+    # Uncloud Studio writes its own marker in the same shape. A folder either
+    # product set up is one either product can read.
     marker_data: dict = {}
-    if marker.is_file():
-        try:
-            marker_data = json.loads(marker.read_text())
-        except (OSError, ValueError):
-            marker_data = {}
+    for marker in (child / MLX_MARKER, child / "adstudio-mlx.json"):
+        if marker.is_file():
+            try:
+                marker_data = json.loads(marker.read_text())
+                break
+            except (OSError, ValueError):
+                marker_data = {}
 
     weights = child
     declared = marker_data.get("checkpoint")
@@ -305,11 +302,21 @@ def read_mlx_checkpoint(child: Path) -> MlxCheckpoint | None:
     except (OSError, ValueError, TypeError):
         pass
 
+    base = marker_data.get("base_model")
+    if not base:
+        # Nothing records the base, but the tensors do: Core tells FLUX.2 Klein
+        # 4B, 9B and Krea 2 apart by their block layout, on real checkpoints.
+        from .core.models import identify
+
+        derived = identify(weights, sizes=False)
+        if derived.layout.value == "mflux-checkpoint" and derived.family and not derived.candidates:
+            base = derived.family
+
     loras = [str((child / p).resolve() if not Path(p).is_absolute() else Path(p))
              for p in marker_data.get("lora_paths", [])]
     scales = marker_data.get("lora_scales") or [1.0] * len(loras)
     return MlxCheckpoint(
-        path=child, base=marker_data.get("base_model"), quantize=quantize,
+        path=child, base=base, quantize=quantize,
         name=marker_data.get("name") or _mlx_display_name(child),
         defaults=marker_data.get("defaults"),
         weights=weights if weights != child else None,
@@ -355,7 +362,10 @@ def _mlx_dir_engine(child: Path) -> tuple[str, str, str | None] | None:
 
 def scan_library(models_dir: Path) -> list[LocalModel]:
     if not models_dir.exists():
-        return []
+        # Nothing to walk — but models imported from elsewhere are still
+        # models. Returning early here hid every one of them on a machine whose
+        # models folder had not been created yet.
+        return sorted(_imported(models_dir, set()), key=lambda m: m.name.lower())
 
     catalog_by_repo = {e.repo: e for e in get_catalog()}
     found: list[LocalModel] = []
@@ -385,16 +395,31 @@ def scan_library(models_dir: Path) -> list[LocalModel]:
             defaults=entry.defaults or None, capabilities=entry.capabilities,
         ))
 
+    # GGUF files a pipeline folder names as its own parts belong to that entry,
+    # not the list: Wan's transformer and UMT5 encoder are how its folder runs.
+    claimed: set[str] = set()
+    for marker in models_dir.rglob("uncloud-video.json"):
+        try:
+            data = json.loads(marker.read_text())
+        except (OSError, ValueError):
+            continue
+        for key in ("transformer_gguf", "text_encoder_gguf"):
+            if data.get(key):
+                claimed.add(str((marker.parent / str(data[key])).resolve()))
+        claimed.update(str(p.resolve()) for p in marker.parent.glob("*.gguf"))
+
     # 1. Loose GGUF files anywhere under the folder.
     for gguf in models_dir.rglob("*.gguf"):
         if str(gguf) in seen_paths or any(str(gguf).startswith(d + "/") for d in seen_dirs):
             continue
+        if str(gguf.resolve()) in claimed:
+            continue
         seen_paths.add(str(gguf))
-        category, engine, note = _classify_gguf(gguf)
+        category, engine, note, ready = _classify_gguf(gguf)
         size_gb = gguf.stat().st_size / (1024 ** 3)
         found.append(LocalModel(
             id=f"local:{gguf}", name=gguf.stem, category=category, engine=engine,
-            path=str(gguf), size_gb=size_gb, note=note,
+            path=str(gguf), size_gb=size_gb, note=note, ready=ready,
         ))
 
     # 2. HF-cache-style `models--org--name` dirs (from huggingface_hub snapshot downloads)
@@ -481,6 +506,12 @@ def scan_library(models_dir: Path) -> list[LocalModel]:
                 is_mlx_model = False
 
             if not (is_diffusers_pipeline or is_mlx_model):
+                recognised = _recognised_elsewhere(child)
+                if recognised is not None:
+                    seen_paths.add(str(child))
+                    seen_dirs.add(str(child))
+                    found.append(recognised)
+                    continue
                 stack.append(child)  # not a model root itself — keep looking inside it
                 continue
 
@@ -496,17 +527,26 @@ def scan_library(models_dir: Path) -> list[LocalModel]:
                 display_name = child.parent.parent.name.removeprefix("models--").replace("--", "/")
             lowered = display_name.lower()
             port_note: str | None = None
+            ready, verdict_note = True, None
             if is_diffusers_pipeline:
-                if any(h in lowered for h in STT_HINTS):
-                    category, engine = "voice-stt", "faster-whisper"
-                elif any(h in lowered for h in TTS_HINTS):
-                    category, engine = "voice-tts", "kokoro"
-                elif any(h in lowered for h in ("video", "wan2", "cogvideo", "ltx")):
-                    category, engine = "video", "diffusers"
-                else:
-                    category, engine = "image", "diffusers"
+                # From the pipeline class the folder declares, not from its name:
+                # a renamed LTX folder is still LTX, and a HunyuanVideo folder
+                # is video that the engine here cannot load.
+                from .core.models import identify
+                from .model_import import verdict
+
+                v = verdict(identify(child, sizes=False))
+                category, engine = v.category, v.engine
+                ready, verdict_note = v.runnable, v.note or None
             elif any(h in lowered for h in STT_HINTS):
                 category, engine = "voice-stt", "faster-whisper"
+                if not (child / "model.bin").is_file():
+                    # faster-whisper loads CTranslate2 conversions. A transformers
+                    # Whisper listed as ready here failed the moment it was used.
+                    ready = False
+                    verdict_note = ("Whisper in the transformers format. Uncloud transcribes "
+                                    "with faster-whisper, which loads CTranslate2 conversions "
+                                    "(a model.bin), so this one cannot be used as it is.")
             elif any(h in lowered for h in TTS_HINTS):
                 category, engine = "voice-tts", "kokoro"
             elif any(h in lowered for h in DIFFUSION_HINTS):
@@ -540,10 +580,66 @@ def scan_library(models_dir: Path) -> list[LocalModel]:
                 catalog_id=entry.id if entry else None,
                 tags=entry.tags if entry else None,
                 capabilities=entry.capabilities if entry else None,
-                note=entry.note if entry else port_note,
+                note=entry.note if entry else (port_note or verdict_note),
+                ready=ready if not entry else True,
             ))
 
+    found.extend(_imported(models_dir, {m.path for m in found} | seen_paths))
     return sorted(found, key=lambda m: m.name.lower())
+
+
+def _recognised_elsewhere(child: Path) -> LocalModel | None:
+    """A folder the shapes above do not match, but Core recognises: a model
+    imported with a manifest, or a set such as Chatterbox or ACE-Step.
+
+    Listed even when nothing here can run it. Invisible was the previous
+    behaviour, and it is indistinguishable from the model not being there.
+    """
+    from .core.models import MANIFEST, Confidence, identify
+    from .model_import import local_model, verdict
+
+    has_manifest = (child / MANIFEST).is_file()
+    identification = identify(child, sizes=False)
+    if identification.contents or identification.confidence in (Confidence.UNKNOWN,
+                                                               Confidence.GUESSED):
+        return None
+    if not has_manifest and identification.layout.value not in ("bundle", "ctranslate2",
+                                                                "transformers"):
+        return None
+    identification.size_bytes = int(_dir_size_gb(child) * 1024 ** 3)
+    return local_model(identification, verdict(identification))
+
+
+def _imported(models_dir: Path, already: set[str]) -> list[LocalModel]:
+    """Models added from outside the models folder, re-read from their files."""
+    from .config import settings
+    from .core.models import identify
+    from .model_import import local_model, verdict
+
+    out: list[LocalModel] = []
+    for raw in settings.imported_models:
+        path = Path(raw)
+        if raw in already or not path.exists():
+            continue
+        try:
+            path.relative_to(models_dir)
+            continue                      # inside the folder: the walk has it
+        except ValueError:
+            pass
+        mlx = read_mlx_checkpoint(path) if path.is_dir() else None
+        if mlx is not None:
+            out.append(LocalModel(
+                id=f"local:{path}", name=mlx.name, category="image", engine="mflux",
+                path=str(mlx.checkpoint), size_gb=_dir_size_gb(mlx.checkpoint),
+                ready=mlx.ready, note=mlx.note(), defaults=mlx.defaults,
+                mflux_cli=mlx.cli, mflux_base=mlx.base, lora_paths=mlx.lora_paths,
+                lora_scales=mlx.lora_scales, tags=["imported"]))
+            continue
+        identification = identify(path, sizes=False)
+        identification.size_bytes = (path.stat().st_size if path.is_file()
+                                     else int(_dir_size_gb(path) * 1024 ** 3))
+        out.append(local_model(identification, verdict(identification)))
+    return out
 
 
 @dataclass

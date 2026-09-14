@@ -6,6 +6,7 @@ import Dictate from '../components/Dictate';
 import SaveActions from '../components/SaveActions';
 import type { LocalModel, ImageJob, Character } from '../lib/sidecar';
 import { onCharacterListChange } from '../lib/characters-changed';
+import { isNarrow } from '../lib/platform';
 
 // Models that carry their own settings win: a distilled checkpoint run at the
 // 25-step default is a minute of work for a picture it makes in four.
@@ -28,7 +29,9 @@ export default function ImageGenerate() {
   const [models, setModels] = useState<LocalModel[]>([]);
   const [model, setModel] = useState<LocalModel | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [optionsOpen, setOptionsOpen] = useState(true);
+  // Open beside the canvas on a desktop. On a phone it would take two thirds
+  // of the width, so there it starts closed and opens over the canvas instead.
+  const [optionsOpen, setOptionsOpen] = useState(() => !isNarrow());
   const [prompt, setPrompt] = useState('');
   const [negativePrompt, setNegativePrompt] = useState('');
   const [steps, setSteps] = useState(8);
@@ -198,7 +201,7 @@ export default function ImageGenerate() {
           </button>
 
           {pickerOpen && (
-            <div className="absolute top-14 left-5 w-96 card p-1.5 z-10 shadow-2xl max-h-80 overflow-y-auto">
+            <div className="absolute top-14 left-5 w-96 max-w-[calc(100vw-2.5rem)] card p-1.5 z-10 shadow-2xl max-h-80 overflow-y-auto">
               {models.length === 0 && (
                 <div className="text-xs text-[var(--text-faint)] px-3 py-4 text-center">
                   No image models found yet. Download one from the Models tab.
@@ -337,7 +340,7 @@ export default function ImageGenerate() {
               <button
                 onClick={generate}
                 disabled={!model || !prompt.trim() || !!running}
-                className="w-8 h-8 rounded-full btn-accent flex items-center justify-center disabled:opacity-30 transition shrink-0"
+                className="w-8 h-8 max-md:w-11 max-md:h-11 rounded-full btn-accent flex items-center justify-center disabled:opacity-30 transition shrink-0"
               >
                 {running ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
               </button>
@@ -386,8 +389,17 @@ export default function ImageGenerate() {
       </div>
 
       {optionsOpen && (
-        <div className="w-64 shrink-0 border-l border-[var(--border-soft)] p-4 overflow-y-auto flex flex-col gap-4">
-          <h3 className="text-[10px] uppercase tracking-[0.18em] text-[var(--text-faint)]">Generation options</h3>
+        <div className="w-64 shrink-0 border-l border-[var(--border-soft)] p-4 overflow-y-auto flex flex-col gap-4
+                        max-md:fixed max-md:inset-0 max-md:z-40 max-md:w-auto max-md:border-0
+                        max-md:bg-[var(--bg)] max-md:pt-[calc(1rem+env(safe-area-inset-top))]
+                        max-md:pb-[calc(1rem+env(safe-area-inset-bottom))]">
+          <div className="flex items-center justify-between">
+            <h3 className="text-[10px] uppercase tracking-[0.18em] text-[var(--text-faint)]">Generation options</h3>
+            <button onClick={() => setOptionsOpen(false)}
+                    className="md:hidden min-h-11 px-4 rounded-lg bg-[var(--bg-raised)] text-sm">
+              Done
+            </button>
+          </div>
 
           <label className="flex flex-col gap-1.5">
             <span className="text-xs text-[var(--text-dim)]">Steps</span>

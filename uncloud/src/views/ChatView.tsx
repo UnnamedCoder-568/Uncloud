@@ -739,7 +739,9 @@ export default function ChatView() {
               <Settings2 size={14} /><span>Voice</span>
             </summary>
             <div className="absolute bottom-full mb-2 left-0 z-40 card p-2
-                            flex flex-col gap-3" style={{ minWidth: 240 }}>
+                            flex flex-col gap-3
+                            max-md:fixed max-md:left-3 max-md:right-3 max-md:bottom-auto
+                            max-md:top-[calc(env(safe-area-inset-top)+4rem)]" style={{ minWidth: 240 }}>
               <label className="field">
                 <span className="label" style={{ fontSize: 11 }}>Voice</span>
                 <select className="input" value={voice}
