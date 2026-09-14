@@ -117,7 +117,7 @@ export default function Conversations({ open, onClose, list, activeId,
                 </div>
               ) : (
                 <button
-                  className="tb-btn shrink-0 opacity-0 group-hover:opacity-100 focus:opacity-100"
+                  className="tb-btn shrink-0 opacity-0 group-hover:opacity-100 touch:opacity-100 focus:opacity-100"
                   title="Delete"
                   onClick={(e) => { e.stopPropagation(); setConfirming(c.id); }}
                 >

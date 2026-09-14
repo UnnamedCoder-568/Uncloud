@@ -24,6 +24,8 @@ import {
   disconnectMcpServer, forgetMcpServer, getIntegrations,
   type ConnectionState, type IntegrationInfo, type IntegrationsState,
 } from '../lib/sidecar';
+import OnTheComputer from './OnTheComputer';
+import { inDesktop } from '../lib/platform';
 
 /** The categories a person can put an MCP tool into.
  *
@@ -211,7 +213,10 @@ function Row({ integration, busy, open, onToggle, onAct }: {
           {state === 'not_connected' && integration.auth_kind === 'token' && (
             <TokenForm integration={integration} onAct={onAct} />
           )}
-          {state === 'not_connected' && integration.auth_kind === 'none' && (
+          {state === 'not_connected' && integration.auth_kind === 'none' && !inDesktop() && (
+            <OnTheComputer>Folders are connected on the computer running Uncloud.</OnTheComputer>
+          )}
+          {state === 'not_connected' && integration.auth_kind === 'none' && inDesktop() && (
             <button onClick={chooseFolder}
                     className="self-start flex items-center gap-1.5 text-[11px]
                                btn-accent px-3 py-1.5 rounded-full transition">

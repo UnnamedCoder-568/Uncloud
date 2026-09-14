@@ -26,6 +26,8 @@ tauri-plugin-log = "2"
 tauri-plugin-dialog = "2.7.2"
 reqwest = { version = "0.13.3", features = ["json"] }
 tokio = { version = "1.53.1", features = ["rt", "time", "macros"] }
+tauri-plugin-updater = "2"
+semver = "1"
 
 # Used to signal the engine's whole process group on quit, so model
 # servers spawned by the engine do not outlive the app.

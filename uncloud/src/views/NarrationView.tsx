@@ -6,6 +6,7 @@ import {
 } from '../lib/sidecar';
 import Dictate from '../components/Dictate';
 import type { NarrationOptions, NarrationJob, LocalModel } from '../lib/sidecar';
+import { SplitTabs, useSplit } from '../components/Split';
 
 /** Rough reading pace, for estimating output length before generating. */
 const WORDS_PER_MINUTE = 150;
@@ -150,9 +151,12 @@ export default function NarrationView() {
   const estMin = words / WORDS_PER_MINUTE;
   const busy = !!job && !job.done;
 
+  const split = useSplit(busy);
+
   return (
-    <div className="h-full flex">
-      <div className="w-[320px] shrink-0 border-r border-[var(--border-soft)] overflow-y-auto p-4 flex flex-col gap-5">
+    <div className="h-full flex split">
+      <SplitTabs split={split} labels={['Script', 'Audio']} />
+      <div className={`w-[320px] shrink-0 border-r border-[var(--border-soft)] overflow-y-auto p-4 flex flex-col gap-5 split-pane${split.on(0)}`}>
         <div className="relative">
           <label className="text-[10px] uppercase tracking-[0.18em] text-[var(--text-faint)]">Model</label>
           <button
@@ -365,7 +369,7 @@ export default function NarrationView() {
         </button>
       </div>
 
-      <div className="flex-1 min-w-0 flex flex-col">
+      <div className={`flex-1 min-w-0 flex flex-col split-pane${split.on(1)}`}>
         <div className="flex-1 p-6 flex flex-col min-h-0">
           <div className="flex items-center justify-between mb-2">
             <label className="text-[10px] uppercase tracking-[0.18em] text-[var(--text-faint)]">Script</label>

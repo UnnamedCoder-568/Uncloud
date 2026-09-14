@@ -24,6 +24,8 @@ import { cancelTraining, forgetAdapter, getAdapters, getLibrary,
          getTrainingJobs, getTrainingPresets, prepareTraining, startTraining,
          type AdapterCard, type LocalModel, type TrainingJob,
          type TrainingPlan, type TrainingPreset } from '../lib/sidecar';
+import OnTheComputer from '../components/OnTheComputer';
+import { inDesktop } from '../lib/platform';
 
 export default function TrainingView() {
   const [models, setModels] = useState<LocalModel[]>([]);
@@ -127,7 +129,8 @@ export default function TrainingView() {
 
           <div>
             <label className="text-xs">Examples</label>
-            <button onClick={pickDataset}
+            {!inDesktop() && <div className="mt-1"><OnTheComputer>Training files are chosen on the computer running Uncloud.</OnTheComputer></div>}
+            <button onClick={pickDataset} disabled={!inDesktop()}
                     className="w-full mt-1 flex items-center justify-between gap-3
                                bg-[var(--bg-inset)] px-3 py-2 rounded-lg text-xs
                                text-left hover:brightness-110 transition">

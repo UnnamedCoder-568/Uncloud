@@ -4,6 +4,7 @@ import { getLibrary, uploadImage, editImage, getImageJob, fetchImageBlobUrl } fr
 import Dictate from '../components/Dictate';
 import SaveActions from '../components/SaveActions';
 import type { LocalModel, ImageJob } from '../lib/sidecar';
+import { SplitTabs, useSplit } from '../components/Split';
 
 const PRESETS = [
   { label: 'Replace background', hint: 'Replace the background with a plain warm beige studio wall. Keep the subject exactly as-is.' },
@@ -78,9 +79,12 @@ export default function ImageEdit() {
 
   const busy = !!job && !job.done;
 
+  const split = useSplit(busy);
+
   return (
-    <div className="h-full flex">
-      <div className="w-[320px] shrink-0 border-r border-[var(--border-soft)] overflow-y-auto p-4 flex flex-col gap-5">
+    <div className="h-full flex split">
+      <SplitTabs split={split} labels={['Edit', 'Result']} />
+      <div className={`w-[320px] shrink-0 border-r border-[var(--border-soft)] overflow-y-auto p-4 flex flex-col gap-5 split-pane${split.on(0)}`}>
         <div className="relative">
           <label className="text-[10px] uppercase tracking-[0.18em] text-[var(--text-faint)]">Model</label>
           <button
@@ -123,7 +127,7 @@ export default function ImageEdit() {
               <img src={refPreview} alt="source" className="w-full rounded-lg border border-[var(--border)]" />
               <button
                 onClick={() => { setRefPath(null); setRefPreview(null); setOutUrl(null); setJob(null); }}
-                className="absolute top-2 right-2 w-6 h-6 rounded-full bg-black/70 flex items-center justify-center opacity-0 group-hover:opacity-100 transition"
+                className="absolute top-2 right-2 w-6 h-6 rounded-full bg-black/70 flex items-center justify-center opacity-0 group-hover:opacity-100 touch:opacity-100 before:absolute before:-inset-2.5 before:content-[''] transition"
               >
                 <X size={12} />
               </button>
@@ -183,7 +187,7 @@ export default function ImageEdit() {
         </button>
       </div>
 
-      <div className="flex-1 min-w-0 overflow-y-auto p-6 flex items-center justify-center">
+      <div className={`flex-1 min-w-0 overflow-y-auto p-6 flex items-center justify-center split-pane${split.on(1)}`}>
         {outUrl ? (
           <div className="flex flex-col items-center gap-3 max-h-full">
             <img src={outUrl} alt="result" className="max-h-[70vh] rounded-xl border border-[var(--border)]" />

@@ -1,6 +1,12 @@
 @import "tailwindcss";
 @import "./design/chassis.css";
 
+/* Devices with no hover at all. Tailwind 4 already confines `hover:` to
+   pointers that can hover, which is right for styling and wrong for anything
+   that is REVEALED on hover: on a phone it is never revealed. `touch:` is the
+   other half of that bargain. */
+@custom-variant touch (@media (hover: none));
+
 /* Fonts are bundled, not fetched. Uncloud has to look right with no
    network at all, and a CDN @import silently degrades to system fonts. */
 @font-face {

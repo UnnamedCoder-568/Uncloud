@@ -3,10 +3,13 @@ import { open } from '@tauri-apps/plugin-dialog';
 import {
   Check, Download, FolderCog, HardDrive, Loader2, CheckCircle2, XCircle,
 } from 'lucide-react';
-import { getCatalog, getLibrary, startDownload, listDownloads, getSettings, setModelsDir as saveModelsDir,
+import { forgetModel, getCatalog, getLibrary, startDownload, listDownloads, getSettings, setModelsDir as saveModelsDir,
          acknowledgeModelLicence, getModelLicence, type ModelLicence } from '../lib/sidecar';
 import type { CatalogEntry, LocalModel, DownloadState } from '../lib/sidecar';
 import { formatBytes, formatSpeed } from '../lib/format';
+import OnTheComputer from '../components/OnTheComputer';
+import AddModel from '../components/AddModel';
+import { inDesktop } from '../lib/platform';
 
 const CATEGORIES: { id: string; label: string }[] = [
   { id: 'text', label: 'Text' },
@@ -33,6 +36,7 @@ export default function ModelsLibrary() {
   const [modelsDir, setModelsDir] = useState('');
   const [pendingDir, setPendingDir] = useState<string | null>(null);
   const [dirSaved, setDirSaved] = useState(false);
+  const [adding, setAdding] = useState(false);
 
   async function chooseDir() {
     const picked = await open({ directory: true, multiple: false, defaultPath: modelsDir || undefined });
@@ -122,13 +126,13 @@ export default function ModelsLibrary() {
   return (
     <div className="h-full overflow-y-auto">
       <header className="sticky top-0 bg-[var(--bg)]/90 backdrop-blur border-b border-[var(--border-soft)] px-6 pt-5 pb-3 z-10">
-        <div className="flex items-center justify-between">
-          <div className="flex gap-1 bg-[var(--bg-inset)] p-1 rounded-lg">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex gap-1 bg-[var(--bg-inset)] p-1 rounded-lg max-md:w-full max-md:overflow-x-auto">
             {CATEGORIES.map((c) => (
               <button
                 key={c.id}
                 onClick={() => setCategory(c.id)}
-                className={`px-3 py-1.5 rounded-md text-xs transition ${
+                className={`px-3 py-1.5 rounded-md text-xs transition whitespace-nowrap max-md:min-h-11 ${
                   category === c.id ? 'bg-[var(--bg-raised)] text-white' : 'text-[var(--text-faint)] hover:text-[var(--text-dim)]'
                 }`}
               >
@@ -137,7 +141,7 @@ export default function ModelsLibrary() {
             ))}
           </div>
           {category === 'text' && (
-            <label className="flex items-center gap-2 text-xs text-[var(--text-dim)] cursor-pointer select-none">
+            <label className="flex items-center gap-2 text-xs text-[var(--text-dim)] cursor-pointer select-none max-md:min-h-11">
               <input type="checkbox" checked={onlyUncensored} onChange={(e) => setOnlyUncensored(e.target.checked)} />
               Uncensored only
             </label>
@@ -146,7 +150,7 @@ export default function ModelsLibrary() {
       </header>
 
       <div className="px-6 py-5">
-        <section className="card p-4 mb-8 flex items-center gap-3">
+        <section className="card p-4 mb-8 flex flex-wrap items-center gap-3">
           <div className="w-8 h-8 rounded-lg bg-[var(--bg-inset)] flex items-center justify-center shrink-0">
             <FolderCog size={15} className="text-[var(--text-dim)]" />
           </div>
@@ -157,25 +161,37 @@ export default function ModelsLibrary() {
             <div className="text-xs font-mono truncate mt-0.5" title={pendingDir ?? modelsDir}>
               {pendingDir ?? (modelsDir || 'Not set yet')}
             </div>
+            {!inDesktop() && <div className="mt-1"><OnTheComputer /></div>}
             {pendingDir && (
               <div className="text-[11px] text-amber-400/80 mt-1">
                 Not saved yet — press Save to download here from now on.
               </div>
             )}
           </div>
-          <button
-            onClick={chooseDir}
-            className="text-xs px-3 py-1.5 rounded-lg bg-[var(--bg-inset)] text-[var(--text-dim)] hover:text-white transition shrink-0"
-          >
-            Change…
-          </button>
-          <button
+          {inDesktop() ? (
+            <button
+              onClick={chooseDir}
+              className="text-xs px-3 py-1.5 rounded-lg bg-[var(--bg-inset)] text-[var(--text-dim)] hover:text-white transition shrink-0"
+            >
+              Change…
+            </button>
+          ) : null}
+          {inDesktop() && (
+            <button
+              onClick={() => setAdding(true)}
+              className="text-xs px-3 py-1.5 rounded-lg bg-[var(--bg-inset)] text-[var(--text-dim)] hover:text-white transition shrink-0"
+              title="Add a model you downloaded yourself, from anywhere on disk"
+            >
+              Add from disk…
+            </button>
+          )}
+          {inDesktop() && <button
             onClick={saveDir}
             disabled={!pendingDir}
             className="btn-accent text-xs px-3 py-1.5 rounded-lg shrink-0 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
           >
             {dirSaved ? <><Check size={13} /> Saved</> : 'Save'}
-          </button>
+          </button>}
         </section>
 
         {filteredLocal.length > 0 && (
@@ -183,7 +199,7 @@ export default function ModelsLibrary() {
             <h2 className="text-[10px] uppercase tracking-[0.18em] text-[var(--text-faint)] mb-3">
               Installed
             </h2>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {filteredLocal.map((m) => (
                 <div key={m.id} className="card p-4 flex items-start gap-3">
                   <div className="w-8 h-8 rounded-lg bg-[var(--bg-inset)] flex items-center justify-center shrink-0">
@@ -194,7 +210,16 @@ export default function ModelsLibrary() {
                     <div className="text-[11px] text-[var(--text-faint)] font-mono mt-0.5">
                       {m.engine.toUpperCase()} · {formatBytes(m.size_gb * 1024 ** 3)}
                     </div>
-                    {m.note && <div className="text-[11px] text-amber-400/80 mt-1">{m.note}</div>}
+                    {m.note && <div className={`text-[11px] mt-1 ${m.ready ? 'text-[var(--text-faint)]' : 'text-amber-400/80'}`}>{m.note}</div>}
+                    {m.tags?.includes('imported') && inDesktop() && (
+                      <button
+                        onClick={async () => { await forgetModel(m.path); refresh(); }}
+                        className="text-[11px] text-[var(--text-faint)] hover:text-[var(--text-dim)] mt-1.5 max-md:min-h-11"
+                        title="Stop listing it. Its files stay where they are."
+                      >
+                        Remove from library
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}
@@ -237,18 +262,18 @@ export default function ModelsLibrary() {
                     : 'Nothing to download in this category.'}
             </p>
           )}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {filteredCatalog.map((entry) => {
               const active = activeDownloadFor(entry.id);
               const done = downloads.find((d) => d.catalog_id === entry.id && d.status === 'done');
               return (
                 <div key={entry.id} className="card p-4">
-                  <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-start justify-between gap-2 max-md:flex-col-reverse">
                     <div className="min-w-0">
                       <div className="text-sm">{entry.name}</div>
                       <div className="text-[11px] text-[var(--text-faint)] mt-0.5">{entry.description}</div>
                     </div>
-                    <div className="flex flex-wrap gap-1 justify-end shrink-0">
+                    <div className="flex flex-wrap gap-1 justify-end shrink-0 max-md:justify-start">
                       {entry.tags.map((t) => (
                         <span
                           key={t}
@@ -310,6 +335,7 @@ export default function ModelsLibrary() {
                        onCancel={() => setDisclosing(null)}
                        onAccept={acknowledgeAndDownload} />
       )}
+      {adding && <AddModel onClose={() => setAdding(false)} onAdded={refresh} />}
     </div>
   );
 }
@@ -326,9 +352,9 @@ function LicenceDialog({ terms, name, onCancel, onAccept }: {
 }) {
   const unread = terms.commercial_use === 'unverified';
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-8
+    <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-8
                     bg-black/50 backdrop-blur-sm" onClick={onCancel}>
-      <div className="card w-full max-w-xl flex flex-col gap-4 p-6"
+      <div className="modal-panel card w-full max-w-xl flex flex-col gap-4 p-6"
            onClick={(e) => e.stopPropagation()}>
         <div>
           <h3 className="text-sm mb-1">{terms.headline}</h3>
