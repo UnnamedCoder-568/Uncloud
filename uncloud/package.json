@@ -4,6 +4,7 @@
   "version": "0.3.0-test.2",
   "type": "module",
   "scripts": {
+    "predev": "node -e \"require('fs').mkdirSync('dist',{recursive:true})\"",
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",

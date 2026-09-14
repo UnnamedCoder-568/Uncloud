@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { ThinkingSplitter } from './thinking';
+import { goPair, inDesktop } from './platform';
 
 export interface SidecarInfo {
   port: number;
@@ -21,12 +22,17 @@ export async function getSidecarInfo(): Promise<SidecarInfo> {
   throw new Error('Uncloud engine never became available');
 }
 
+/** Inside the desktop shell the engine is on loopback with a bearer token.
+ *  Served to a paired device, it is the page's own origin, and the session
+ *  cookie the browser attaches is the credential — there is no token to hold. */
 async function baseUrl(): Promise<string> {
+  if (!inDesktop()) return '';
   const { port } = await getSidecarInfo();
   return `http://127.0.0.1:${port}`;
 }
 
 async function authHeaders(): Promise<Record<string, string>> {
+  if (!inDesktop()) return {};
   const { token } = await getSidecarInfo();
   return { Authorization: `Bearer ${token}` };
 }
@@ -76,6 +82,8 @@ export async function api<T>(path: string, opts: RequestInit = {},
   const headers = { ...(await authHeaders()), ...(opts.body ? { 'Content-Type': 'application/json' } : {}), ...(opts.headers || {}) };
   const resp = await fetch(url, { ...opts, headers });
   if (!resp.ok) {
+    // A paired device whose session was revoked, or that never paired.
+    if (resp.status === 401) goPair();
     const text = await resp.text().catch(() => resp.statusText);
 
     if (resp.status === 428 && asker && !retried) {
@@ -108,6 +116,8 @@ export interface Settings {
   output_dir: string;
   output_dir_is_default: boolean;
   hf_token_set: boolean;
+  /** Look for new versions and notices by itself. */
+  check_updates: boolean;
 }
 
 export interface CatalogEntry {
@@ -490,11 +500,15 @@ export async function characterReferenceUrl(slug: string): Promise<string> {
   return URL.createObjectURL(await resp.blob());
 }
 
-export async function fetchImageBlobUrl(id: string): Promise<string> {
+export async function fetchImageBlob(id: string): Promise<Blob> {
   const url = `${await baseUrl()}/api/image/output/${id}`;
   const resp = await fetch(url, { headers: await authHeaders() });
   if (!resp.ok) throw new Error(`Failed to fetch image: ${resp.status}`);
-  const blob = await resp.blob();
+  return resp.blob();
+}
+
+export async function fetchImageBlobUrl(id: string): Promise<string> {
+  const blob = await fetchImageBlob(id);
   return URL.createObjectURL(blob);
 }
 
@@ -695,6 +709,11 @@ export async function listVoices() {
 }
 
 export async function agentSocket(): Promise<WebSocket> {
+  if (!inDesktop()) {
+    // Same origin, so the session cookie rides along with the handshake.
+    const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
+    return new WebSocket(`${scheme}://${window.location.host}/ws/agent`);
+  }
   const { port, token } = await getSidecarInfo();
   return new WebSocket(`ws://127.0.0.1:${port}/ws/agent?token=${token}`);
 }
@@ -716,6 +735,11 @@ export interface RuntimeStatus {
 }
 
 export async function runtimeStatus(): Promise<RuntimeStatus> {
+  // A page served by the engine is proof the engine is running.
+  if (!inDesktop()) {
+    return { running: true, source_ready: true, uv_found: true, deps_ready: true,
+             engine_dir: '', error: null };
+  }
   return invoke<RuntimeStatus>('runtime_status');
 }
 
@@ -730,6 +754,118 @@ export async function startRuntime(): Promise<SidecarInfo> {
   cached = info; // so the first api() call after setup doesn't re-poll
   return info;
 }
+
+// ---------------------------------------------------------- adding a model
+
+export interface ModelEvidence { source: string; finding: string }
+
+export interface ModelIdentification {
+  path: string;
+  is_file: boolean;
+  layout: string;
+  task: string;
+  family: string;
+  architecture: string;
+  pipeline: string;
+  quantization: string;
+  /** certain | inferred | guessed | unknown */
+  confidence: string;
+  name: string;
+  base_repo: string;
+  /** What a model card SAYS. Never a verified licence. */
+  licence_claim: string;
+  size_bytes: number;
+  evidence: ModelEvidence[];
+  needs: { file: string; why: string; derivable: boolean }[];
+  candidates: string[];
+  warnings: string[];
+  contents: { path: string; name: string; task: string; family: string }[];
+}
+
+export interface MetadataStep {
+  file: string;
+  /** present | create | copy | fetch | choose | unavailable */
+  action: string;
+  source: string;
+  detail: string;
+  caution: boolean;
+}
+
+export interface ModelVerdict {
+  runnable: boolean;
+  category: string;
+  engine: string;
+  note: string;
+  capabilities: string[];
+}
+
+export interface ModelInspection {
+  identification: ModelIdentification;
+  plan: MetadataStep[];
+  verdict: ModelVerdict;
+  manifest: boolean;
+}
+
+export interface ModelImportResult {
+  result: { created: string[]; skipped: string[]; failed: { file: string; error: string }[];
+            manifest: string };
+  plan: MetadataStep[];
+  identification: ModelIdentification;
+  verdict: ModelVerdict;
+  model: LocalModel;
+}
+
+/** Reads headers and configs. Writes nothing. Desktop only. */
+export const inspectModel = (path: string) =>
+  apiPost<ModelInspection>('/api/models/inspect', { path });
+
+export const importModel = (body: { path: string; name: string; family?: string;
+                                    online?: boolean; licence?: string }) =>
+  apiPost<ModelImportResult>('/api/models/import', body);
+
+/** Stops listing a model added from elsewhere. Deletes nothing. */
+export const forgetModel = (path: string) =>
+  apiPost<{ forgotten: boolean }>('/api/models/forget', { path });
+
+// ------------------------------------------------------------ network access
+
+export interface LanDevice {
+  id: string;
+  label: string;
+  created: number;
+  last_seen: number;
+  agent: string;
+  /** The device making this request. */
+  current: boolean;
+}
+
+export interface LanDevices {
+  devices: LanDevice[];
+  addresses: string[];
+  authority: string;
+  fingerprint: string;
+}
+
+export interface LanOffer {
+  code: string;
+  expires: number;
+  reaches: { label: string; url: string; qr: number[][] }[];
+}
+
+/** Whether the shell starts the engine with --lan. Desktop only. */
+export const networkAccess = () => invoke<boolean>('network_access');
+/** Restarts the engine; the port and token it hands back are new. */
+export const setNetworkAccess = (enabled: boolean) =>
+  invoke<SidecarInfo>('set_network_access', { enabled });
+
+/** Fails (404) when network access is off: the routes do not exist then. */
+export const lanDevices = () => api<LanDevices>('/api/lan/devices');
+export const lanOffer = () => apiPost<LanOffer>('/api/lan/offer');
+export const revokeDevice = (id: string) =>
+  api<{ revoked: number }>(`/api/lan/devices/${encodeURIComponent(id)}`, { method: 'DELETE' });
+export const renameDevice = (id: string, label: string) =>
+  apiPost<{ ok: boolean }>(`/api/lan/devices/${encodeURIComponent(id)}/label`, { label });
+export const signOutDevice = () => apiPost<{ ok: boolean }>('/api/lan/sign-out');
 
 export async function setKeepAwake(enabled: boolean) {
   return apiPost('/api/settings/keep_awake', { enabled });
@@ -1162,11 +1298,15 @@ export async function listOutputs(kind = '', limit = 300) {
 
 /** Blob URL for an output file — the engine requires a bearer token, so an
  *  <img src> pointing at the endpoint directly would 401. */
-export async function outputBlobUrl(path: string): Promise<string> {
+export async function outputBlob(path: string): Promise<Blob> {
   const url = `${await baseUrl()}/api/outputs/file?path=${encodeURIComponent(path)}`;
   const resp = await fetch(url, { headers: await authHeaders() });
   if (!resp.ok) throw new Error(`Could not load ${path}`);
-  return URL.createObjectURL(await resp.blob());
+  return resp.blob();
+}
+
+export async function outputBlobUrl(path: string): Promise<string> {
+  return URL.createObjectURL(await outputBlob(path));
 }
 
 export async function revealOutput(path: string) {

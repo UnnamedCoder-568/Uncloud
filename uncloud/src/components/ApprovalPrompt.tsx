@@ -69,12 +69,12 @@ export default function ApprovalPrompt() {
     .filter(([, value]) => value !== '' && value != null);
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-8
+    <div className="modal-backdrop fixed inset-0 z-[100] flex items-center justify-center p-8
                     bg-black/60 backdrop-blur-sm"
          // Clicking away is a no, not a dismissal. A prompt that can be escaped
          // without answering leaves the caller waiting forever.
          onClick={() => settle('no')}>
-      <div className="card w-full max-w-lg flex flex-col gap-4 p-5"
+      <div className="modal-panel card w-full max-w-lg flex flex-col gap-4 p-5"
            onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start gap-3">
           <span className="text-[var(--accent)] mt-0.5">{icon(request.category)}</span>

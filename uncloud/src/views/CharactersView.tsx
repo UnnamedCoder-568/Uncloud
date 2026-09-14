@@ -145,7 +145,7 @@ export default function CharactersView() {
                 <img src={refPreview} alt="reference" className="w-full rounded-lg border border-[var(--border)]" />
                 <button
                   onClick={() => { setRefPath(null); setRefPreview(null); }}
-                  className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-black/70 flex items-center justify-center opacity-0 group-hover:opacity-100 transition"
+                  className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-black/70 flex items-center justify-center opacity-0 group-hover:opacity-100 touch:opacity-100 before:absolute before:-inset-2.5 before:content-[''] transition"
                 >
                   <X size={12} />
                 </button>
@@ -194,7 +194,7 @@ export default function CharactersView() {
                 </div>
                 <button
                   onClick={() => remove(c.slug)}
-                  className="text-[var(--text-faint)] hover:text-rose-400 transition opacity-0 group-hover:opacity-100 shrink-0"
+                  className="text-[var(--text-faint)] hover:text-rose-400 transition opacity-0 group-hover:opacity-100 touch:opacity-100 relative before:absolute before:-inset-2.5 before:content-[''] shrink-0"
                 >
                   <Trash2 size={12} />
                 </button>

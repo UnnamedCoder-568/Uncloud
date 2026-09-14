@@ -1,4 +1,5 @@
 mod sidecar;
+mod updates;
 
 use sidecar::{RuntimeStatus, SidecarInfo, SidecarState};
 use tauri::{AppHandle, Manager};
@@ -51,10 +52,49 @@ async fn start_runtime(
     Ok(info)
 }
 
+#[tauri::command]
+fn network_access(app: AppHandle) -> bool {
+    sidecar::network_access_enabled(&app)
+}
+
+/// Turn "available on this network" on or off, and restart the engine so the
+/// change takes effect. The port and token change with the restart, so the
+/// window reloads afterwards rather than trusting what it had cached.
+#[tauri::command]
+async fn set_network_access(
+    app: AppHandle,
+    state: tauri::State<'_, SidecarState>,
+    enabled: bool,
+) -> Result<SidecarInfo, String> {
+    sidecar::set_network_access(&app, enabled)?;
+
+    let taken = state.child.lock().unwrap().take();
+    if let Some(mut child) = taken {
+        sidecar::terminate(&mut child);
+    }
+    *state.info.lock().unwrap() = None;
+
+    let spawn_app = app.clone();
+    let (child, info) =
+        tauri::async_runtime::spawn_blocking(move || sidecar::spawn_sidecar(&spawn_app))
+            .await
+            .map_err(|e| format!("Restart task failed: {e}"))??;
+    if let Err(e) = sidecar::wait_healthy(info.port, 120).await {
+        *state.error.lock().unwrap() = Some(e.clone());
+        return Err(e);
+    }
+    *state.info.lock().unwrap() = Some(info.clone());
+    *state.child.lock().unwrap() = Some(child);
+    *state.error.lock().unwrap() = None;
+    Ok(info)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(updates::UpdateState::default())
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -95,7 +135,11 @@ pub fn run() {
             get_sidecar_info,
             runtime_status,
             install_runtime,
-            start_runtime
+            start_runtime,
+            network_access,
+            set_network_access,
+            updates::app_update_check,
+            updates::app_update_install
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

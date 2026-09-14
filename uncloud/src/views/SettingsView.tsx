@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import DevicesSection from '../components/DevicesSection';
+import UpdatesSection from '../components/UpdatesSection';
 import IntegrationsSection from '../components/IntegrationsSection';
 import PermissionsSection from '../components/PermissionsSection';
 import LegalSection from '../components/LegalSection';
@@ -6,6 +8,8 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { setModelsDir, setDeviceAccess, setHfToken, getSettings, setKeepAwake, getAgentTools, setAgentToolGroups, setOutputDir, getResident, stopAllModels, getWeightCache, clearWeightCache } from '../lib/sidecar';
 import type { Settings, AgentTools, ResidentModels } from '../lib/sidecar';
 import { formatBytes } from '../lib/format';
+import OnTheComputer from '../components/OnTheComputer';
+import { inDesktop } from '../lib/platform';
 
 export default function SettingsView() {
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -127,10 +131,12 @@ export default function SettingsView() {
           </p>
           <button
             onClick={changeFolder}
-            className="w-full bg-[var(--bg-inset)] px-3 py-2.5 rounded-lg text-xs text-left hover:bg-[var(--bg-inset)]/70 transition font-mono"
+            disabled={!inDesktop()}
+            className="w-full bg-[var(--bg-inset)] px-3 py-2.5 rounded-lg text-xs text-left hover:bg-[var(--bg-inset)]/70 transition font-mono break-all disabled:hover:bg-[var(--bg-inset)] disabled:cursor-default"
           >
             {settings.models_dir}
           </button>
+          {!inDesktop() && <div className="mt-2"><OnTheComputer /></div>}
         </section>
 
         <section className="card p-4">
@@ -205,10 +211,12 @@ export default function SettingsView() {
           </p>
           <button
             onClick={changeOutputFolder}
-            className="w-full bg-[var(--bg-inset)] px-3 py-2.5 rounded-lg text-xs text-left hover:bg-[var(--bg-inset)]/70 transition font-mono"
+            disabled={!inDesktop()}
+            className="w-full bg-[var(--bg-inset)] px-3 py-2.5 rounded-lg text-xs text-left hover:bg-[var(--bg-inset)]/70 transition font-mono break-all disabled:hover:bg-[var(--bg-inset)] disabled:cursor-default"
           >
             {settings.output_dir}
           </button>
+          {!inDesktop() && <div className="mt-2"><OnTheComputer /></div>}
           {settings.output_dir_is_default && (
             <p className="mt-2 text-[11px] text-amber-400/80">
               Still the default hidden folder. Choose somewhere of your own.
@@ -340,6 +348,10 @@ export default function SettingsView() {
         </section>
 
         <PermissionsSection />
+
+        <UpdatesSection />
+
+        <DevicesSection />
 
         <IntegrationsSection />
 

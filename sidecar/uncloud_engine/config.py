@@ -178,6 +178,20 @@ class Settings:
         return not self._data.get("output_dir")
 
     @property
+    def check_updates(self) -> bool:
+        """Whether Uncloud looks for new versions and notices by itself.
+
+        On by default, and a setting rather than something assumed: checking
+        is a request to GitHub, and a local-first product says so. It sends
+        nothing about this install — see update_checks.py.
+        """
+        return bool(self._data.get("check_updates", True))
+
+    def set_check_updates(self, enabled: bool) -> None:
+        self._data["check_updates"] = bool(enabled)
+        self._save()
+
+    @property
     def keep_awake(self) -> bool:
         """Whether to stop the machine sleeping while a job runs.
 
@@ -189,6 +203,30 @@ class Settings:
     def set_keep_awake(self, enabled: bool) -> None:
         self._data["keep_awake"] = enabled
         self._save()
+
+    @property
+    def imported_models(self) -> list[str]:
+        """Models added from outside the models folder, by path.
+
+        Kept as paths and nothing else: what each one is gets re-read from its
+        files every scan, so a model changed on disk is never described by a
+        stale record here.
+        """
+        return [str(p) for p in self._data.get("imported_models") or []]
+
+    def remember_imported(self, path: str) -> None:
+        known = self.imported_models
+        if path not in known:
+            self._data["imported_models"] = [*known, path]
+            self._save()
+
+    def forget_imported(self, path: str) -> bool:
+        known = self.imported_models
+        if path not in known:
+            return False
+        self._data["imported_models"] = [p for p in known if p != path]
+        self._save()
+        return True
 
     @property
     def hf_token_set(self) -> bool:

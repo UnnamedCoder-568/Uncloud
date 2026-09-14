@@ -21,6 +21,8 @@ import OutputsView from './views/OutputsView';
 import SetupView from './views/SetupView';
 import { getLegalState, getSettings, runtimeStatus } from './lib/sidecar';
 import Wordmark from './components/Wordmark';
+import { inDesktop, useNarrow } from './lib/platform';
+import UpdateBanner from './components/UpdateBanner';
 
 
 /** Rendered once visited, then kept alive so tab switching is not destructive. */
@@ -82,24 +84,39 @@ export default function App() {
   const goForward = useCallback(
     () => setNav((n) => (n.at < n.stack.length - 1 ? { ...n, at: n.at + 1 } : n)), []);
 
+  // On a phone the rail is a drawer: closed to begin with, closed again after
+  // every move, and never written into the desktop's remembered preference —
+  // closing it on a phone must not hide it the next time the app opens.
+  const narrow = useNarrow();
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const showRail = narrow ? drawerOpen : railOpen;
+  const go = useCallback((next: View) => {
+    setView(next);
+    setDrawerOpen(false);
+  }, [setView]);
+
   const toggleRail = useCallback(() => {
+    if (narrow) {
+      setDrawerOpen((open) => !open);
+      return;
+    }
     setRailOpen((open) => {
       try { localStorage.setItem('uncloud.rail', open ? 'closed' : 'open'); }
       catch { /* private window; the default is fine */ }
       return !open;
     });
-  }, []);
+  }, [narrow]);
 
   const controls = useMemo(() => (
     <NavControls
-      railOpen={railOpen}
+      railOpen={showRail}
       onToggleRail={toggleRail}
       onBack={goBack}
       onForward={goForward}
       canBack={nav.at > 0}
       canForward={nav.at < nav.stack.length - 1}
     />
-  ), [railOpen, toggleRail, goBack, goForward, nav.at, nav.stack.length]);
+  ), [showRail, toggleRail, goBack, goForward, nav.at, nav.stack.length]);
 
   useEffect(() => {
     runtimeStatus()
@@ -159,25 +176,44 @@ export default function App() {
   if (!settled) return <TermsView onSettled={() => setSettled(true)} />;
 
   if (!onboarded) {
+    // Choosing where models and work live is a question about the computer's
+    // disk. A paired phone is told so, rather than shown folder pickers that
+    // cannot work.
+    if (!inDesktop()) {
+      return (
+        <div className="h-dvh w-screen flex flex-col items-center justify-center gap-3 px-8 text-center">
+          <Wordmark size={32} />
+          <p className="text-sm text-[var(--text-dim)] max-w-xs leading-relaxed">
+            Finish setting up Uncloud on the computer it runs on, then reload this page.
+          </p>
+        </div>
+      );
+    }
     return <><Onboarding onDone={() => setOnboarded(true)} /><ApprovalPrompt /></>;
   }
 
   return (
     <div className="h-screen w-screen flex bg-[var(--bg)]">
-      {railOpen && (
+      {showRail && narrow && (
+        <div className="rail-scrim" onClick={() => setDrawerOpen(false)} />
+      )}
+      {showRail && (
         <Sidebar
           active={view}
-          onChange={setView}
+          onChange={go}
           top={<TitleBar inset>{controls}</TitleBar>}
         />
       )}
       <main className="flex-1 min-w-0 flex flex-col">
         {/* With the rail hidden this is the only strip, so it takes the inset
             for the traffic lights and carries the navigation controls too. */}
-        <TitleBar inset={!railOpen}>
-          {!railOpen && controls}
+        {/* On a phone the drawer lies over this strip rather than replacing
+            it, so the controls stay here whether or not it is open. */}
+        <TitleBar inset={!showRail || narrow}>
+          {(!showRail || narrow) && controls}
           <div ref={setSlot} className="flex items-center gap-1 flex-1 min-w-0" />
         </TitleBar>
+        <UpdateBanner />
         <Panes
           active={view}
           panes={PANES}

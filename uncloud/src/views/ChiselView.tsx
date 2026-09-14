@@ -328,7 +328,7 @@ export default function ChiselView() {
             disabled={!busy && !goal.trim()}
             title={busy ? 'Stop' : 'Start'}
             aria-label={busy ? 'Stop' : 'Start'}
-            className="w-8 h-8 rounded-full btn-accent flex items-center justify-center disabled:opacity-30 transition shrink-0"
+            className="w-8 h-8 max-md:w-11 max-md:h-11 rounded-full btn-accent flex items-center justify-center disabled:opacity-30 transition shrink-0"
           >
             {busy ? <Square size={11} fill="currentColor" /> : <Send size={14} />}
           </button>

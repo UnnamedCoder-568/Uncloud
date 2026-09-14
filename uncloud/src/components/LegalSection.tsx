@@ -138,9 +138,9 @@ function Sheet({ title, onClose, children }: {
   title: string; onClose: () => void; children: React.ReactNode;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-8
+    <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-8
                     bg-black/50 backdrop-blur-sm" onClick={onClose}>
-      <div className="card w-full max-w-3xl max-h-[80vh] flex flex-col p-0"
+      <div className="modal-panel card w-full max-w-3xl max-h-[80vh] flex flex-col p-0"
            onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between gap-3 px-5 py-3
                         border-b border-[var(--border)]">

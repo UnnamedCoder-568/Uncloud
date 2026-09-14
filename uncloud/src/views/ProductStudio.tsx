@@ -2,11 +2,20 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, ImagePlus, Loader2, Sparkles, X, Check, FolderDown } from 'lucide-react';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import {
-  getLibrary, getProductCategories, uploadImage, generateProductShots,
-  getImageJob, fetchImageBlobUrl, listCharacters, exportImages,
+  exportImages,
+  fetchImageBlob,
+  fetchImageBlobUrl,
+  generateProductShots,
+  getImageJob,
+  getLibrary,
+  getProductCategories,
+  listCharacters,
+  uploadImage,
 } from '../lib/sidecar';
 import Dictate from '../components/Dictate';
 import type { LocalModel, ProductCategory, ImageJob, Character } from '../lib/sidecar';
+import { SplitTabs, useSplit } from '../components/Split';
+import { downloadBlob, inDesktop } from '../lib/platform';
 
 interface Result {
   job: ImageJob;
@@ -130,6 +139,15 @@ export default function ProductStudio() {
   async function exportAll() {
     const finished = results.filter((r) => r.job.status === 'done').map((r) => r.job.id);
     if (finished.length === 0) return;
+    if (!inDesktop()) {
+      // One after another rather than all at once: mobile browsers quietly
+      // drop a burst of simultaneous downloads after the first.
+      for (const [i, id] of finished.entries()) {
+        downloadBlob(await fetchImageBlob(id), `product-shot-${i + 1}.png`);
+        await new Promise((r) => setTimeout(r, 400));
+      }
+      return;
+    }
     const dir = await openDialog({ directory: true, multiple: false, title: 'Export product shots to…' });
     if (typeof dir !== 'string') return;
     try {
@@ -143,10 +161,13 @@ export default function ProductStudio() {
   const canRun = !!model && !!refPath && selectedShots.length > 0 && !running;
   const doneCount = results.filter((r) => r.job.status === 'done').length;
 
+  const split = useSplit(running);
+
   return (
-    <div className="h-full flex">
+    <div className="h-full flex split">
+      <SplitTabs split={split} labels={['Shots', 'Results']} />
       {/* ---------------------------------------------------------- controls */}
-      <div className="w-[320px] shrink-0 border-r border-[var(--border-soft)] overflow-y-auto p-4 flex flex-col gap-5">
+      <div className={`w-[320px] shrink-0 border-r border-[var(--border-soft)] overflow-y-auto p-4 flex flex-col gap-5 split-pane${split.on(0)}`}>
         {/* model */}
         <div className="relative">
           <label className="text-[10px] uppercase tracking-[0.18em] text-[var(--text-faint)]">Model</label>
@@ -194,7 +215,7 @@ export default function ProductStudio() {
               <img src={refPreview} alt="reference" className="w-full rounded-lg border border-[var(--border)]" />
               <button
                 onClick={() => { setRefPath(null); setRefPreview(null); }}
-                className="absolute top-2 right-2 w-6 h-6 rounded-full bg-black/70 flex items-center justify-center opacity-0 group-hover:opacity-100 transition"
+                className="absolute top-2 right-2 w-6 h-6 rounded-full bg-black/70 flex items-center justify-center opacity-0 group-hover:opacity-100 touch:opacity-100 before:absolute before:-inset-2.5 before:content-[''] transition"
               >
                 <X size={12} />
               </button>
@@ -326,7 +347,7 @@ export default function ProductStudio() {
       </div>
 
       {/* ----------------------------------------------------------- results */}
-      <div className="flex-1 min-w-0 overflow-y-auto p-6">
+      <div className={`flex-1 min-w-0 overflow-y-auto p-6 split-pane${split.on(1)}`}>
         {results.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center gap-2">
             <p className="text-sm text-[var(--text-faint)]">
@@ -345,7 +366,7 @@ export default function ProductStudio() {
                   onClick={exportAll}
                   className="flex items-center gap-1.5 text-[11px] px-3 py-1.5 rounded-full bg-[var(--bg-inset)] text-[var(--text-dim)] hover:text-white transition"
                 >
-                  <FolderDown size={12} /> Export {doneCount} to folder
+                  <FolderDown size={12} /> {inDesktop() ? `Export ${doneCount} to folder` : `Download ${doneCount}`}
                 </button>
               </div>
             )}

@@ -49,6 +49,38 @@ ALLOWED_SCHEME = "https://"
 TRUSTED_HOSTS = ("github.com", "www.github.com", "uncloud.com", "www.uncloud.com")
 
 
+#: Where a manifest may be fetched FROM — a separate list from TRUSTED_HOSTS,
+#: which governs links shown inside one. GitHub serves a repository file from
+#: raw.githubusercontent.com and a release asset by redirect to
+#: objects.githubusercontent.com; both are GitHub, and nothing else is.
+MANIFEST_HOSTS = ("raw.githubusercontent.com", "github.com", "objects.githubusercontent.com",
+                  "release-assets.githubusercontent.com", "uncloud.com", "www.uncloud.com")
+
+#: A manifest is a few kilobytes of JSON. Anything near this is not one.
+MANIFEST_LIMIT = 512 * 1024
+
+
+class Policy(StrEnum):
+    """Which application updates a product accepts.
+
+    CONTINUOUS takes every newer version, majors included — the right promise
+    for a free product. WITHIN_MAJOR takes fixes to the version somebody paid
+    for and never crosses into the next: a newer major is only ever announced,
+    through a MAJOR_ANNOUNCEMENT item, and the installed app stays the one that
+    was bought.
+    """
+
+    CONTINUOUS = "continuous"
+    WITHIN_MAJOR = "within_major"
+
+
+def accepts(policy: Policy, current: Version, candidate: Version) -> bool:
+    """Whether an application update to `candidate` may be offered at all."""
+    if not candidate or not current or candidate <= current:
+        return False
+    return policy is Policy.CONTINUOUS or candidate.major == current.major
+
+
 class Kind(StrEnum):
     """What is being announced. Drives what the interface may offer."""
 
@@ -190,7 +222,7 @@ def _trusted(url: str) -> bool:
     return host in TRUSTED_HOSTS
 
 
-def _item(raw: dict, *, current: Version) -> Item | None:
+def _item(raw: dict, *, current: Version, policy: Policy = Policy.CONTINUOUS) -> Item | None:
     """One entry, validated. Returns None rather than raising.
 
     A single malformed item must not cost the user the rest of the manifest,
@@ -218,7 +250,10 @@ def _item(raw: dict, *, current: Version) -> Item | None:
     # Anything describing a version of THIS product must be newer than what is
     # running. Without this a rolled-back or replayed manifest walks somebody
     # backwards, which is the downgrade attack in its simplest form.
-    if version is not None and kind in APPLICATION_KINDS and version <= current:
+    if version is not None and kind in APPLICATION_KINDS and not accepts(policy, current, version):
+        # Older than what is running (a replayed manifest walking somebody
+        # backwards), or — under WITHIN_MAJOR — a different major, which is
+        # announced, never offered as an update.
         return None
 
     url = str(raw.get("url") or "").strip()
@@ -245,7 +280,7 @@ def _item(raw: dict, *, current: Version) -> Item | None:
 
 
 def read(payload: object, *, product: str, current_version: str,
-         dismissed: set[str] | None = None) -> Report:
+         dismissed: set[str] | None = None, policy: Policy = Policy.CONTINUOUS) -> Report:
     """Turn a fetched manifest into what this install should be told.
 
     Everything is filtered here rather than by the caller: which product, which
@@ -274,7 +309,7 @@ def read(payload: object, *, product: str, current_version: str,
     dismissed = dismissed or set()
     items = []
     for entry in raw_items[:50]:
-        found = _item(entry, current=current)
+        found = _item(entry, current=current, policy=policy)
         if found is None:
             continue
         if not _applies(entry, current):
@@ -303,3 +338,41 @@ def _applies(raw: dict, current: Version) -> bool:
     if low is not None and current < low:
         return False
     return not (high is not None and high < current)
+
+
+def fetch(url: str, *, timeout: float = 10.0) -> object | None:
+    """A manifest from `url`, parsed, or None. Never raises.
+
+    https only, from MANIFEST_HOSTS only — checked on the URL asked for AND on
+    the one a redirect ended at, because a redirect is the easy way round an
+    allowlist. Nothing about this install is sent: no version, no platform, no
+    identifier. The manifest is the same file for everybody and the filtering
+    happens here, afterwards.
+    """
+    import json
+    import urllib.error
+    import urllib.request
+
+    def allowed(address: str) -> bool:
+        if not isinstance(address, str) or not address.startswith(ALLOWED_SCHEME):
+            return False
+        host = address[len(ALLOWED_SCHEME):].split("/", 1)[0].split(":", 1)[0].lower()
+        return host in MANIFEST_HOSTS
+
+    if not allowed(url):
+        return None
+    request = urllib.request.Request(url, headers={"Accept": "application/json",
+                                                   "User-Agent": "Uncloud update check"})
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            if not allowed(response.geturl()):
+                return None
+            body = response.read(MANIFEST_LIMIT + 1)
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError):
+        return None
+    if len(body) > MANIFEST_LIMIT:
+        return None
+    try:
+        return json.loads(body)
+    except ValueError:
+        return None
