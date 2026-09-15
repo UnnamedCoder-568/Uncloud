@@ -129,6 +129,11 @@ export default function VideoView() {
 
   const busy = !!job && !job.done;
   const pct = job && job.total_steps ? (job.step / job.total_steps) * 100 : 0;
+  // Before the early return below, not after it: hooks must run in the same
+  // order on every render, and that return only happens once the memory
+  // budget has loaded — so placed after it, the view crashed on exactly the
+  // machines the message is for.
+  const split = useSplit(busy);
 
   // A machine under the floor is told so once, rather than failing the same
   // way on every combination of length and size it tries.
@@ -152,8 +157,6 @@ export default function VideoView() {
       </div>
     );
   }
-
-  const split = useSplit(busy);
 
   return (
     <div className="h-full flex split">
