@@ -455,3 +455,43 @@ def test_the_audit_route_returns_newest_first() -> None:
         c.client.post("/api/web/search", json={"query": "second"})
         lines = c.client.get("/api/audit?limit=5").json()
         assert lines and "second" in lines[0]["summary"]
+
+
+# --------------------------------------------------- the workspace boundary
+#
+# The gate decides WHETHER a tool runs. This is the other half: where the file
+# tools may reach when it does. Neither is a sandbox — the shell's command is
+# unrestricted whatever this says, which is why shell asks every time — but the
+# confinement is a real boundary and nothing pinned it until now.
+def test_file_tools_stay_in_the_workspace_until_device_access_is_granted(
+        tmp_path, monkeypatch) -> None:
+    from uncloud_engine.config import settings
+
+    outside = tmp_path / "private.txt"
+    outside.write_text("not the agent's business")
+
+    monkeypatch.setattr(settings, "_data", {"agent_device_access": False})
+    monkeypatch.setattr(settings, "_save", lambda: None)
+    with pytest.raises(PermissionError, match="outside the agent workspace"):
+        tools._resolve_path(str(outside))
+
+    # Inside is fine, and so is everything below it.
+    assert tools._resolve_path(str(tools.WORKSPACE_DIR / "notes.md"))
+
+    monkeypatch.setattr(settings, "_data", {"agent_device_access": True})
+    assert tools._resolve_path(str(outside)) == outside.resolve()
+
+
+def test_the_shell_starts_in_the_workspace_when_device_access_is_off(monkeypatch) -> None:
+    """Its working directory, not its reach: `cd ~ && …` still goes home. That
+    is why shell is its own category that asks every time and can never be
+    granted for a session — see ALWAYS_ASK."""
+    import inspect
+
+    from uncloud_engine.config import settings
+
+    monkeypatch.setattr(settings, "_data", {"agent_device_access": False})
+    monkeypatch.setattr(settings, "_save", lambda: None)
+    source = inspect.getsource(tools._shell)
+    assert "WORKSPACE_DIR" in source and "agent_device_access" in source
+    assert Risk.SHELL in ALWAYS_ASK
