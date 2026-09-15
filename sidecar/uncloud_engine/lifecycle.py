@@ -48,6 +48,13 @@ def resident() -> dict:
     except Exception:  # noqa: BLE001
         pass
     try:
+        from . import speech
+
+        speech.stop()
+    except Exception:  # noqa: BLE001
+        pass
+
+    try:
         from .image_engine import image_engine
 
         out["image_pipeline"] = getattr(image_engine, "_pipe_path", None)

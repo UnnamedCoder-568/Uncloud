@@ -67,6 +67,7 @@
       "../../sidecar/uncloud_engine/core/mcp/*.py": "engine/uncloud_engine/core/mcp/",
       "../../sidecar/uncloud_engine/core/lan/*.py": "engine/uncloud_engine/core/lan/",
       "../../sidecar/uncloud_engine/core/models/*.py": "engine/uncloud_engine/core/models/",
+      "../../sidecar/uncloud_engine/core/speech/*.py": "engine/uncloud_engine/core/speech/",
       "../dist": "web",
       "../../sidecar/uncloud_engine/core/legal/*.py": "engine/uncloud_engine/core/legal/",
       "../../sidecar/uncloud_engine/core/legal/documents/*.md": "engine/uncloud_engine/core/legal/documents/",

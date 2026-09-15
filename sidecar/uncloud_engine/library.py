@@ -52,6 +52,14 @@ class LocalModel:
         }
 
 
+def speech_engine(folder: Path) -> str | None:
+    """Kokoro, Chatterbox or Bark, recognised by the files the folder holds."""
+    from .core.speech.engines import recognise
+
+    found = recognise(folder)
+    return found.engine if found else None
+
+
 def _dir_size_gb(path: Path) -> float:
     """Total bytes under a folder, following symlinked component directories.
 
@@ -539,14 +547,14 @@ def scan_library(models_dir: Path) -> list[LocalModel]:
                 category, engine = v.category, v.engine
                 ready, verdict_note = v.runnable, v.note or None
             elif any(h in lowered for h in STT_HINTS):
-                category, engine = "voice-stt", "faster-whisper"
-                if not (child / "model.bin").is_file():
-                    # faster-whisper loads CTranslate2 conversions. A transformers
-                    # Whisper listed as ready here failed the moment it was used.
-                    ready = False
-                    verdict_note = ("Whisper in the transformers format. Uncloud transcribes "
-                                    "with faster-whisper, which loads CTranslate2 conversions "
-                                    "(a model.bin), so this one cannot be used as it is.")
+                # CTranslate2 conversions go to faster-whisper; a transformers
+                # checkpoint (config.json and safetensors) is transcribed through
+                # transformers instead of being turned away.
+                category = "voice-stt"
+                engine = ("faster-whisper" if (child / "model.bin").is_file()
+                          else "transformers-whisper")
+            elif speech_engine(child):
+                category, engine = "voice-tts", speech_engine(child)
             elif any(h in lowered for h in TTS_HINTS):
                 category, engine = "voice-tts", "kokoro"
             elif any(h in lowered for h in DIFFUSION_HINTS):

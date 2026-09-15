@@ -50,11 +50,12 @@ def test_an_image_gguf_is_not_a_chat_model(tmp_path: Path) -> None:
     assert v.category == "image" and not v.runnable
 
 
-def test_whisper_is_only_runnable_as_ctranslate2(tmp_path: Path) -> None:
+def test_whisper_runs_as_ctranslate2_or_transformers(tmp_path: Path) -> None:
     write(tmp_path / "hf" / "config.json", {"model_type": "whisper",
                                             "architectures": ["WhisperForConditionalGeneration"]})
     safetensors(tmp_path / "hf" / "model.safetensors", {"w": [1]})
-    assert not verdict(identify(tmp_path / "hf")).runnable
+    hf = verdict(identify(tmp_path / "hf"))
+    assert hf.runnable and hf.engine == "transformers-whisper"
     write(tmp_path / "ct2" / "config.json", {"model_type": "whisper"})
     (tmp_path / "ct2" / "model.bin").write_bytes(b"ct2")
     assert verdict(identify(tmp_path / "ct2")).runnable
@@ -112,9 +113,13 @@ def test_scanner_lists_what_it_cannot_run_instead_of_hiding_it(models: Path) -> 
     chatterbox = _by_name(found, "chatterbox-tts")
     image = _by_name(found, "z_image_nsfw_v2-Q8_0")
     whisper = _by_name(found, "Whisper Small")
+    # Chatterbox weights with no tokenizer or built-in voice: recognised, and
+    # listed with the reason it cannot speak yet.
     assert not chatterbox.ready and chatterbox.note
     assert image.category == "image" and not image.ready
-    assert whisper.engine == "faster-whisper" and not whisper.ready
+    # A transformers Whisper is transcribed through transformers now, rather
+    # than turned away while it sat on the disk.
+    assert whisper.engine == "transformers-whisper" and whisper.ready
 
 
 def test_gguf_parts_a_pipeline_names_are_not_listed_twice(models: Path) -> None:

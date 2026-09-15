@@ -27,7 +27,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
-from . import characters, product_studio, voice_engine
+from . import characters, product_studio, speech, voice_engine
 from . import conversations as conversations_store
 from . import music_engine as music_engine_mod
 from . import narration_engine as narration_engine_mod
@@ -2202,22 +2202,224 @@ class SpeakBody(BaseModel):
     text: str
     voice: str = "af_heart"
     speed: float = 1.0
+    #: A voice saved in Voice. When set it decides the engine and everything
+    #: else, and `voice` and `speed` are ignored.
+    saved_voice: str = ""
 
 
 @app.post("/api/voice/speak", dependencies=[Depends(require_token)])
 async def speak_text(body: SpeakBody) -> FileResponse:
+    """A reply read aloud. Every reply is kept as a clip, so one worth keeping
+    can be found in Voice afterwards rather than lost with the conversation."""
     if not body.text.strip():
         raise HTTPException(status_code=400, detail="text is required")
     try:
-        out_path = await asyncio.to_thread(voice_engine.speak, body.text, body.voice, body.speed)
+        if body.saved_voice:
+            clip = await asyncio.to_thread(speech.speak_reply, body.text, body.saved_voice)
+        else:
+            out_path = await asyncio.to_thread(voice_engine.speak, body.text, body.voice,
+                                               body.speed)
+            clip = speech.record_reply(out_path, body.text, body.voice)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001 - surface synthesis failures (e.g. missing espeak-ng)
         raise HTTPException(status_code=500, detail=str(exc)) from exc
-    return FileResponse(out_path, media_type="audio/wav")
+    return FileResponse(clip.path, media_type="audio/wav", headers={"X-Clip-Id": clip.id})
 
 
 @app.get("/api/voice/voices", dependencies=[Depends(require_token)])
 def list_voices() -> list[str]:
     return voice_engine.KOKORO_VOICES
+
+
+# ------------------------------------------------------------------ speech
+def _speech_call(fn, *args, **kwargs):
+    """Speech errors a person can act on are 400s with the reason, not 500s."""
+    try:
+        return fn(*args, **kwargs)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/speech/engines", dependencies=[Depends(require_token)])
+async def speech_engines() -> list[dict]:
+    return await asyncio.to_thread(speech.engines)
+
+
+@app.post("/api/speech/engines/{engine}/install", dependencies=[Depends(require_desktop)])
+async def speech_install(engine: str) -> StreamingResponse:
+    """Build an engine's environment, streaming the log. Desktop only: it
+    installs software, which is not something a paired phone should start."""
+    from .core.speech.engines import ENGINES as SPEECH_ENGINES
+
+    if engine not in SPEECH_ENGINES:
+        raise HTTPException(status_code=404, detail=f"No speech engine called {engine!r}")
+    queue: asyncio.Queue = asyncio.Queue()
+    loop = asyncio.get_running_loop()
+
+    def on_line(line: str) -> None:
+        loop.call_soon_threadsafe(queue.put_nowait, {"line": line})
+
+    def run() -> None:
+        try:
+            speech.install(engine, on_line)
+            loop.call_soon_threadsafe(queue.put_nowait, {"done": True})
+        except Exception as exc:  # noqa: BLE001 - reported to the user, not raised
+            loop.call_soon_threadsafe(queue.put_nowait, {"error": str(exc)})
+
+    async def stream():
+        task = loop.run_in_executor(None, run)
+        while True:
+            item = await queue.get()
+            yield f"data: {json.dumps(item)}\n\n"
+            if "line" not in item:
+                break
+        await task
+
+    return StreamingResponse(stream(), media_type="text/event-stream")
+
+
+@app.get("/api/speech/presets", dependencies=[Depends(require_token)])
+async def speech_presets(engine: str, model_path: str) -> list[dict]:
+    return await asyncio.to_thread(_speech_call, speech.presets, engine, model_path)
+
+
+@app.get("/api/speech/voices", dependencies=[Depends(require_token)])
+def speech_saved_voices() -> list[dict]:
+    return [v.to_dict() for v in speech.saved_voices()]
+
+
+class SpeechVoiceBody(BaseModel):
+    name: str
+    engine: str
+    model_path: str = ""
+    variant: str = ""
+    preset: str = ""
+    language: str = ""
+    controls: dict[str, float] = {}
+    notes: str = ""
+    recording_path: str | None = None
+
+
+@app.post("/api/speech/voices", dependencies=[Depends(require_token)])
+async def speech_save_voice(body: SpeechVoiceBody) -> dict:
+    voice = await asyncio.to_thread(
+        _speech_call, speech.save_voice, name=body.name, engine=body.engine,
+        model_path=body.model_path, variant=body.variant, preset=body.preset,
+        language=body.language, controls=body.controls, notes=body.notes,
+        recording_path=body.recording_path)
+    return voice.to_dict()
+
+
+@app.delete("/api/speech/voices/{slug}", dependencies=[Depends(require_token)])
+def speech_delete_voice(slug: str) -> dict:
+    if not speech.delete_voice(slug):
+        raise HTTPException(status_code=404, detail="No such voice")
+    return {"deleted": slug}
+
+
+@app.post("/api/speech/recordings", dependencies=[Depends(require_token)])
+async def speech_upload_recording(file: UploadFile = File(...)) -> dict:
+    """Keep a recording to speak in, or to convert. Stored as WAV whatever it
+    arrived as: a browser records webm, which the speech engines cannot read."""
+    suffix = Path(file.filename or "recording.webm").suffix.lower() or ".webm"
+    if suffix not in speech.AUDIO_SUFFIXES:
+        raise HTTPException(status_code=400, detail=f"Unsupported audio type: {suffix}")
+    raw = UPLOAD_DIR / f"rec-{uuid.uuid4().hex[:10]}{suffix}"
+    raw.write_bytes(await file.read())
+
+    def to_wav() -> tuple[Path, float]:
+        import soundfile as sf
+        from faster_whisper import decode_audio
+
+        audio = decode_audio(str(raw), sampling_rate=24000)
+        dest = raw.with_suffix(".wav")
+        sf.write(str(dest), audio, 24000, subtype="PCM_16")
+        if dest != raw:
+            raw.unlink(missing_ok=True)
+        return dest, len(audio) / 24000
+
+    try:
+        dest, seconds = await asyncio.to_thread(to_wav)
+    except Exception as exc:  # noqa: BLE001 - an unreadable file is the user's to fix
+        raw.unlink(missing_ok=True)
+        raise HTTPException(status_code=400,
+                            detail=f"Could not read that recording: {exc}") from exc
+    return {"path": str(dest), "seconds": round(seconds, 1)}
+
+
+class SpeechBody(BaseModel):
+    text: str
+    engine: str
+    model_path: str = ""
+    voice: str = ""
+    saved_voice: str = ""
+    recording_path: str | None = None
+    language: str = ""
+    variant: str = ""
+    controls: dict[str, float] = {}
+    format: str = "wav"
+    sample_rate: int | None = None
+    bit_depth: int = 24
+
+
+@app.post("/api/speech/speak", dependencies=[Depends(require_token)])
+def speech_speak(body: SpeechBody) -> dict:
+    job = _speech_call(
+        speech.start_speech, text=body.text, engine=body.engine, model_path=body.model_path,
+        voice=body.voice, saved=body.saved_voice, recording_path=body.recording_path,
+        language=body.language, variant=body.variant, controls=body.controls,
+        audio_format=body.format, sample_rate=body.sample_rate, bit_depth=body.bit_depth)
+    return job.to_dict()
+
+
+class SpeechConvertBody(BaseModel):
+    model_path: str
+    source_path: str
+    saved_voice: str = ""
+    recording_path: str | None = None
+
+
+@app.post("/api/speech/convert", dependencies=[Depends(require_token)])
+def speech_convert(body: SpeechConvertBody) -> dict:
+    job = _speech_call(speech.start_conversion, model_path=body.model_path,
+                       source_path=body.source_path, saved=body.saved_voice,
+                       recording_path=body.recording_path)
+    return job.to_dict()
+
+
+@app.get("/api/speech/jobs/{job_id}", dependencies=[Depends(require_token)])
+def speech_job(job_id: str) -> dict:
+    job = speech.jobs.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="No such job")
+    return job.to_dict()
+
+
+@app.get("/api/speech/clips", dependencies=[Depends(require_token)])
+def speech_clips(kind: str = "") -> list[dict]:
+    return [c.to_dict() for c in speech.clips(kind)]
+
+
+@app.get("/api/speech/clips/{clip_id}/audio", dependencies=[Depends(require_token)])
+def speech_clip_audio(clip_id: str) -> FileResponse:
+    clip = _speech_call(speech.clip, clip_id)
+    return FileResponse(clip.path)
+
+
+class SpeechClipBody(BaseModel):
+    name: str
+
+
+@app.patch("/api/speech/clips/{clip_id}", dependencies=[Depends(require_token)])
+def speech_rename_clip(clip_id: str, body: SpeechClipBody) -> dict:
+    return _speech_call(speech.rename_clip, clip_id, body.name).to_dict()
+
+
+@app.delete("/api/speech/clips/{clip_id}", dependencies=[Depends(require_token)])
+def speech_delete_clip(clip_id: str) -> dict:
+    _speech_call(speech.delete_clip, clip_id)
+    return {"deleted": clip_id}
 
 
 # ------------------------------------------------------------------- tools
