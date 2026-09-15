@@ -24,6 +24,7 @@ left exactly as the engine applies them.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import sys
@@ -61,6 +62,39 @@ def _device(torch, engine: str) -> str:
     if engine != "kokoro" and torch.backends.mps.is_available():
         return "mps"
     return "cpu"
+
+
+#: espeak-ng holds its data path in a fixed buffer of 160 characters. Given a
+#: longer one it does not complain: it ignores it, falls back to the path
+#: compiled in when the library was built — a directory on somebody else's
+#: build machine — and exits the process when that is not there. Found with an
+#: environment 182 characters deep.
+ESPEAK_PATH_LIMIT = 150
+
+
+def _espeak_ready() -> None:
+    """Point espeak at its data, somewhere short enough for it to read.
+
+    Kokoro only reaches for espeak for words its dictionary does not have — a
+    brand name, most often — so a path too long to use takes the whole worker
+    down on somebody's product name and nothing else.
+    """
+    import shutil
+
+    import espeakng_loader
+    from phonemizer.backend.espeak.wrapper import EspeakWrapper
+
+    data = Path(espeakng_loader.get_data_path())
+    if len(str(data)) > ESPEAK_PATH_LIMIT:
+        cache = Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache")
+        short = cache / "espeak-ng-data"
+        if not (short / "phontab").is_file():
+            short.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(data, short, dirs_exist_ok=True)
+        if len(str(short)) <= ESPEAK_PATH_LIMIT:
+            data = short
+    EspeakWrapper.set_library(espeakng_loader.get_library_path())
+    EspeakWrapper.set_data_path(str(data))
 
 
 # ------------------------------------------------------------------ loading
@@ -178,6 +212,9 @@ def _say_kokoro(state: dict, folder: Path, piece: str, request: dict):
         raise ValueError(f"Kokoro has no language for the voice {voice!r}")
     pipeline = state["pipelines"].get(lang)
     if pipeline is None:
+        # Before the pipeline builds its pronunciation fallback, not after.
+        with contextlib.suppress(Exception):  # no espeak here is not fatal on its own
+            _espeak_ready()
         pipeline = KPipeline(lang_code=lang, repo_id="hexgrad/Kokoro-82M",
                              model=state["model"])
         state["pipelines"][lang] = pipeline
