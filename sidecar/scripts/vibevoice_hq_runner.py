@@ -13,10 +13,41 @@ Voices here are raw audio references, not prefilled .pt caches.
 from __future__ import annotations
 
 import json
+import re
 import sys
 from pathlib import Path
 
 NATIVE_SR = 24000
+
+#: The model stops at this multiple of its input length. The library default
+#: of 2 is below what English narration needs (about 2.3 speech tokens per
+#: text token), so a long read with no voice sample ended mid-sentence. The
+#: context window still bounds it.
+MAX_LENGTH_TIMES = 4
+
+_SPEAKER = re.compile(r"^\s*Speaker\s+(\d+)\s*:", re.IGNORECASE)
+
+
+def as_script(text: str) -> str:
+    """Label every line with a speaker, which is the only form this model reads.
+
+    Its processor silently drops any line that does not start "Speaker N:".
+    Only the first line used to be labelled, so a script with a title or
+    paragraph breaks narrated its first line and nothing else — about five
+    seconds. A line without a label continues whoever spoke last.
+    """
+    speaker = "1"
+    lines = []
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+        match = _SPEAKER.match(line)
+        if match:
+            speaker = match.group(1)
+            lines.append(line.strip())
+        else:
+            lines.append(f"Speaker {speaker}: {line.strip()}")
+    return "\n".join(lines)
 
 
 def main() -> int:
@@ -48,9 +79,7 @@ def main() -> int:
     model.set_ddpm_inference_steps(num_steps=int(cfg.get("ddpm_steps", 20)))
 
     # This model is built for multi-speaker scripts; a single narrator is Speaker 1.
-    text = cfg["text"]
-    if not text.lstrip().startswith("Speaker"):
-        text = f"Speaker 1: {text}"
+    text = as_script(cfg["text"])
 
     inputs = processor(
         text=[text],
@@ -71,6 +100,7 @@ def main() -> int:
             tokenizer=processor.tokenizer,
             generation_config={"do_sample": False},
             verbose=False,
+            max_length_times=MAX_LENGTH_TIMES,
         )
 
     speech = getattr(outputs, "speech_outputs", None)

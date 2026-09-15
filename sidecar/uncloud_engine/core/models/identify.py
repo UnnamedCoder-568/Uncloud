@@ -665,12 +665,20 @@ def _config_model(identification: Identification, folder: Path, config: dict) ->
 
 
 def _bundle(identification: Identification, folder: Path) -> bool:
+    from ..speech.engines import recognise as recognise_speech
+
+    # English, multilingual V2 or V3, or the converter alone: each is a
+    # different set of files, and a multilingual-only download has no t3_cfg.
+    speech = recognise_speech(folder)
     files = {p.name for p in folder.iterdir() if p.is_file()}
-    if {"t3_cfg.safetensors", "s3gen.safetensors", "ve.safetensors"} <= files:
+    partial = {"t3_cfg.safetensors", "s3gen.safetensors", "ve.safetensors"} <= files
+    if (speech is not None and speech.engine == "chatterbox") or partial:
         identification.layout = Layout.BUNDLE
         identification.task, identification.family = Task.TEXT_TO_SPEECH, "chatterbox"
         identification.confidence = Confidence.INFERRED
-        identification.saw("files", "t3, s3gen and ve weights together: the Chatterbox set")
+        found = ", ".join(v.label for v in speech.variants) if speech else ""
+        identification.saw("files", f"Chatterbox weights: {found}" if found else
+                           "t3, s3gen and ve weights together: the Chatterbox set")
         return True
     subfolders = [p for p in folder.iterdir() if p.is_dir() and not p.name.startswith(".")]
     if any(p.name.startswith("acestep") for p in subfolders):

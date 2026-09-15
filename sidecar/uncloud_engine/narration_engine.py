@@ -371,6 +371,10 @@ class NarrationEngine:
                 job.output_path = out
                 job.status = "done"
                 job.stage = ""
+                with contextlib.suppress(Exception):  # a clip list is not worth failing a read
+                    from .speech import record_narration
+
+                    record_narration(out, text, engine, voice_slug, job.duration_s)
         except Exception as exc:  # noqa: BLE001 - surface any failure to the UI
             job.status = "error"
             job.error = str(exc)

@@ -7,12 +7,13 @@ import { Mark } from '../components/Wordmark';
 import Markdown from '../components/Markdown';
 import { fromConversation, sendToChisel } from '../lib/handoff';
 import Conversations from '../components/Conversations';
+import ReplyVoice from '../components/ReplyVoice';
 import { splitThinking } from '../lib/thinking';
 import { Conversation } from '../lib/converse';
 import { MAX_ROUNDS, describe, findLookups, resultsTurn, stripLookups } from '../lib/lookup';
-import { getLibrary, startEngine, engineStatus, streamChat, transcribeAudio, speakText, IMAGE_MARKER, chatSystemPrompt, quickImagePreview,
+import { getLibrary, startEngine, engineStatus, streamChat, transcribeAudio, speakReply, IMAGE_MARKER, chatSystemPrompt, quickImagePreview,
   listConversations, readConversation, writeConversation, deleteConversation,
-  webSearch, webRead, webImages, VOICES, MANNERS,
+  webSearch, webRead, webImages, MANNERS,
   outputBlobUrl, revealOutput } from '../lib/sidecar';
 import type { LocalModel, ChatMessage, ConversationList, WebImage } from '../lib/sidecar';
 
@@ -53,6 +54,8 @@ export default function ChatView() {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const [sttModel, setSttModel] = useState<LocalModel | null>(null);
+  const sttRef = useRef<LocalModel | null>(null);
+  useEffect(() => { sttRef.current = sttModel; }, [sttModel]);
   const [recording, setRecording] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
   const [autoSpeak, setAutoSpeak] = useState(false);
@@ -239,9 +242,13 @@ export default function ChatView() {
       onError: (message) => { setLastError(message); setConversing(false); },
       onUtterance: async (audio) => {
         // The same speech-to-text model dictation already uses; the loop is
-        // a different way of reaching it, not a second engine.
-        if (!sttModel) return;
-        const said = await transcribeAudio(sttModel.path, audio, 'turn.webm');
+        // a different way of reaching it, not a second engine. Read through a
+        // ref: the loop is built once, and it used to capture the model as it
+        // was on that render — null, before the library had loaded — so it
+        // listened, heard, and silently did nothing with what it heard.
+        const stt = sttRef.current;
+        if (!stt) return;
+        const said = await transcribeAudio(stt.path, audio, 'turn.webm');
         if (!said.trim()) return;
         // Spoken aloud, and the reply is spoken back — which is what makes
         // this a conversation rather than dictation into a text box.
@@ -345,7 +352,7 @@ export default function ChatView() {
     picker.click();
   }, []);
 
-  async function send(text: string, speakReply: boolean) {
+  async function send(text: string, readAloud: boolean) {
     // A picture on its own is a perfectly good question — "what is this?" is
     // implied — so an empty box with an attachment still sends.
     if ((!text.trim() && !attached.length) || !activeModel || generating) return;
@@ -497,10 +504,10 @@ export default function ChatView() {
       if (!conversationId) setConversationId(id);
       void persist(id, [...next, { role: 'assistant', content: full } as ChatMessage]);
 
-      if (speakReply && full.trim()) {
+      if (readAloud && full.trim()) {
         setSpeaking(true);
         try {
-          const url = await speakText(full.trim(), voice);
+          const url = await speakReply(full.trim(), voice);
           if (audioRef.current) {
             audioRef.current.src = url;
             // Deaf while it talks, or the reply becomes the next question and
@@ -744,12 +751,7 @@ export default function ChatView() {
                             max-md:top-[calc(env(safe-area-inset-top)+4rem)]" style={{ minWidth: 240 }}>
               <label className="field">
                 <span className="label" style={{ fontSize: 11 }}>Voice</span>
-                <select className="input" value={voice}
-                        onChange={(e) => setVoice(e.target.value)}>
-                  {VOICES.map((v) => (
-                    <option key={v.id} value={v.id}>{v.label}</option>
-                  ))}
-                </select>
+                <ReplyVoice className="input" value={voice} onChange={setVoice} />
               </label>
               <label className="field">
                 <span className="label" style={{ fontSize: 11 }}>Manner</span>
@@ -762,8 +764,8 @@ export default function ChatView() {
               </label>
               <p className="faint" style={{ fontSize: 10, lineHeight: 1.5 }}>
                 Manner changes how the assistant writes, so it reads well aloud —
-                short sentences, no lists or markdown. The voice is one of the
-                nine that ship with the app.
+                short sentences, no lists or markdown. Voices you save in
+                Voice → Text to voice appear here too.
               </p>
             </div>
           </details>
