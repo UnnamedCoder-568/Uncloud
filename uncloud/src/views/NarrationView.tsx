@@ -114,7 +114,9 @@ export default function NarrationView() {
     }).catch(() => setOptions(null));
 
     getLibrary().then((list) => {
-      const tts = list.filter((m) => /vibevoice/i.test(m.name) || m.category === 'voice-tts');
+      // VibeVoice only: Kokoro, Chatterbox and Bark are voice models too, and
+      // each has its own tab in Text to voice.
+      const tts = list.filter((m) => m.engine === 'vibevoice');
       setModels(tts);
       setModel((p) => p ?? tts[0] ?? null);
     });

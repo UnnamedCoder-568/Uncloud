@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import time
 import uuid
+from pathlib import Path
 from typing import Any
 
 from .config import output_dir_for
@@ -24,7 +26,44 @@ def _get_whisper_model(model_path: str):
     return _whisper["model"]
 
 
+_transformers_whisper: dict[str, Any] = {}
+
+
+def _get_transformers_whisper(model_path: str):
+    """A Whisper checkpoint in the transformers format, on the Apple GPU when
+    there is one. Held once loaded: dictation and conversation call this every
+    turn, and reloading a model per sentence is most of the wait."""
+    if _transformers_whisper.get("path") != model_path:
+        import torch
+        from transformers import pipeline
+
+        _transformers_whisper.clear()
+        device = ("mps" if torch.backends.mps.is_available()
+                  else 0 if torch.cuda.is_available() else "cpu")
+        _transformers_whisper["pipe"] = pipeline(
+            "automatic-speech-recognition", model=model_path, device=device,
+            dtype=torch.float16 if device != "cpu" else torch.float32)
+        _transformers_whisper["path"] = model_path
+    return _transformers_whisper["pipe"]
+
+
 def transcribe(model_path: str, audio_path: str) -> str:
+    folder = Path(model_path)
+    if not (folder / "model.bin").is_file() and (folder / "config.json").is_file():
+        # Decoded by PyAV, which faster-whisper already brings: the transformers
+        # pipeline would otherwise want an ffmpeg binary to read a browser's webm.
+        from faster_whisper import decode_audio
+
+        audio = decode_audio(audio_path, sampling_rate=16000)
+        if not len(audio):
+            return ""
+        # Whisper hears thirty seconds at a time. Past that it must be told to
+        # work through the recording, or it transcribes the first half-minute.
+        longer = len(audio) > 30 * 16000
+        result = _get_transformers_whisper(model_path)(
+            {"raw": audio, "sampling_rate": 16000},
+            **({"chunk_length_s": 30, "return_timestamps": True} if longer else {}))
+        return str(result.get("text", "")).strip()
     model = _get_whisper_model(model_path)
     segments, _info = model.transcribe(audio_path)
     return " ".join(seg.text.strip() for seg in segments).strip()
@@ -71,6 +110,8 @@ def speak(text: str, voice: str = "af_heart", speed: float = 1.0) -> str:
         raise RuntimeError("Kokoro produced no audio for this text")
     full = np.concatenate([c if isinstance(c, np.ndarray) else c.numpy() for c in chunks])
 
-    out_path = output_dir_for() / f"{uuid.uuid4().hex[:12]}.wav"
+    words = "".join(ch for ch in " ".join(text.split()[:6]) if ch.isalnum() or ch in " -")
+    out_path = output_dir_for("voice/replies") / (
+        f"{time.strftime('%Y-%m-%d %H.%M.%S')} {words[:48].strip()} {uuid.uuid4().hex[:4]}.wav")
     sf.write(str(out_path), full, 24000)
     return str(out_path)

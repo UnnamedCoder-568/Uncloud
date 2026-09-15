@@ -1770,3 +1770,157 @@ export async function runRecipe(id: string, values: Record<string, string>) {
   return apiPost<RecipeRun>(`/api/recipes/${encodeURIComponent(id)}/run`,
                             { values });
 }
+
+// ------------------------------------------------------------------ speech
+/** Text to voice and voice to voice: Kokoro, Chatterbox and Bark. */
+
+export interface SpeechControl {
+  id: string; label: string; min: number; max: number; default: number; step: number; hint: string;
+}
+export interface SpeechVariant { id: string; label: string; languages: { id: string; name: string }[] }
+export interface SpeechModel {
+  path: string; name: string; engine: string; converts: boolean; variants: SpeechVariant[];
+}
+export interface SpeechEngine {
+  id: string; label: string; summary: string; clones: boolean; converts: boolean;
+  controls: SpeechControl[]; installed: boolean; own_environment: boolean;
+  models: SpeechModel[];
+}
+export interface SpeechPreset { id: string; name: string; language: string; notes: string }
+export interface SavedVoice {
+  slug: string; name: string; engine: string; model_path: string; variant: string;
+  preset: string; language: string; controls: Record<string, number>; notes: string;
+  reference: string | null; has_recording: boolean; created: number;
+}
+export interface SpeechClip {
+  id: string; name: string; path: string;
+  kind: 'speech' | 'conversion' | 'reply' | 'narration';
+  engine: string; voice: string; text: string; duration: number; created: number;
+}
+export interface SpeechJob {
+  id: string; kind: string; status: 'running' | 'done' | 'error'; stage: string;
+  done: number; total: number; clip: SpeechClip | null; error: string | null;
+  finished: boolean;
+}
+
+export async function speechEngines() {
+  return api<SpeechEngine[]>('/api/speech/engines');
+}
+
+export async function speechPresets(engine: string, modelPath: string) {
+  return api<SpeechPreset[]>(
+    `/api/speech/presets?engine=${encodeURIComponent(engine)}&model_path=${encodeURIComponent(modelPath)}`);
+}
+
+export async function savedVoices() {
+  return api<SavedVoice[]>('/api/speech/voices');
+}
+
+export async function saveVoice(body: {
+  name: string; engine: string; model_path?: string; variant?: string; preset?: string;
+  language?: string; controls?: Record<string, number>; notes?: string;
+  recording_path?: string | null;
+}) {
+  return apiPost<SavedVoice>('/api/speech/voices', body);
+}
+
+export async function deleteSavedVoice(slug: string) {
+  return api<{ deleted: string }>(`/api/speech/voices/${encodeURIComponent(slug)}`,
+                                  { method: 'DELETE' });
+}
+
+/** Keep a recording — to speak in, or to convert. Any browser format; it is
+ *  stored as WAV. */
+export async function uploadRecording(file: Blob, name = 'recording.webm') {
+  const form = new FormData();
+  form.append('file', file, name);
+  const url = `${await baseUrl()}/api/speech/recordings`;
+  const resp = await fetch(url, { method: 'POST', headers: await authHeaders(), body: form });
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => resp.statusText);
+    let detail = text;
+    try { detail = JSON.parse(text).detail ?? text; } catch { /* plain text */ }
+    throw new Error(detail);
+  }
+  return resp.json() as Promise<{ path: string; seconds: number }>;
+}
+
+export async function startSpeech(body: {
+  text: string; engine: string; model_path: string; voice?: string; saved_voice?: string;
+  recording_path?: string | null; language?: string; variant?: string;
+  controls?: Record<string, number>; format?: string; sample_rate?: number | null;
+  bit_depth?: number;
+}) {
+  return apiPost<SpeechJob>('/api/speech/speak', body);
+}
+
+export async function startConversion(body: {
+  model_path: string; source_path: string; saved_voice?: string; recording_path?: string | null;
+}) {
+  return apiPost<SpeechJob>('/api/speech/convert', body);
+}
+
+export async function speechJob(id: string) {
+  return api<SpeechJob>(`/api/speech/jobs/${id}`);
+}
+
+export async function speechClips(kind = '') {
+  return api<SpeechClip[]>(`/api/speech/clips${kind ? `?kind=${kind}` : ''}`);
+}
+
+export async function speechClipUrl(id: string): Promise<string> {
+  const resp = await fetch(`${await baseUrl()}/api/speech/clips/${id}/audio`, {
+    headers: await authHeaders(),
+  });
+  if (!resp.ok) throw new Error(`Could not load the clip: ${resp.status}`);
+  return URL.createObjectURL(await resp.blob());
+}
+
+export async function renameClip(id: string, name: string) {
+  return api<SpeechClip>(`/api/speech/clips/${id}`,
+                         { method: 'PATCH', body: JSON.stringify({ name }) });
+}
+
+export async function deleteClip(id: string) {
+  return api<{ deleted: string }>(`/api/speech/clips/${id}`, { method: 'DELETE' });
+}
+
+export async function* installSpeechEngine(
+  engine: string,
+): AsyncGenerator<{ line?: string; error?: string; done?: boolean }> {
+  const url = `${await baseUrl()}/api/speech/engines/${encodeURIComponent(engine)}/install`;
+  const resp = await fetch(url, { method: 'POST', headers: await authHeaders() });
+  if (!resp.ok || !resp.body) throw new Error(`Setup failed: ${resp.status}`);
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = '';
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    const lines = buf.split('\n');
+    buf = lines.pop() || '';
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue;
+      try { yield JSON.parse(line.slice(6)); } catch { /* partial chunk */ }
+    }
+  }
+}
+
+/** Speak a reply: Kokoro by preset id, or any saved voice by its slug. */
+export async function speakReply(text: string, voice: string): Promise<string> {
+  const saved = voice.startsWith('saved:') ? voice.slice(6) : '';
+  const url = `${await baseUrl()}/api/voice/speak`;
+  const headers = { ...(await authHeaders()), 'Content-Type': 'application/json' };
+  const resp = await fetch(url, {
+    method: 'POST', headers,
+    body: JSON.stringify(saved ? { text, saved_voice: saved } : { text, voice }),
+  });
+  if (!resp.ok) {
+    const body = await resp.text().catch(() => '');
+    let detail = body;
+    try { detail = JSON.parse(body).detail ?? body; } catch { /* plain text */ }
+    throw new Error(detail || `Speech synthesis failed: ${resp.status}`);
+  }
+  return URL.createObjectURL(await resp.blob());
+}

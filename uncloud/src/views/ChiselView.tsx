@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { CheckCircle2, XCircle, Loader2, Circle, Send, ShieldAlert, Cpu, Square, MessagesSquare } from 'lucide-react';
+import { CheckCircle2, XCircle, Loader2, Circle, Send, ShieldAlert, Cpu, Square, MessagesSquare, AudioLines } from 'lucide-react';
 import { agentSocket, getLibrary, startEngine, engineStatus } from '../lib/sidecar';
 import type { LocalModel } from '../lib/sidecar';
 import Dictate from '../components/Dictate';
+import ReplyVoice from '../components/ReplyVoice';
+import { describeTalk, useTalk } from '../lib/useTalk';
 import { useSettings } from '../lib/useSettings';
 import { onHandoffSignal, takeHandoff } from '../lib/handoff';
 
@@ -20,6 +22,22 @@ interface AgentGraph {
   goal: string;
   tasks: Record<string, AgentTask>;
   start_node_ids: string[];
+}
+
+/** What to say when a spoken goal finishes: how it went, and the result of
+ *  the last step, briefly — the whole output is on the screen. */
+function spokenOutcome(graph: AgentGraph): string {
+  const tasks = Object.values(graph.tasks);
+  if (!tasks.length) return 'I could not make a plan for that.';
+  const failed = tasks.filter((t) => t.status === 'failed');
+  const dependedOn = new Set(tasks.flatMap((t) => t.dependencies));
+  const last = [...tasks].reverse().find((t) => !dependedOn.has(t.id) && t.output);
+  const plain = (text: string) => text.replace(/[#*_`>|[\]]/g, ' ').replace(/\s+/g, ' ').trim();
+  const result = last?.output ? plain(last.output).slice(0, 400) : '';
+  if (failed.length) {
+    return `Done, but ${failed.length} of ${tasks.length} steps failed. ${plain(failed[0].error ?? '')}`.trim();
+  }
+  return result ? `Done. ${result}` : `Done. All ${tasks.length} steps finished.`;
 }
 
 export default function ChiselView() {
@@ -66,9 +84,35 @@ export default function ChiselView() {
     }
   }
 
+  //: Settled when a run ends, with what to say about it. Only a spoken goal
+  //  waits on this; typing a goal never does.
+  const settle = useRef<((spoken: string) => void) | null>(null);
+  function finish(spoken: string) {
+    settle.current?.(spoken);
+    settle.current = null;
+  }
+
+  const [voice, setVoice] = useState(() => {
+    try { return localStorage.getItem('uncloud.chisel.voice') || 'bm_george'; } catch { return 'bm_george'; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('uncloud.chisel.voice', voice); } catch { /* storage refused */ }
+  }, [voice]);
+
+  /** Talk to Chisel: a spoken goal is run, and the outcome is read back, then
+   *  it listens for the next one. */
+  const talk = useTalk(voice, (said) => new Promise<string>((resolve) => {
+    setGoal(said);
+    settle.current = resolve;
+    void run(said);
+  }));
+
   async function run(override?: string) {
     const target = (override ?? goal).trim();
-    if (!target || phase === 'planning' || phase === 'running') return;
+    if (!target || phase === 'planning' || phase === 'running') {
+      finish(target ? 'I am still working on the last goal.' : '');
+      return;
+    }
     setError(null);
     setGraph(null);
     stopped.current = false;
@@ -97,16 +141,19 @@ export default function ChiselView() {
       if (msg.type === 'done') {
         setGraph(msg.graph);
         setPhase('done');
+        finish(spokenOutcome(msg.graph));
       }
       if (msg.type === 'error') {
         setError(msg.message);
         setPhase('error');
+        finish(`That did not work. ${msg.message}`);
       }
     };
     ws.onerror = () => {
       if (spoke) return;
       setError('Connection to Uncloud engine lost');
       setPhase('error');
+      finish('I lost the connection to the engine.');
     };
     // A clean close fires onclose, NOT onerror. Without this the view sat in
     // "planning" for ever with no spinner and no message, because nothing
@@ -117,7 +164,8 @@ export default function ChiselView() {
         if (current === 'planning' || current === 'running') {
           // A close the user asked for is not a fault, and must not be
           // reported as one.
-          if (stopped.current) return 'idle';
+          if (stopped.current) { finish(''); return 'idle'; }
+          finish('The engine stopped before the plan finished.');
           setError('The engine stopped before the plan finished. '
                    + 'It may have run out of memory loading the planning model.');
           return 'error';
@@ -299,6 +347,14 @@ export default function ChiselView() {
             </button>
           </div>
         )}
+        {(talk.active || talk.error) && (
+          <div className="max-w-2xl mx-auto mb-2 flex items-center gap-2 text-[11px] text-[var(--text-faint)] flex-wrap">
+            <span>Answers in</span>
+            <ReplyVoice value={voice} onChange={setVoice}
+                        className="bg-[var(--bg-inset)] text-[11px] px-2 py-1 rounded-lg outline-none" />
+            {talk.error && <span className="text-rose-400">{talk.error}</span>}
+          </div>
+        )}
         <div className="max-w-2xl mx-auto flex items-end gap-2 card px-3 py-2 focus-within:border-[#3a3a42]">
           <textarea
             value={goal}
@@ -318,6 +374,18 @@ export default function ChiselView() {
             onText={(t) => setGoal((v) => (v ? v.trimEnd() + ' ' + t : t))}
             className="mb-0.5"
           />
+          {talk.sttModel && (
+            <button
+              onClick={talk.toggle}
+              title={talk.active ? 'Stop talking' : 'Talk: say a goal, hear how it went, and carry on'}
+              aria-label={talk.active ? 'Stop talking' : 'Talk'}
+              className={`${talk.active ? 'pill pill-on' : 'pill'} mb-0.5 shrink-0`}
+              style={talk.active ? { color: 'var(--accent)' } : undefined}
+            >
+              <AudioLines size={14} />
+              <span>{talk.active ? describeTalk(talk.state) : 'Talk'}</span>
+            </button>
+          )}
           {/* One button, as in Chat: send while idle, stop while working. A
               separate stop button is dead weight for most of its life and is
               never where the hand already is. */}

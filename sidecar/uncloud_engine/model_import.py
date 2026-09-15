@@ -20,6 +20,8 @@ from pathlib import Path
 from .budget import engine_runs_here
 from .core.models import Identification, Layout, Task, apply, hub, identify, plan
 from .core.models.identify import MANIFEST
+from .core.speech.engines import ENGINES as SPEECH_ENGINES
+from .core.speech.engines import recognise
 
 #: diffusers AutoPipelineForText2Image, 0.39. Only the pipelines an import
 #: could plausibly produce; a pipeline absent here is not claimed runnable.
@@ -120,14 +122,27 @@ def verdict(i: Identification) -> Verdict:
     if task is Task.SPEECH_TO_TEXT:
         if layout is Layout.CTRANSLATE2:
             return Verdict(True, "voice-stt", "faster-whisper", capabilities=["transcribe"])
+        if layout is Layout.TRANSFORMERS:
+            # Transcribed through transformers, which the engine already carries
+            # for image generation. Refusing these sent people off to find a
+            # CTranslate2 conversion of a model that was already on the disk.
+            return Verdict(True, "voice-stt", "transformers-whisper",
+                           capabilities=["transcribe"])
         return Verdict(False, "voice-stt", "faster-whisper",
-                       "Whisper in the transformers format. Uncloud transcribes with "
-                       "faster-whisper, which loads CTranslate2 conversions (a model.bin), "
-                       "so this one would fail when chosen.")
+                       f"Whisper as {layout}. Uncloud transcribes CTranslate2 conversions "
+                       "(a model.bin) and transformers checkpoints.")
 
     if task is Task.TEXT_TO_SPEECH:
         if family == "vibevoice":
             return Verdict(True, "voice-tts", "vibevoice", capabilities=["speak"])
+        if family in SPEECH_ENGINES:
+            recognised = None if i.is_file else recognise(Path(i.path))
+            if recognised is None:
+                return Verdict(False, "voice-tts", family,
+                               f"Looks like {family}, but the folder is missing the "
+                               "weights its engine loads.")
+            return Verdict(True, "voice-tts", family, capabilities=(
+                ["speak", "convert"] if recognised.converts else ["speak"]))
         return Verdict(False, "voice-tts", "unsupported",
                        f"Recognised as {family or 'a speech model'}, which Uncloud has no "
                        "engine for yet.")
