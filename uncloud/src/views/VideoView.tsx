@@ -4,6 +4,8 @@ import {
   getBudget, getLibrary, getVideoOptions, generateVideo, getVideoJob, fetchVideoBlobUrl,
 } from '../lib/sidecar';
 import Dictate from '../components/Dictate';
+import AddFromDisk from '../components/AddFromDisk';
+import { useLibraryVersion } from '../lib/library-changed';
 import type { LocalModel, VideoJob, MemoryBudget } from '../lib/sidecar';
 import { SplitTabs, useSplit } from '../components/Split';
 
@@ -32,6 +34,7 @@ const SIZES = [
 const QUALITY_NEGATIVE = 'worst quality, inconsistent motion, blurry, jittery, distorted';
 
 export default function VideoView() {
+  const libraryVersion = useLibraryVersion();
   const [models, setModels] = useState<LocalModel[]>([]);
   const [model, setModel] = useState<LocalModel | null>(null);
   const [libraryLoading, setLibraryLoading] = useState(true);
@@ -85,6 +88,13 @@ export default function VideoView() {
       }
     };
     void loadModels();
+    return () => {
+      cancelled = true;
+      if (retryTimer !== undefined) window.clearTimeout(retryTimer);
+    };
+  }, [libraryVersion]);
+
+  useEffect(() => {
     // Take the engine's defaults rather than duplicating them here.
     getVideoOptions()
       .then((o) => {
@@ -96,10 +106,6 @@ export default function VideoView() {
         if (match) setSize(match);
       })
       .catch(() => undefined);
-    return () => {
-      cancelled = true;
-      if (retryTimer !== undefined) window.clearTimeout(retryTimer);
-    };
   }, []);
 
   useEffect(() => {
@@ -192,6 +198,9 @@ export default function VideoView() {
                   </span>
                 </button>
               ))}
+              <div className="border-t border-[var(--border-soft)] mt-1 pt-1">
+                <AddFromDisk onOpen={() => setPickerOpen(false)} />
+              </div>
             </div>
           )}
         </div>

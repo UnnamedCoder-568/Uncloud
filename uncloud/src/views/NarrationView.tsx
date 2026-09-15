@@ -5,6 +5,8 @@ import {
   installNarrationEngine, uploadVoiceSample, saveNarrationVoice, deleteNarrationVoice,
 } from '../lib/sidecar';
 import Dictate from '../components/Dictate';
+import AddFromDisk from '../components/AddFromDisk';
+import { useLibraryVersion } from '../lib/library-changed';
 import type { NarrationOptions, NarrationJob, LocalModel } from '../lib/sidecar';
 import { SplitTabs, useSplit } from '../components/Split';
 
@@ -12,6 +14,7 @@ import { SplitTabs, useSplit } from '../components/Split';
 const WORDS_PER_MINUTE = 150;
 
 export default function NarrationView() {
+  const libraryVersion = useLibraryVersion();
   const [options, setOptions] = useState<NarrationOptions | null>(null);
   const [models, setModels] = useState<LocalModel[]>([]);
   const [model, setModel] = useState<LocalModel | null>(null);
@@ -120,7 +123,7 @@ export default function NarrationView() {
       setModels(tts);
       setModel((p) => p ?? tts[0] ?? null);
     });
-  }, [engine]);
+  }, [engine, libraryVersion]);
 
   useEffect(() => {
     if (!job || job.done) return;
@@ -174,7 +177,7 @@ export default function NarrationView() {
             <div className="absolute top-full left-0 right-0 mt-1 card p-1.5 z-20 shadow-2xl">
               {models.length === 0 && (
                 <div className="text-[11px] text-[var(--text-faint)] px-2 py-3 text-center">
-                  Install VibeVoice from the Models tab.
+                  Install VibeVoice from the Models tab, or add one you already have.
                 </div>
               )}
               {models.map((m) => (
@@ -186,6 +189,9 @@ export default function NarrationView() {
                   {m.name}
                 </button>
               ))}
+              <div className="border-t border-[var(--border-soft)] mt-1 pt-1">
+                <AddFromDisk onOpen={() => setPickerOpen(false)} />
+              </div>
             </div>
           )}
         </div>

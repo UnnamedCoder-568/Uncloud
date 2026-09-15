@@ -2,8 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import { Mic, Square, Loader2, ChevronDown } from 'lucide-react';
 import { getLibrary, transcribeAudio } from '../lib/sidecar';
 import type { LocalModel } from '../lib/sidecar';
+import AddFromDisk from '../components/AddFromDisk';
+import { useLibraryVersion } from '../lib/library-changed';
 
 export default function VoiceTools() {
+  const libraryVersion = useLibraryVersion();
   const [sttModels, setSttModels] = useState<LocalModel[]>([]);
   const [sttModel, setSttModel] = useState<LocalModel | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -18,9 +21,9 @@ export default function VoiceTools() {
     getLibrary().then((list) => {
       const stt = list.filter((m) => m.category === 'voice-stt' && m.ready);
       setSttModels(stt);
-      setSttModel(stt[0] ?? null);
+      setSttModel((current) => stt.find((m) => m.path === current?.path) ?? stt[0] ?? null);
     });
-  }, []);
+  }, [libraryVersion]);
 
   async function startRecording() {
     setTranscript('');
@@ -68,7 +71,7 @@ export default function VoiceTools() {
               </span>
               <ChevronDown size={13} className="text-[var(--text-faint)]" />
             </button>
-            {pickerOpen && sttModels.length > 0 && (
+            {pickerOpen && (
               <div className="absolute top-9 left-0 right-0 card p-1.5 z-10 shadow-2xl">
                 {sttModels.map((m) => (
                   <button
@@ -79,6 +82,9 @@ export default function VoiceTools() {
                     {m.name}
                   </button>
                 ))}
+                <div className="border-t border-[var(--border-soft)] mt-1 pt-1">
+                  <AddFromDisk onOpen={() => setPickerOpen(false)} />
+                </div>
               </div>
             )}
           </div>

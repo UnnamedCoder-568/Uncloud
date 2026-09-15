@@ -4,12 +4,15 @@ import {
   getMusicOptions, generateMusic, getMusicJob, musicAudioUrl, getLibrary,
 } from '../lib/sidecar';
 import Dictate from '../components/Dictate';
+import AddFromDisk from '../components/AddFromDisk';
+import { useLibraryVersion } from '../lib/library-changed';
 import type { MusicOptions, MusicJob, LocalModel } from '../lib/sidecar';
 import { SplitTabs, useSplit } from '../components/Split';
 
 type Mode = 'song' | 'instrumental';
 
 export default function MusicView() {
+  const libraryVersion = useLibraryVersion();
   const [options, setOptions] = useState<MusicOptions | null>(null);
   const [models, setModels] = useState<LocalModel[]>([]);
   const [model, setModel] = useState<LocalModel | null>(null);
@@ -32,13 +35,16 @@ export default function MusicView() {
 
   useEffect(() => {
     getMusicOptions().then(setOptions).catch(() => setOptions(null));
+  }, []);
+
+  useEffect(() => {
     getLibrary().then((list) => {
       // ACE-Step ships as a folder of sub-models rather than a single file.
       const music = list.filter((m) => m.category === 'music' || /ace-?step/i.test(m.name));
       setModels(music);
       setModel((p) => p ?? music[0] ?? null);
     });
-  }, []);
+  }, [libraryVersion]);
 
   useEffect(() => {
     if (!job || job.done) return;
@@ -122,6 +128,9 @@ export default function MusicView() {
                   {m.name}
                 </button>
               ))}
+              <div className="border-t border-[var(--border-soft)] mt-1 pt-1">
+                <AddFromDisk onOpen={() => setPickerOpen(false)} />
+              </div>
             </div>
           )}
           {options && !options.installed && (
