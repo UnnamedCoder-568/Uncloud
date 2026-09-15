@@ -99,11 +99,21 @@ pub async fn app_update_check(
                 date: update.date.map(|d| d.to_string()).unwrap_or_default(),
             };
             *state.pending.lock().unwrap() = Some(update);
-            Ok(Status { configured: true, reason: String::new(), current, available: Some(available) })
+            Ok(Status {
+                configured: true,
+                reason: String::new(),
+                current,
+                available: Some(available),
+            })
         }
         Ok(None) => {
             *state.pending.lock().unwrap() = None;
-            Ok(Status { configured: true, reason: String::new(), current, available: None })
+            Ok(Status {
+                configured: true,
+                reason: String::new(),
+                current,
+                available: None,
+            })
         }
         // Offline, rate-limited, no release yet: nothing to report is not a
         // fault in the application, and is never shown as one.

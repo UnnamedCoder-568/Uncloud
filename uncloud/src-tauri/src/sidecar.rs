@@ -352,7 +352,10 @@ fn refresh_engine(app: &AppHandle) {
 /// the choice decides how the engine is STARTED: `--lan` is a launch flag, so
 /// the only thing that can honour it is whatever launches.
 fn network_marker(app: &AppHandle) -> Option<PathBuf> {
-    app.path().app_config_dir().ok().map(|dir| dir.join("lan-enabled"))
+    app.path()
+        .app_config_dir()
+        .ok()
+        .map(|dir| dir.join("lan-enabled"))
 }
 
 pub fn network_access_enabled(app: &AppHandle) -> bool {
@@ -415,7 +418,10 @@ pub fn spawn_sidecar(app: &AppHandle) -> Result<(Child, SidecarInfo), String> {
         // uninstalled project, so it has no package metadata to read one from:
         // consent records went out with an empty version and an update check
         // would have had nothing to compare against.
-        .env("UNCLOUD_APP_VERSION", app.package_info().version.to_string())
+        .env(
+            "UNCLOUD_APP_VERSION",
+            app.package_info().version.to_string(),
+        )
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit());
 
