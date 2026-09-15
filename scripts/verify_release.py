@@ -90,10 +90,13 @@ def main() -> None:
         "Uncloud-Windows-x64.exe",
         "Uncloud-Linux-x64.AppImage",
         "Uncloud-macOS-Apple-Silicon.dmg",
-        "Uncloud-macOS-Intel.dmg",
     ):
         if artifact not in workflow:
             fail(f"workflow does not name {artifact}")
+    # Intel Macs were withdrawn (see README): the engine cannot install there,
+    # so the workflow must not build or attach an installer for them.
+    if "Uncloud-macOS-Intel.dmg" in workflow:
+        fail("workflow still names Uncloud-macOS-Intel.dmg")
 
     print(f"Release metadata and {len(runtime_files)} runtime files verified for {version}.")
 
