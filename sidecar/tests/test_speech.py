@@ -263,3 +263,23 @@ def test_a_browser_recording_is_stored_as_wav(client, tmp_path: Path) -> None:
     stored = Path(response.json()["path"])
     assert stored.suffix == ".wav" and stored.is_file()
     assert response.json()["seconds"] == pytest.approx(1.0, abs=0.1)
+
+
+def test_espeak_data_is_kept_within_the_limit_it_reads() -> None:
+    """espeak-ng holds its data path in a fixed buffer and ignores a longer
+    one, then exits on the path compiled into the library. Found with an
+    environment 182 characters deep, on the first word Kokoro's dictionary did
+    not have."""
+    runner = _runner_module()
+    assert runner.ESPEAK_PATH_LIMIT <= 160
+
+
+def _runner_module():
+    import importlib.util
+
+    path = (Path(__file__).resolve().parent.parent / "uncloud_engine" / "core"
+            / "speech" / "runner.py")
+    spec = importlib.util.spec_from_file_location("speech_runner", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module

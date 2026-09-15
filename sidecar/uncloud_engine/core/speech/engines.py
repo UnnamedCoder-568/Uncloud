@@ -65,8 +65,13 @@ ENGINES: dict[str, Engine] = {
     "kokoro": Engine(
         id="kokoro", label="Kokoro",
         summary="Small and quick. Natural preset voices; ideal for replies read aloud.",
-        requirements=("kokoro>=0.9.4", "soundfile>=0.13"),
-        modules=("kokoro", "soundfile"),
+        # The English pronunciation model is installed with the engine. Left
+        # out, the first English sentence downloads it — mid-generation, and
+        # not at all on a machine without a connection.
+        requirements=("kokoro>=0.9.4", "soundfile>=0.13",
+                      "en-core-web-sm @ https://github.com/explosion/spacy-models/releases/"
+                      "download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl"),
+        modules=("kokoro", "soundfile", "en_core_web_sm"),
         controls=(Control("speed", "Speed", 0.5, 2.0, 1.0, 0.05),),
     ),
     "chatterbox": Engine(
