@@ -23,6 +23,7 @@ import { getLegalState, getSettings, runtimeStatus } from './lib/sidecar';
 import Wordmark from './components/Wordmark';
 import { inDesktop, useNarrow } from './lib/platform';
 import UpdateBanner from './components/UpdateBanner';
+import { AddFromDiskHost } from './components/AddFromDisk';
 
 
 /** Rendered once visited, then kept alive so tab switching is not destructive. */
@@ -226,6 +227,7 @@ export default function App() {
         />
       </main>
       <ApprovalPrompt />
+      <AddFromDiskHost />
     </div>
   );
 }

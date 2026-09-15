@@ -1705,24 +1705,48 @@ class ImageGenerateBody(BaseModel):
     width: int = 1024
     height: int = 1024
     seed: int | None = None
+    #: How many images. They render one after another, each on its own seed.
+    count: int = 1
+
+
+#: A batch is queued work the machine is committed to; past this it is better
+#: started again than left running for an hour.
+MAX_BATCH = 8
+
+
+def _batch_seeds(seed: int | None, count: int) -> list[int]:
+    """Consecutive seeds from the one given, or from a random start. Chosen up
+    front, so any image in a batch can be made again from its own seed."""
+    import secrets
+
+    if not 1 <= count <= MAX_BATCH:
+        raise HTTPException(status_code=400,
+                            detail=f"Generate between 1 and {MAX_BATCH} images at a time")
+    base = seed if seed is not None else secrets.randbelow(2**31 - MAX_BATCH)
+    return [base + i for i in range(count)]
 
 
 @app.post("/api/image/generate", dependencies=[Depends(require_token)])
 async def generate_image(body: ImageGenerateBody) -> dict:
+    """Start one image or a batch. Returns the first job, with every job in
+    the batch under `batch`. Approved once for the whole batch."""
+    seeds = _batch_seeds(body.seed, body.count)
     gated("generate_image", Risk.GENERATE,
-          f"Generate an image: {body.prompt[:160]}",
-          preview={"prompt": body.prompt}, origin="image")
+          (f"Generate {body.count} images: " if body.count > 1 else "Generate an image: ")
+          + body.prompt[:160],
+          preview={"prompt": body.prompt, "count": body.count}, origin="image")
     entry = get_entry(body.catalog_id) if body.catalog_id else None
-    job = image_engine.start(
+    jobs = [image_engine.start(
         body.model_path, body.engine, body.prompt, negative_prompt=body.negative_prompt,
         steps=body.steps, guidance=body.guidance, width=body.width,
-        height=body.height, seed=body.seed,
+        height=body.height, seed=seed,
         mflux_cli=body.mflux_cli or (entry.mflux_cli if entry else "mflux-generate"),
         mflux_base=body.mflux_base or (entry.mflux_base if entry else None),
         lora_paths=body.lora_paths, lora_scales=body.lora_scales,
         text_encoder_path=body.text_encoder_path,
-    )
-    return job.to_dict()
+        label=f"{i + 1} of {body.count}" if body.count > 1 else None,
+    ) for i, seed in enumerate(seeds)]
+    return {**jobs[0].to_dict(), "batch": [j.to_dict() for j in jobs]}
 
 
 UPLOAD_DIR = Path.home() / ".uncloud" / "uploads"
@@ -1751,18 +1775,21 @@ class ImageEditBody(BaseModel):
     height: int | None = None
     seed: int | None = None
     strength: float | None = None
+    count: int = 1
 
 
 @app.post("/api/image/edit", dependencies=[Depends(require_token)])
 async def edit_image(body: ImageEditBody) -> dict:
+    seeds = _batch_seeds(body.seed, body.count)
     entry = get_entry(body.catalog_id) if body.catalog_id else None
-    job = image_engine.start_edit(
+    jobs = [image_engine.start_edit(
         body.model_path, body.prompt, body.reference_path,
         steps=body.steps, guidance=body.guidance, width=body.width, height=body.height,
-        seed=body.seed, strength=body.strength,
+        seed=seed, strength=body.strength,
         mflux_cli=entry.mflux_cli if entry else "mflux-generate-kontext",
-    )
-    return job.to_dict()
+        label=f"{i + 1} of {body.count}" if body.count > 1 else None,
+    ) for i, seed in enumerate(seeds)]
+    return {**jobs[0].to_dict(), "batch": [j.to_dict() for j in jobs]}
 
 
 # ----------------------------------------------------------------- product

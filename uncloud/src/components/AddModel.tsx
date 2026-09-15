@@ -9,6 +9,7 @@
  */
 
 import { useState } from 'react';
+import { libraryChanged } from '../lib/library-changed';
 import { open } from '@tauri-apps/plugin-dialog';
 import {
   AlertTriangle, Check, CheckCircle2, ChevronRight, File, Folder, Loader2, X, XCircle,
@@ -117,6 +118,8 @@ export default function AddModel({ onClose, onAdded }: {
       });
       setDone(result);
       onAdded();
+      // Every view that lists models refreshes, not just the one that asked.
+      libraryChanged();
     } catch (e) {
       setError(explain(e));
     } finally {
