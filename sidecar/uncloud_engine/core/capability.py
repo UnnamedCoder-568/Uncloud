@@ -157,7 +157,12 @@ RUNTIMES: dict[str, RuntimeProfile] = {
         #: pipeline alongside it and is not selectable on its own.
         RuntimeProfile("gguf-diffusion", "GGUF diffusion"),
         RuntimeProfile("faster-whisper", "faster-whisper"),
+        #: Whisper checkpoints in the transformers format, on the GPU.
+        RuntimeProfile("transformers-whisper", "Whisper (transformers)"),
         RuntimeProfile("kokoro", "Kokoro"),
+        #: Speech engines run in the speech worker (core/speech).
+        RuntimeProfile("chatterbox", "Chatterbox"),
+        RuntimeProfile("bark", "Bark"),
         RuntimeProfile("vibevoice", "VibeVoice"),
         RuntimeProfile("acestep", "ACE-Step"),
         RuntimeProfile("text-encoder", "Text encoder", platforms=APPLE),

@@ -387,7 +387,10 @@ def scan_library(models_dir: Path) -> list[LocalModel]:
         if not entry_dir.is_dir() or not any(entry_dir.iterdir()):
             continue
         seen_dirs.add(str(entry_dir))
-        if entry.single_file and entry.files:
+        # llama.cpp opens a .gguf file, never its folder. Only diffusers entries
+        # set `single_file`, so every GGUF chat model downloaded from the
+        # catalogue used to be listed as its folder and failed to load.
+        if entry.files and (entry.single_file or entry.engine == "gguf"):
             target = entry_dir / entry.files[0]
             if not target.exists():
                 continue
