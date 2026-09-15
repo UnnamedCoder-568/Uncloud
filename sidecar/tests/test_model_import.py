@@ -248,3 +248,17 @@ def test_a_paired_device_cannot_touch_the_computers_folders(client, tmp_path: Pa
 def test_a_missing_path_is_a_404_not_a_crash(client) -> None:
     _, http = client
     assert http.post("/api/models/inspect", json={"path": "/no/such/model"}).status_code == 404
+
+
+def test_a_catalogue_gguf_is_listed_as_its_file_not_its_folder(models: Path) -> None:
+    """llama.cpp opens a file. Every catalogue GGUF chat model was listed as the
+    folder it was downloaded into, so loading one failed with "failed to read
+    magic" — found by downloading MiniCPM5 through the app."""
+    from uncloud_engine.catalog import get_entry
+    from uncloud_engine.library import scan_library
+
+    entry = get_entry("minicpm5-2b-gguf-q4")
+    (models / entry.id).mkdir()
+    gguf(models / entry.id / entry.files[0], {"general.architecture": "llama"})
+    [listed] = [m for m in scan_library(models) if m.catalog_id == entry.id]
+    assert listed.path.endswith(".gguf") and Path(listed.path).is_file()
