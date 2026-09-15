@@ -128,7 +128,108 @@ CATALOG: list[CatalogEntry] = [
              "19.1GB Metal ceiling, leaving nothing for activations. 6-bit is "
              "13.7GB resident.",
     ),
-    # ---- Text: general purpose, GGUF (llama.cpp, portable, CPU/Metal) ----
+    # ---- Text: current generation, GGUF (llama.cpp) ----
+    # Each checked on 2026-09-16: the architecture in the file's own header is
+    # one the installed llama.cpp knows, and the licence is the tag on the
+    # repository actually downloaded.
+    CatalogEntry(
+        id="qwen3.8-27b-gguf-q4",
+        name="Qwen3.8 27B",
+        category="text", engine="gguf",
+        repo="lmstudio-community/Qwen3.8-27B-GGUF",
+        files=["Qwen3.8-27B-Q4_K_M.gguf"],
+        size_gb=16.8,
+        description="Alibaba's August 2026 release. The strongest general model that fits a "
+                    "24GB Mac, through llama.cpp.",
+        tags=["general", "reasoning", "recommended"],
+        note="~17GB resident — close other heavy apps. On Apple Silicon the MLX build is faster.",
+    ),
+    CatalogEntry(
+        id="gemma-4-26b-a4b-gguf-q4",
+        name="Gemma 4 26B-A4B",
+        category="text", engine="gguf",
+        repo="lmstudio-community/gemma-4-26B-A4B-it-GGUF",
+        files=["gemma-4-26B-A4B-it-Q4_K_M.gguf"],
+        size_gb=16.8,
+        description="Google's mixture-of-experts: 26B total, about 4B active, so it answers at "
+                    "small-model speed.",
+        tags=["general", "reasoning", "recommended"],
+    ),
+    CatalogEntry(
+        id="gpt-oss-20b-gguf",
+        name="gpt-oss 20B",
+        category="text", engine="gguf",
+        repo="lmstudio-community/gpt-oss-20b-GGUF",
+        files=["gpt-oss-20b-MXFP4.gguf"],
+        size_gb=12.1,
+        description="OpenAI's open-weight reasoning model, in its native 4-bit format.",
+        tags=["reasoning", "general"],
+    ),
+    CatalogEntry(
+        id="devstral-small-2-24b-gguf-q4",
+        name="Devstral Small 2 24B",
+        category="text", engine="gguf",
+        repo="lmstudio-community/Devstral-Small-2-24B-Instruct-2512-GGUF",
+        files=["Devstral-Small-2-24B-Instruct-2512-Q4_K_M.gguf"],
+        size_gb=14.3,
+        description="Mistral's agentic coding model, for work across a codebase rather than "
+                    "single snippets.",
+        tags=["coding", "agentic"],
+    ),
+    CatalogEntry(
+        id="gemma-4-12b-qat-gguf",
+        name="Gemma 4 12B (QAT)",
+        category="text", engine="gguf",
+        repo="google/gemma-4-12B-it-qat-q4_0-gguf",
+        files=["gemma-4-12b-it-qat-q4_0.gguf"],
+        size_gb=7.0,
+        description="Google's own 4-bit build, trained for the quantisation so it loses little. "
+                    "Leaves room for an image model alongside it.",
+        tags=["general", "fast", "recommended"],
+    ),
+    CatalogEntry(
+        id="qwen3.5-9b-gguf-q4",
+        name="Qwen3.5 9B",
+        category="text", engine="gguf",
+        repo="lmstudio-community/Qwen3.5-9B-GGUF",
+        files=["Qwen3.5-9B-Q4_K_M.gguf"],
+        size_gb=5.6,
+        description="Quick general model that stays loaded comfortably next to anything else.",
+        tags=["general", "fast"],
+    ),
+    CatalogEntry(
+        id="qwen3.5-4b-gguf-q4",
+        name="Qwen3.5 4B",
+        category="text", engine="gguf",
+        repo="lmstudio-community/Qwen3.5-4B-GGUF",
+        files=["Qwen3.5-4B-Q4_K_M.gguf"],
+        size_gb=2.7,
+        description="Small and fast; good for conversation by voice, where a quick answer "
+                    "matters more than a long one.",
+        tags=["fast"],
+    ),
+    CatalogEntry(
+        id="minicpm5-2b-gguf-q4",
+        name="MiniCPM5 2B",
+        category="text", engine="gguf",
+        repo="openbmb/MiniCPM5-2B-GGUF",
+        files=["MiniCPM5-2B-Q4_K_M.gguf"],
+        size_gb=1.6,
+        description="OpenBMB's September 2026 small model. Runs on almost anything.",
+        tags=["fast"],
+    ),
+    CatalogEntry(
+        id="minicpm5-2b-mlx-8bit",
+        name="MiniCPM5 2B (MLX, 8-bit)",
+        category="text", engine="mlx",
+        repo="mlx-community/MiniCPM5-2B-8bit",
+        size_gb=2.7,
+        description="The same small model for Apple Silicon, at 8-bit so it keeps its quality.",
+        tags=["fast", "apple-silicon"],
+    ),
+    # ---- Text: earlier generation, GGUF (llama.cpp) ----
+    # Kept for anyone who already has them. Newer models above do better at the
+    # same size.
     CatalogEntry(
         id="llama-3.1-8b-instruct-gguf",
         name="Llama 3.1 8B Instruct",
@@ -137,7 +238,7 @@ CATALOG: list[CatalogEntry] = [
         files=["Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf"],
         size_gb=4.9, context_length=128000,
         description="Meta's general-purpose chat model. Strong all-rounder.",
-        tags=["general", "recommended"],
+        tags=["general"],
     ),
     CatalogEntry(
         id="qwen2.5-7b-instruct-gguf",
@@ -147,7 +248,7 @@ CATALOG: list[CatalogEntry] = [
         files=["Qwen2.5-7B-Instruct-Q4_K_M.gguf"],
         size_gb=4.7, context_length=32768,
         description="Fast, strong reasoning and coding for its size.",
-        tags=["general", "coding", "recommended"],
+        tags=["general", "coding"],
     ),
     CatalogEntry(
         id="deepseek-r1-distill-8b-gguf",
@@ -251,7 +352,7 @@ CATALOG: list[CatalogEntry] = [
         repo="mlx-community/Meta-Llama-3.1-8B-Instruct-4bit",
         size_gb=4.5, context_length=128000,
         description="Apple Silicon-optimized build. Faster than GGUF on this Mac.",
-        tags=["general", "apple-silicon", "recommended"],
+        tags=["general", "apple-silicon"],
     ),
     CatalogEntry(
         id="qwen2.5-7b-instruct-mlx",
@@ -457,13 +558,58 @@ CATALOG: list[CatalogEntry] = [
         description="Fast, low-resource transcription.",
         tags=["fast"],
     ),
+    CatalogEntry(
+        id="whisper-large-v3-turbo",
+        name="Whisper Large v3 Turbo",
+        category="voice-stt", engine="transformers-whisper",
+        repo="openai/whisper-large-v3-turbo",
+        size_gb=1.6,
+        description="Nearly Large v3's accuracy at several times the speed, on the Apple GPU. "
+                    "The best choice for talking to Chat and Chisel.",
+        tags=["recommended", "fast"],
+    ),
     # ---- Voice: text-to-speech ----
+    # Folders are recognised by their files (core/speech), so these land ready
+    # for Voice → Text to voice with nothing to configure.
+    CatalogEntry(
+        id="kokoro-82m",
+        name="Kokoro 82M",
+        category="voice-tts", engine="kokoro",
+        repo="hexgrad/Kokoro-82M",
+        allow_patterns=["config.json", "kokoro-v1_0.pth", "voices/*", "README.md", "VOICES.md"],
+        size_gb=0.4,
+        description="All 54 voices. Quick and natural; the voice Chat reads replies in.",
+        tags=["recommended", "fast"],
+    ),
+    CatalogEntry(
+        id="chatterbox-multilingual-v3",
+        name="Chatterbox Multilingual V3",
+        category="voice-tts", engine="chatterbox",
+        repo="ResembleAI/chatterbox",
+        allow_patterns=["ve.pt", "s3gen.pt", "s3gen.safetensors", "t3_mtl23ls_v3.safetensors",
+                        "grapheme_mtl_merged_expanded_v1.json", "Cangjie5_TC.json",
+                        "conds.pt", "README.md"],
+        size_gb=4.3,
+        description="Expressive speech in 23 languages, in any voice from a short recording, "
+                    "plus voice conversion. Only the V3 weights, not the whole 14GB repository.",
+        tags=["recommended", "quality"],
+        note="Needs a one-time setup in Voice (about 2GB), because it pins older library "
+             "versions. Output carries Resemble AI's inaudible watermark.",
+    ),
+    CatalogEntry(
+        id="bark-small",
+        name="Bark Small",
+        category="voice-tts", engine="bark",
+        repo="suno/bark-small",
+        size_gb=1.7,
+        description="Characterful and unpredictable: can laugh, sigh and hesitate. 13 languages.",
+        tags=["multilingual"],
+    ),
 ]
 
-# Kokoro TTS isn't in the downloadable catalog above: the `kokoro` package always
-# fetches its ~350MB of weights itself via huggingface_hub on first use (it doesn't
-# accept a plain local directory), so it's offered directly in the Voice tab instead
-# of through the Models-tab download flow the rest of the catalog uses.
+# Kokoro is in the catalogue now. The note that used to be here said the package
+# would not load a plain folder; it does, given the config and weights paths, and
+# that is how the speech worker loads it.
 
 
 def get_catalog() -> list[CatalogEntry]:
@@ -502,6 +648,7 @@ def get_entry(catalog_id: str) -> CatalogEntry | None:
 #:    nothing offers no grant to rely on, and where the base forbids commercial
 #:    use that is what carries.
 _READ_BY = "source read of the publisher's model card"
+_CARD_FIELD = "licence field of the downloaded repository's model card, read from Hugging Face"
 
 VERIFIED_TERMS: dict[str, Terms] = {
     # ---------------------------------------------------- permissive, checked
@@ -521,6 +668,43 @@ VERIFIED_TERMS: dict[str, Terms] = {
         id="apache-2.0", name="Apache 2.0", commercial_use="allowed",
         url="https://huggingface.co/Wan-AI/Wan2.2-TI2V-5B-Diffusers",
         verified_by=_READ_BY, verified_on="2026-09-03"),
+
+    # ------------------------------------- permissive, checked 2026-09-16
+    # Read from the licence field of each repository's model card, for the
+    # repository actually downloaded — for a repack, its own tag, which here
+    # matches the publisher's in every case.
+    **{catalogue_id: Terms(id=licence, name=name, commercial_use="allowed",
+                           url=f"https://huggingface.co/{repo}",
+                           verified_by=_CARD_FIELD, verified_on="2026-09-16")
+       for catalogue_id, repo, licence, name in (
+           ("qwen3.8-27b-gguf-q4",
+            "lmstudio-community/Qwen3.8-27B-GGUF", "apache-2.0", "Apache 2.0"),
+           ("gemma-4-26b-a4b-gguf-q4",
+            "lmstudio-community/gemma-4-26B-A4B-it-GGUF", "apache-2.0", "Apache 2.0"),
+           ("gpt-oss-20b-gguf",
+            "lmstudio-community/gpt-oss-20b-GGUF", "apache-2.0", "Apache 2.0"),
+           ("devstral-small-2-24b-gguf-q4",
+            "lmstudio-community/Devstral-Small-2-24B-Instruct-2512-GGUF",
+            "apache-2.0", "Apache 2.0"),
+           ("gemma-4-12b-qat-gguf",
+            "google/gemma-4-12B-it-qat-q4_0-gguf", "apache-2.0", "Apache 2.0"),
+           ("qwen3.5-9b-gguf-q4",
+            "lmstudio-community/Qwen3.5-9B-GGUF", "apache-2.0", "Apache 2.0"),
+           ("qwen3.5-4b-gguf-q4",
+            "lmstudio-community/Qwen3.5-4B-GGUF", "apache-2.0", "Apache 2.0"),
+           ("minicpm5-2b-gguf-q4",
+            "openbmb/MiniCPM5-2B-GGUF", "apache-2.0", "Apache 2.0"),
+           ("minicpm5-2b-mlx-8bit",
+            "mlx-community/MiniCPM5-2B-8bit", "apache-2.0", "Apache 2.0"),
+           ("whisper-large-v3-turbo",
+            "openai/whisper-large-v3-turbo", "mit", "MIT"),
+           ("kokoro-82m",
+            "hexgrad/Kokoro-82M", "apache-2.0", "Apache 2.0"),
+           ("chatterbox-multilingual-v3",
+            "ResembleAI/chatterbox", "mit", "MIT"),
+           ("bark-small",
+            "suno/bark-small", "mit", "MIT"),
+       )},
 
     # -------------------------------------------------- conditional, checked
     "z-image-turbo-mlx": Terms(
