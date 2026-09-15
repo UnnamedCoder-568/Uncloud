@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  What the hardened runtime has to be told to allow.
+
+  Tauri signs with the hardened runtime on, and under it macOS refuses the
+  microphone outright unless the entitlement is declared — no prompt, no
+  error a person could act on, just a recording that never starts. The usage
+  string in Info.plist is the other half and is not enough on its own.
+
+  Deliberately short. This is NOT the App Sandbox: Uncloud runs a local engine
+  that loads models from folders the user chooses and, in Agent Mode, runs
+  shell commands they approve. Sandboxing that would mean asking the system for
+  permission to do the thing the application is for, so the boundary is the
+  approval gate and the workspace confinement instead — see
+  core/permission.py, which says the same in its own words.
+-->
+<plist version="1.0">
+<dict>
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
+</dict>
+</plist>

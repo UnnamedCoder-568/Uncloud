@@ -2,6 +2,9 @@
   "bundle": {
     "resources": {
       "binaries/uv": "uv"
+    },
+    "macOS": {
+      "entitlements": "entitlements.plist"
     }
   }
 }
