@@ -9,6 +9,8 @@ import { describeTalk, useTalk } from '../lib/useTalk';
 import RecordButton from '../components/RecordButton';
 import ReplyVoice, { useSavedVoices } from '../components/ReplyVoice';
 import SaveActions from '../components/SaveActions';
+import AddFromDisk from '../components/AddFromDisk';
+import { useLibraryVersion } from '../lib/library-changed';
 
 /**
  * Voice to voice, two ways.
@@ -42,6 +44,7 @@ export default function VoiceToVoice() {
 }
 
 function Talk() {
+  const libraryVersion = useLibraryVersion();
   const [models, setModels] = useState<LocalModel[]>([]);
   const [modelPath, setModelPath] = useState('');
   const [voice, setVoice] = useState(() => {
@@ -63,7 +66,7 @@ function Talk() {
       const running = status?.running ? text.find((m) => m.path === status.model_path) : undefined;
       setModelPath((p) => p || running?.path || text[0]?.path || '');
     });
-  }, []);
+  }, [libraryVersion]);
 
   useEffect(() => {
     scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: 'smooth' });
@@ -104,7 +107,10 @@ function Talk() {
               {models.map((m) => <option key={m.path} value={m.path}>{m.name}</option>)}
             </select>
           ) : (
-            <p className="mt-1.5 text-[11px] text-[var(--text-faint)]">No chat model installed. Add one from Models.</p>
+            <div className="mt-1.5 flex flex-col gap-1">
+              <p className="text-[11px] text-[var(--text-faint)]">No chat model installed. Download one from Models, or add one you already have.</p>
+              <AddFromDisk className="flex items-center gap-1.5 text-[11px] text-[var(--text-dim)] hover:text-white" />
+            </div>
           )}
         </div>
         <div>
@@ -165,6 +171,7 @@ function Talk() {
 }
 
 function Convert() {
+  const libraryVersion = useLibraryVersion();
   const [models, setModels] = useState<SpeechModel[]>([]);
   const [installed, setInstalled] = useState(true);
   const [modelPath, setModelPath] = useState('');
@@ -185,7 +192,7 @@ function Convert() {
       setModels(converting);
       setModelPath((p) => p || converting[0]?.path || '');
     }).catch((e) => setError(String(e)));
-  }, []);
+  }, [libraryVersion]);
 
   useEffect(() => {
     if (!job || job.finished) return;
@@ -250,10 +257,13 @@ function Convert() {
           </p>
         )}
         {models.length === 0 ? (
-          <p className="text-sm text-[var(--text-faint)]">
-            Converting needs Chatterbox weights that include its voice converter (s3gen). Download
-            Chatterbox from Models, or add your folder with Models → Add from disk.
-          </p>
+          <div className="flex flex-col gap-1.5">
+            <p className="text-sm text-[var(--text-faint)]">
+              Converting needs Chatterbox weights that include its voice converter (s3gen). Download
+              Chatterbox from Models, or add a folder you already have.
+            </p>
+            <AddFromDisk className="flex items-center gap-1.5 text-xs text-[var(--text-dim)] hover:text-white" />
+          </div>
         ) : models.length > 1 && (
           <div>
             <label className={label}>Model</label>

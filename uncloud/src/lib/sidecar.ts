@@ -379,6 +379,10 @@ export interface ImageJob {
   label: string | null;
   /** Where the finished file landed, for Save / Save as / Reveal. */
   output_path: string | null;
+  /** The seed it was, or will be, made with. */
+  seed?: number | null;
+  /** Every job a batch started, in order. Present on the start response. */
+  batch?: ImageJob[];
 }
 
 export interface ImageGenerateOptions {
@@ -394,6 +398,8 @@ export interface ImageGenerateOptions {
   width?: number;
   height?: number;
   seed?: number;
+  /** How many images to make, one after another on consecutive seeds. */
+  count?: number;
 }
 
 export async function generateImage(model_path: string, engine: string, prompt: string, catalog_id: string | null, opts: ImageGenerateOptions = {}) {
@@ -441,7 +447,7 @@ export async function editImage(
   prompt: string,
   reference_path: string,
   catalog_id: string | null,
-  opts: { steps?: number; guidance?: number; width?: number; height?: number; seed?: number; strength?: number } = {},
+  opts: { steps?: number; guidance?: number; width?: number; height?: number; seed?: number; strength?: number; count?: number } = {},
 ) {
   return apiPost<ImageJob>('/api/image/edit', { model_path, prompt, reference_path, catalog_id, ...opts });
 }

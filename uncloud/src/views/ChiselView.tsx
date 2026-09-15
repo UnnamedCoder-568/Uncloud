@@ -4,6 +4,8 @@ import { agentSocket, getLibrary, startEngine, engineStatus } from '../lib/sidec
 import type { LocalModel } from '../lib/sidecar';
 import Dictate from '../components/Dictate';
 import ReplyVoice from '../components/ReplyVoice';
+import AddFromDisk from '../components/AddFromDisk';
+import { onLibraryChange } from '../lib/library-changed';
 import { describeTalk, useTalk } from '../lib/useTalk';
 import { useSettings } from '../lib/useSettings';
 import { onHandoffSignal, takeHandoff } from '../lib/handoff';
@@ -73,6 +75,7 @@ export default function ChiselView() {
   }, []);
 
   useEffect(() => { readState(); }, [readState]);
+  useEffect(() => onLibraryChange(() => { void readState(); }), [readState]);
 
   async function loadModel(m: LocalModel) {
     setLoading(true);
@@ -255,11 +258,15 @@ export default function ChiselView() {
                   <option key={m.id} value={m.path}>{m.name} · {m.size_gb} GB</option>
                 ))}
               </select>
+              <AddFromDisk label="Add from disk…" className="flex items-center gap-1 text-[var(--text-faint)] hover:text-[var(--text-dim)]" />
             </>
           ) : (
-            <span className="text-amber-400/90">
-              No text models installed — download one from the Models tab.
-            </span>
+            <>
+              <span className="text-amber-400/90">
+                No text models installed — download one from the Models tab, or
+              </span>
+              <AddFromDisk label="add one you already have" className="flex items-center gap-1 underline underline-offset-2 text-[var(--text-dim)] hover:text-white" />
+            </>
           )}
         </div>
       </header>

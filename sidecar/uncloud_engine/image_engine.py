@@ -56,13 +56,15 @@ class ImageJob:
     error: str | None = None
     kind: str = "generate"  # generate | edit
     label: str | None = None  # e.g. the shot name in a Product batch
+    #: Decided before the job runs, so every image in a batch can be made again.
+    seed: int | None = None
 
     def to_dict(self) -> dict:
         return {
             "id": self.id, "prompt": self.prompt, "status": self.status,
             "step": self.step, "total_steps": self.total_steps,
             "done": self.status in ("done", "error"), "error": self.error,
-            "kind": self.kind, "label": self.label,
+            "kind": self.kind, "label": self.label, "seed": self.seed,
             # The UI needs the path to offer Save / Save as / Reveal on a result.
             "output_path": self.output_path,
         }
@@ -78,6 +80,9 @@ class ImageEngine:
         self.jobs: dict[str, ImageJob] = {}
         self._pipe: Any = None
         self._pipe_path: str | None = None
+        #: One render at a time. Each holds several gigabytes, and a batch or a
+        #: set of product shots started together used to load them side by side.
+        self._queue = asyncio.Lock()
 
     def list_jobs(self) -> list[dict]:
         return [j.to_dict() for j in self.jobs.values()]
@@ -122,8 +127,10 @@ class ImageEngine:
         mflux_cli: str = "mflux-generate", mflux_base: str | None = None,
         text_encoder_path: str | None = None,
         lora_paths: list[str] | None = None, lora_scales: list[float] | None = None,
+        label: str | None = None,
     ) -> ImageJob:
-        job = ImageJob(id=uuid.uuid4().hex[:12], prompt=prompt, total_steps=steps or 0)
+        job = ImageJob(id=uuid.uuid4().hex[:12], prompt=prompt, total_steps=steps or 0,
+                       label=label, seed=seed)
         self.jobs[job.id] = job
         asyncio.create_task(self._run(
             job, model_path, engine, prompt, negative_prompt, steps, guidance, width, height,
@@ -137,6 +144,18 @@ class ImageEngine:
         mflux_cli: str, mflux_base: str | None = None,
         text_encoder_path: str | None = None,
         lora_paths: list[str] | None = None, lora_scales: list[float] | None = None,
+    ) -> None:
+        async with self._queue:
+            await self._run_now(job, model_path, engine, prompt, negative_prompt, steps,
+                                guidance, width, height, seed, mflux_cli, mflux_base,
+                                text_encoder_path, lora_paths, lora_scales)
+
+    async def _run_now(
+        self, job: ImageJob, model_path: str, engine: str, prompt: str, negative_prompt: str,
+        steps: int | None, guidance: float | None, width: int, height: int, seed: int | None,
+        mflux_cli: str, mflux_base: str | None,
+        text_encoder_path: str | None,
+        lora_paths: list[str] | None, lora_scales: list[float] | None,
     ) -> None:
         job.status = "running"
         try:
@@ -181,7 +200,7 @@ class ImageEngine:
     ) -> ImageJob:
         """Reference-image editing: an input image plus an instruction."""
         job = ImageJob(id=uuid.uuid4().hex[:12], prompt=prompt, total_steps=steps or 0,
-                       kind="edit", label=label)
+                       kind="edit", label=label, seed=seed)
         self.jobs[job.id] = job
         asyncio.create_task(self._run_edit(
             job, model_path, prompt, reference_path, steps, guidance,
@@ -190,6 +209,15 @@ class ImageEngine:
         return job
 
     async def _run_edit(
+        self, job: ImageJob, model_path: str, prompt: str, reference_path: str,
+        steps: int | None, guidance: float | None, width: int | None, height: int | None,
+        seed: int | None, strength: float | None, mflux_cli: str,
+    ) -> None:
+        async with self._queue:
+            await self._run_edit_now(job, model_path, prompt, reference_path, steps, guidance,
+                                     width, height, seed, strength, mflux_cli)
+
+    async def _run_edit_now(
         self, job: ImageJob, model_path: str, prompt: str, reference_path: str,
         steps: int | None, guidance: float | None, width: int | None, height: int | None,
         seed: int | None, strength: float | None, mflux_cli: str,

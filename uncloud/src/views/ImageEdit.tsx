@@ -3,6 +3,8 @@ import { ChevronDown, ImagePlus, Loader2, Wand2, X, ArrowRight } from 'lucide-re
 import { getLibrary, uploadImage, editImage, getImageJob, fetchImageBlobUrl } from '../lib/sidecar';
 import Dictate from '../components/Dictate';
 import SaveActions from '../components/SaveActions';
+import AddFromDisk from '../components/AddFromDisk';
+import { useLibraryVersion } from '../lib/library-changed';
 import type { LocalModel, ImageJob } from '../lib/sidecar';
 import { SplitTabs, useSplit } from '../components/Split';
 
@@ -16,6 +18,7 @@ const PRESETS = [
 ];
 
 export default function ImageEdit() {
+  const libraryVersion = useLibraryVersion();
   const [models, setModels] = useState<LocalModel[]>([]);
   const [model, setModel] = useState<LocalModel | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -35,7 +38,7 @@ export default function ImageEdit() {
       setModels(editors);
       setModel((p) => p ?? editors[0] ?? null);
     });
-  }, []);
+  }, [libraryVersion]);
 
   useEffect(() => {
     if (!job || job.done) return;
@@ -112,6 +115,9 @@ export default function ImageEdit() {
                   {m.name}
                 </button>
               ))}
+              <div className="border-t border-[var(--border-soft)] mt-1 pt-1">
+                <AddFromDisk onOpen={() => setPickerOpen(false)} />
+              </div>
             </div>
           )}
         </div>

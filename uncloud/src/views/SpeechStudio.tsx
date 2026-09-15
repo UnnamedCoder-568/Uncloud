@@ -13,6 +13,8 @@ import SaveActions from '../components/SaveActions';
 import { useSavedVoices } from '../components/ReplyVoice';
 import { SplitTabs, useSplit } from '../components/Split';
 import { useWhenVisible } from '../components/Panes';
+import AddFromDisk from '../components/AddFromDisk';
+import { onLibraryChange } from '../lib/library-changed';
 
 /**
  * Text to voice with Kokoro, Chatterbox or Bark.
@@ -79,6 +81,7 @@ export default function SpeechStudio({ engineId }: { engineId: string }) {
   useEffect(() => { refresh(); }, [refresh]);
   // Models downloaded or set up elsewhere appear when this is looked at again.
   useWhenVisible(refresh);
+  useEffect(() => onLibraryChange(refresh), [refresh]);
 
   // A new engine starts from its own defaults, not the last engine's.
   useEffect(() => {
@@ -281,10 +284,13 @@ export default function SpeechStudio({ engineId }: { engineId: string }) {
               {engine.models.map((m) => <option key={m.path} value={m.path}>{m.name}</option>)}
             </select>
           ) : (
-            <p className="mt-1.5 text-[11px] text-[var(--text-faint)] leading-relaxed">
-              No {engine.label} weights found. Download them from Models, or add a folder you
-              already have with Models → Add from disk.
-            </p>
+            <div className="mt-1.5 flex flex-col gap-1">
+              <p className="text-[11px] text-[var(--text-faint)] leading-relaxed">
+                No {engine.label} weights found. Download them from Models, or add a folder you
+                already have.
+              </p>
+              <AddFromDisk className="flex items-center gap-1.5 text-[11px] text-[var(--text-dim)] hover:text-white" />
+            </div>
           )}
         </div>
 

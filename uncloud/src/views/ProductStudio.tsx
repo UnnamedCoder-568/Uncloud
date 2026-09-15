@@ -13,6 +13,8 @@ import {
   uploadImage,
 } from '../lib/sidecar';
 import Dictate from '../components/Dictate';
+import AddFromDisk from '../components/AddFromDisk';
+import { useLibraryVersion } from '../lib/library-changed';
 import type { LocalModel, ProductCategory, ImageJob, Character } from '../lib/sidecar';
 import { SplitTabs, useSplit } from '../components/Split';
 import { downloadBlob, inDesktop } from '../lib/platform';
@@ -23,6 +25,7 @@ interface Result {
 }
 
 export default function ProductStudio() {
+  const libraryVersion = useLibraryVersion();
   const [models, setModels] = useState<LocalModel[]>([]);
   const [model, setModel] = useState<LocalModel | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -51,6 +54,9 @@ export default function ProductStudio() {
       setModels(editors);
       setModel((p) => p ?? editors[0] ?? null);
     });
+  }, [libraryVersion]);
+
+  useEffect(() => {
     getProductCategories().then((c) => {
       setCategories(c);
       const first = c.find((x) => x.id === 'apparel') ?? c[0];
@@ -196,6 +202,9 @@ export default function ProductStudio() {
                   {m.name}
                 </button>
               ))}
+              <div className="border-t border-[var(--border-soft)] mt-1 pt-1">
+                <AddFromDisk onOpen={() => setPickerOpen(false)} />
+              </div>
             </div>
           )}
         </div>

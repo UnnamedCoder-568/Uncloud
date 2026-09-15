@@ -8,6 +8,8 @@ import Markdown from '../components/Markdown';
 import { fromConversation, sendToChisel } from '../lib/handoff';
 import Conversations from '../components/Conversations';
 import ReplyVoice from '../components/ReplyVoice';
+import AddFromDisk from '../components/AddFromDisk';
+import { useLibraryVersion } from '../lib/library-changed';
 import { splitThinking } from '../lib/thinking';
 import { Conversation } from '../lib/converse';
 import { MAX_ROUNDS, describe, findLookups, resultsTurn, stripLookups } from '../lib/lookup';
@@ -54,6 +56,7 @@ export default function ChatView() {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const [sttModel, setSttModel] = useState<LocalModel | null>(null);
+  const libraryVersion = useLibraryVersion();
   const sttRef = useRef<LocalModel | null>(null);
   useEffect(() => { sttRef.current = sttModel; }, [sttModel]);
   const [recording, setRecording] = useState(false);
@@ -127,6 +130,9 @@ export default function ChatView() {
       const stt = list.find((m) => m.category === 'voice-stt' && m.ready);
       if (stt) setSttModel(stt);
     });
+  }, [libraryVersion]);
+
+  useEffect(() => {
     engineStatus().then((s) => {
       if (s.running && s.model_path) {
         setActiveModel((prev) => prev ?? {
@@ -840,7 +846,7 @@ export default function ChatView() {
                   fontSize: 'var(--text-xs)', color: 'var(--text-3)',
                   padding: '16px 12px', textAlign: 'center',
                 }}>
-                  No text models yet. Download one from the Models tab.
+                  No text models yet. Download one from the Models tab, or add one you already have.
                 </div>
               )}
               {models.map((m) => (
@@ -853,6 +859,11 @@ export default function ChatView() {
                   }}>{m.engine}</span>
                 </button>
               ))}
+              {/* Pinned: the list scrolls, and an option below the fold is one nobody finds. */}
+              <div style={{ borderTop: '1px solid var(--border-soft)', marginTop: 4, paddingTop: 4,
+                            position: 'sticky', bottom: -6, background: 'inherit' }}>
+                <AddFromDisk onOpen={() => setPickerOpen(false)} />
+              </div>
             </div>
           )}
         </div>
