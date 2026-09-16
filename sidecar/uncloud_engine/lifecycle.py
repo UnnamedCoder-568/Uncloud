@@ -19,6 +19,9 @@ class Released:
     mflux_model: bool = False
     flux2_profile: bool = False
     video_pipeline: bool = False
+    speech_workers: bool = False
+    music_jobs: bool = False
+    narration_jobs: bool = False
     browser: bool = False
     wake_lock: bool = False
 
@@ -29,6 +32,9 @@ class Released:
             "mflux_model": self.mflux_model,
             "flux2_profile": self.flux2_profile,
             "video_pipeline": self.video_pipeline,
+            "speech_workers": self.speech_workers,
+            "music_jobs": self.music_jobs,
+            "narration_jobs": self.narration_jobs,
             "browser": self.browser,
             "wake_lock": self.wake_lock,
             "anything": any(vars(self).values()),
@@ -39,7 +45,8 @@ def resident() -> dict:
     """What is currently holding memory, for the UI to show before stopping."""
     out: dict = {"text_model": None, "image_pipeline": None,
                  "mflux_model": None, "flux2_profile": None,
-                 "video_pipeline": None}
+                 "video_pipeline": None, "speech_workers": 0,
+                 "music_jobs": 0, "narration_jobs": 0}
     try:
         from .engines import engine_manager
 
@@ -50,7 +57,21 @@ def resident() -> dict:
     try:
         from . import speech
 
-        speech.stop()
+        out["speech_workers"] = speech.resident_count()
+    except Exception:  # noqa: BLE001
+        pass
+
+    try:
+        from .music_engine import music_engine
+
+        out["music_jobs"] = music_engine.active_count()
+    except Exception:  # noqa: BLE001
+        pass
+
+    try:
+        from .narration_engine import narration_engine
+
+        out["narration_jobs"] = narration_engine.active_count()
     except Exception:  # noqa: BLE001
         pass
 
@@ -78,6 +99,7 @@ def resident() -> dict:
         out["video_pipeline"] = getattr(video_engine, "_loaded_path", None)
     except Exception:  # noqa: BLE001
         pass
+
     out["anything"] = any(v for v in out.values())
     return out
 
@@ -133,6 +155,29 @@ async def stop_all(*, close_browser: bool = True) -> Released:
         if getattr(video_engine, "_pipe", None) is not None:
             video_engine.unload()
             freed.video_pipeline = True
+    except Exception:  # noqa: BLE001
+        pass
+
+    try:
+        from . import speech
+
+        if speech.resident_count():
+            speech.stop()
+            freed.speech_workers = True
+    except Exception:  # noqa: BLE001
+        pass
+
+    try:
+        from .music_engine import music_engine
+
+        freed.music_jobs = music_engine.cancel_all()
+    except Exception:  # noqa: BLE001
+        pass
+
+    try:
+        from .narration_engine import narration_engine
+
+        freed.narration_jobs = narration_engine.cancel_all()
     except Exception:  # noqa: BLE001
         pass
 

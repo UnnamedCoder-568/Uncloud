@@ -122,7 +122,12 @@ def test_a_symlink_pointing_out_of_the_folder_is_refused(folder, tmp_path) -> No
     outside = tmp_path / "elsewhere"
     outside.mkdir()
     (outside / "private.txt").write_text("not yours")
-    (folder / "shortcut").symlink_to(outside)
+    try:
+        (folder / "shortcut").symlink_to(outside, target_is_directory=True)
+    except OSError as exc:
+        if getattr(exc, "winerror", None) == 1314:
+            pytest.skip("Windows symlink privilege is unavailable")
+        raise
     with pytest.raises(IntegrationError):
         documents.Documents()._resolve("shortcut/private.txt")
 

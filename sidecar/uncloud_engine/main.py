@@ -8,6 +8,7 @@ import secrets
 import sys
 import time
 import uuid
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -63,6 +64,9 @@ app.add_middleware(
 # The LAN surface, when this process was started with --lan. None otherwise,
 # and None means none of it exists: no routes, no listener, no cookie accepted.
 _lan: Any = None
+_job_owners: dict[str, dict[str, str]] = {
+    "image": {}, "video": {}, "music": {}, "narration": {}, "speech": {},
+}
 
 
 def _same(given: str, expected: str) -> bool:
@@ -82,6 +86,33 @@ def authorised(request: Any) -> bool:
     from .core.lan.web import session_of
 
     return session_of(request, _lan) is not None
+
+
+def principal_of(request: Any) -> str:
+    """Stable owner for state that must not cross desktop/LAN sessions."""
+    if _same(request.headers.get("authorization") or "", f"Bearer {settings.token}"):
+        return "desktop"
+    if _lan is not None:
+        from .core.lan.web import session_of
+
+        if session := session_of(request, _lan):
+            return f"lan:{session.id}"
+    raise HTTPException(status_code=401, detail="Invalid or missing token")
+
+
+def claim_jobs(kind: str, ids: list[str], request: Request) -> None:
+    owner = principal_of(request)
+    _job_owners[kind].update({job_id: owner for job_id in ids})
+
+
+def require_job(kind: str, job_id: str, request: Request) -> None:
+    """Keep progress and output from wandering into another paired session."""
+    owner = _job_owners[kind].get(job_id)
+    principal = principal_of(request)
+    # Jobs created before this build have no owner; preserve desktop access but
+    # never expose them to a paired device.
+    if owner != principal and not (owner is None and principal == "desktop"):
+        raise HTTPException(status_code=404, detail="Unknown job")
 
 
 def require_token(request: Request) -> None:
@@ -114,6 +145,17 @@ def require_token_ws(websocket: WebSocket) -> bool:
     from .core.lan.web import session_of
 
     return session_of(websocket, _lan) is not None
+
+
+def principal_of_ws(websocket: WebSocket) -> str:
+    if _same(websocket.query_params.get("token", ""), settings.token):
+        return "desktop"
+    if _lan is not None:
+        from .core.lan.web import session_of
+
+        if session := session_of(websocket, _lan):
+            return f"lan:{session.id}"
+    return ""
 
 
 # ----------------------------------------------------------------- approvals
@@ -459,6 +501,37 @@ def agent_tools() -> dict:
         "resolved": resolved,
         "active_count": len(_active_tool_specs()),
     }
+
+
+class NoteBody(BaseModel):
+    key: str
+    value: str
+
+
+@app.get("/api/notes", dependencies=[Depends(require_token)])
+def list_notes(request: Request) -> list[dict]:
+    from .agent import memory
+
+    return memory.note_entries(namespace=principal_of(request))
+
+
+@app.post("/api/notes", dependencies=[Depends(require_token)])
+def save_note(body: NoteBody, request: Request) -> dict:
+    from .agent import memory
+
+    key = body.key.strip()[:120]
+    value = body.value.strip()
+    if not key or not value:
+        raise HTTPException(status_code=400, detail="A note needs a title and content")
+    memory.note_save(key, value, namespace=principal_of(request))
+    return {"saved": True, "key": key}
+
+
+@app.delete("/api/notes/{key}", dependencies=[Depends(require_token)])
+def delete_note(key: str, request: Request) -> dict:
+    from .agent import memory
+
+    return {"deleted": memory.note_delete(key, namespace=principal_of(request))}
 
 
 class ToolGroupsBody(BaseModel):
@@ -1652,6 +1725,95 @@ class ChatBody(BaseModel):
     effort: str = ""
 
 
+@dataclass
+class ChatRun:
+    id: str
+    owner: str
+    status: str = "running"
+    frames: list[str] = field(default_factory=list)
+    error: str = ""
+    created: float = field(default_factory=time.time)
+    task: asyncio.Task | None = field(default=None, repr=False)
+
+    def public(self, cursor: int = 0) -> dict:
+        start = max(0, min(cursor, len(self.frames)))
+        return {"id": self.id, "status": self.status,
+                "frames": self.frames[start:], "cursor": len(self.frames),
+                "error": self.error}
+
+
+_chat_runs: dict[str, ChatRun] = {}
+
+
+def _chat_run(run_id: str, owner: str) -> ChatRun:
+    run = _chat_runs.get(run_id)
+    if run is None or run.owner != owner:
+        raise HTTPException(status_code=404, detail="No such chat run")
+    return run
+
+
+async def _run_chat(run: ChatRun, body: ChatBody) -> None:
+    """Own the model request independently of the browser connection.
+
+    Mobile browsers freeze network readers when backgrounded.  Keeping the
+    upstream stream here means generation continues and every frame is waiting
+    when the page wakes again.
+    """
+    import httpx
+
+    try:
+        async with httpx.AsyncClient(timeout=None) as client:
+            payload = build_chat_payload(
+                body.messages, temperature=body.temperature,
+                max_tokens=body.max_tokens,
+                engine=engine_manager.active.engine if engine_manager.active else "",
+                effort=body.effort or settings.effort, model=_active_profile())
+            if not engine_manager.active:
+                raise RuntimeError("The text model was unloaded before this reply started.")
+            async with client.stream(
+                "POST", f"{engine_manager.active.base_url}/v1/chat/completions", json=payload,
+            ) as response:
+                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    if line.startswith("data: "):
+                        run.frames.append(line[6:].strip())
+        run.status = "done"
+    except asyncio.CancelledError:
+        run.status = "cancelled"
+        raise
+    except Exception as exc:  # noqa: BLE001 - delivered to the owning UI
+        run.status = "error"
+        run.error = str(exc).strip() or type(exc).__name__
+
+
+@app.post("/api/chat/runs", dependencies=[Depends(require_token)])
+async def start_chat_run(body: ChatBody, request: Request) -> dict:
+    if not engine_manager.active:
+        raise HTTPException(status_code=400, detail="No text model loaded")
+    # Finished runs are useful for a reconnect, but not forever.
+    cutoff = time.time() - 3600
+    for old_id, old in list(_chat_runs.items()):
+        if old.created < cutoff and old.status != "running":
+            _chat_runs.pop(old_id, None)
+    run = ChatRun(id=uuid.uuid4().hex, owner=principal_of(request))
+    _chat_runs[run.id] = run
+    run.task = asyncio.create_task(_run_chat(run, body), name=f"chat-{run.id[:8]}")
+    return run.public()
+
+
+@app.get("/api/chat/runs/{run_id}", dependencies=[Depends(require_token)])
+def chat_run_status(run_id: str, request: Request, cursor: int = 0) -> dict:
+    return _chat_run(run_id, principal_of(request)).public(cursor)
+
+
+@app.delete("/api/chat/runs/{run_id}", dependencies=[Depends(require_token)])
+def cancel_chat_run(run_id: str, request: Request) -> dict:
+    run = _chat_run(run_id, principal_of(request))
+    if run.task and not run.task.done():
+        run.task.cancel()
+    return {"cancelled": True}
+
+
 @app.post("/api/chat", dependencies=[Depends(require_token)])
 async def chat(body: ChatBody) -> StreamingResponse:
     if not engine_manager.active:
@@ -1727,7 +1889,7 @@ def _batch_seeds(seed: int | None, count: int) -> list[int]:
 
 
 @app.post("/api/image/generate", dependencies=[Depends(require_token)])
-async def generate_image(body: ImageGenerateBody) -> dict:
+async def generate_image(body: ImageGenerateBody, request: Request) -> dict:
     """Start one image or a batch. Returns the first job, with every job in
     the batch under `batch`. Approved once for the whole batch."""
     seeds = _batch_seeds(body.seed, body.count)
@@ -1746,11 +1908,52 @@ async def generate_image(body: ImageGenerateBody) -> dict:
         text_encoder_path=body.text_encoder_path,
         label=f"{i + 1} of {body.count}" if body.count > 1 else None,
     ) for i, seed in enumerate(seeds)]
+    claim_jobs("image", [job.id for job in jobs], request)
     return {**jobs[0].to_dict(), "batch": [j.to_dict() for j in jobs]}
 
 
 UPLOAD_DIR = Path.home() / ".uncloud" / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+CHAT_DOCUMENT_TYPES = {
+    ".txt", ".md", ".markdown", ".csv", ".tsv", ".json", ".yaml", ".yml",
+    ".py", ".js", ".jsx", ".ts", ".tsx", ".css", ".html", ".xml", ".toml",
+    ".ini", ".log", ".sql", ".rs", ".go", ".java", ".c", ".h", ".cpp",
+    ".docx", ".xlsx", ".pptx",
+}
+MAX_CHAT_DOCUMENT_BYTES = 10 * 1024 * 1024
+MAX_CHAT_DOCUMENT_CHARS = 120_000
+
+
+@app.post("/api/chat/attachments", dependencies=[Depends(require_token)])
+async def upload_chat_attachment(file: UploadFile = File(...)) -> dict:
+    """Extract a bounded, user-visible document for a chat turn."""
+    from .core.integrations.documents import extract
+
+    name = Path(file.filename or "attachment.txt").name
+    suffix = Path(name).suffix.lower()
+    if suffix not in CHAT_DOCUMENT_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=(f"{suffix or 'That file type'} cannot be read in Chat yet. "
+                    "Use text, source code, Word, Excel, or PowerPoint."))
+    raw = await file.read(MAX_CHAT_DOCUMENT_BYTES + 1)
+    if len(raw) > MAX_CHAT_DOCUMENT_BYTES:
+        raise HTTPException(status_code=413, detail="That file is larger than 10 MB")
+    dest = UPLOAD_DIR / f"chat-{uuid.uuid4().hex[:12]}{suffix}"
+    try:
+        dest.write_bytes(raw)
+        text = extract(dest).strip()
+    except Exception as exc:  # noqa: BLE001 - convert parser detail to a useful 400
+        raise HTTPException(status_code=400, detail=f"{name} could not be read: {exc}") from exc
+    finally:
+        with contextlib.suppress(OSError):
+            dest.unlink()
+    if not text:
+        raise HTTPException(status_code=400, detail=f"{name} contains no readable text")
+    clipped = len(text) > MAX_CHAT_DOCUMENT_CHARS
+    return {"name": name, "type": file.content_type or "application/octet-stream",
+            "text": text[:MAX_CHAT_DOCUMENT_CHARS], "clipped": clipped}
 
 
 @app.post("/api/image/upload", dependencies=[Depends(require_token)])
@@ -1779,7 +1982,7 @@ class ImageEditBody(BaseModel):
 
 
 @app.post("/api/image/edit", dependencies=[Depends(require_token)])
-async def edit_image(body: ImageEditBody) -> dict:
+async def edit_image(body: ImageEditBody, request: Request) -> dict:
     seeds = _batch_seeds(body.seed, body.count)
     entry = get_entry(body.catalog_id) if body.catalog_id else None
     jobs = [image_engine.start_edit(
@@ -1789,6 +1992,7 @@ async def edit_image(body: ImageEditBody) -> dict:
         mflux_cli=entry.mflux_cli if entry else "mflux-generate-kontext",
         label=f"{i + 1} of {body.count}" if body.count > 1 else None,
     ) for i, seed in enumerate(seeds)]
+    claim_jobs("image", [job.id for job in jobs], request)
     return {**jobs[0].to_dict(), "batch": [j.to_dict() for j in jobs]}
 
 
@@ -1813,7 +2017,7 @@ class ProductGenerateBody(BaseModel):
 
 
 @app.post("/api/product/generate", dependencies=[Depends(require_token)])
-async def product_generate(body: ProductGenerateBody) -> list[dict]:
+async def product_generate(body: ProductGenerateBody, request: Request) -> list[dict]:
     """Queue one edit job per requested shot type. They run sequentially — each
     holds several GB, so overlapping them would thrash memory."""
     if not body.shots:
@@ -1842,6 +2046,7 @@ async def product_generate(body: ProductGenerateBody) -> list[dict]:
             mflux_cli=cli, label=shot.name if shot else shot_id,
         )
         jobs.append(job.to_dict())
+        claim_jobs("image", [job.id], request)
     return jobs
 
 
@@ -1892,7 +2097,7 @@ class ExportBody(BaseModel):
 
 
 @app.post("/api/image/export", dependencies=[Depends(require_token)])
-def export_images(body: ExportBody) -> dict:
+def export_images(body: ExportBody, request: Request) -> dict:
     """Copy finished renders out to a folder the user picked, named per shot."""
     import shutil
 
@@ -1904,6 +2109,7 @@ def export_images(body: ExportBody) -> dict:
 
     written: list[str] = []
     for i, job_id in enumerate(body.job_ids, 1):
+        require_job("image", job_id, request)
         job = image_engine.jobs.get(job_id)
         if not job or not job.output_path or not Path(job.output_path).exists():
             continue
@@ -1919,12 +2125,15 @@ def export_images(body: ExportBody) -> dict:
 
 
 @app.get("/api/image/jobs", dependencies=[Depends(require_token)])
-def list_image_jobs() -> list[dict]:
-    return image_engine.list_jobs()
+def list_image_jobs(request: Request) -> list[dict]:
+    owner = principal_of(request)
+    return [job.to_dict() for job in image_engine.jobs.values()
+            if _job_owners["image"].get(job.id, "desktop") == owner]
 
 
 @app.get("/api/image/jobs/{job_id}", dependencies=[Depends(require_token)])
-def get_image_job(job_id: str) -> dict:
+def get_image_job(job_id: str, request: Request) -> dict:
+    require_job("image", job_id, request)
     job = image_engine.jobs.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Unknown job")
@@ -1932,7 +2141,8 @@ def get_image_job(job_id: str) -> dict:
 
 
 @app.get("/api/image/output/{job_id}", dependencies=[Depends(require_token)])
-def get_image_output(job_id: str) -> FileResponse:
+def get_image_output(job_id: str, request: Request) -> FileResponse:
+    require_job("image", job_id, request)
     job = image_engine.jobs.get(job_id)
     if not job or not job.output_path:
         raise HTTPException(status_code=404, detail="Image not ready")
@@ -1968,7 +2178,7 @@ def video_options() -> dict:
 
 
 @app.post("/api/video/generate", dependencies=[Depends(require_token)])
-async def video_generate(body: VideoGenerateBody) -> dict:
+async def video_generate(body: VideoGenerateBody, request: Request) -> dict:
     from .video_engine import video_engine
 
     job = video_engine.start(
@@ -1976,11 +2186,13 @@ async def video_generate(body: VideoGenerateBody) -> dict:
         frames=body.frames, fps=body.fps, width=body.width, height=body.height,
         steps=body.steps, guidance=body.guidance, seed=body.seed,
     )
+    claim_jobs("video", [job.id], request)
     return job.to_dict()
 
 
 @app.get("/api/video/jobs/{job_id}", dependencies=[Depends(require_token)])
-def video_job(job_id: str) -> dict:
+def video_job(job_id: str, request: Request) -> dict:
+    require_job("video", job_id, request)
     from .video_engine import video_engine
 
     job = video_engine.get(job_id)
@@ -1990,7 +2202,8 @@ def video_job(job_id: str) -> dict:
 
 
 @app.get("/api/video/output/{job_id}", dependencies=[Depends(require_token)])
-def video_output(job_id: str) -> FileResponse:
+def video_output(job_id: str, request: Request) -> FileResponse:
+    require_job("video", job_id, request)
     from .video_engine import video_engine
 
     job = video_engine.get(job_id)
@@ -2031,7 +2244,7 @@ class MusicGenerateBody(BaseModel):
 
 
 @app.post("/api/music/generate", dependencies=[Depends(require_token)])
-async def generate_music_track(body: MusicGenerateBody) -> dict:
+async def generate_music_track(body: MusicGenerateBody, request: Request) -> dict:
     if body.sample_rate not in music_engine_mod.SAMPLE_RATES:
         raise HTTPException(
             status_code=400,
@@ -2047,16 +2260,20 @@ async def generate_music_track(body: MusicGenerateBody) -> dict:
         bit_depth=body.bit_depth, separate_stems=body.separate_stems,
         audio_format=body.audio_format,
     )
+    claim_jobs("music", [job.id], request)
     return job.to_dict()
 
 
 @app.get("/api/music/jobs", dependencies=[Depends(require_token)])
-def list_music_jobs() -> list[dict]:
-    return music_engine.list_jobs()
+def list_music_jobs(request: Request) -> list[dict]:
+    owner = principal_of(request)
+    return [job.to_dict() for job in music_engine.jobs.values()
+            if _job_owners["music"].get(job.id, "desktop") == owner]
 
 
 @app.get("/api/music/jobs/{job_id}", dependencies=[Depends(require_token)])
-def get_music_job(job_id: str) -> dict:
+def get_music_job(job_id: str, request: Request) -> dict:
+    require_job("music", job_id, request)
     job = music_engine.jobs.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Unknown job")
@@ -2064,8 +2281,10 @@ def get_music_job(job_id: str) -> dict:
 
 
 @app.get("/api/music/audio/{job_id}", dependencies=[Depends(require_token)])
-def get_music_audio(job_id: str, stem: str = Query(default="")) -> FileResponse:
+def get_music_audio(job_id: str, request: Request,
+                    stem: str = Query(default="")) -> FileResponse:
     """Return the mixdown, or one separated stem when `stem` is given."""
+    require_job("music", job_id, request)
     job = music_engine.jobs.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Unknown job")
@@ -2148,7 +2367,7 @@ class NarrationBody(BaseModel):
 
 
 @app.post("/api/narration/generate", dependencies=[Depends(require_token)])
-async def generate_narration(body: NarrationBody) -> dict:
+async def generate_narration(body: NarrationBody, request: Request) -> dict:
     if not body.text.strip():
         raise HTTPException(status_code=400, detail="text is required")
     job = narration_engine.start(
@@ -2156,11 +2375,13 @@ async def generate_narration(body: NarrationBody) -> dict:
         sample_rate=body.sample_rate, bit_depth=body.bit_depth, cfg_scale=body.cfg_scale,
         ddpm_steps=body.ddpm_steps, audio_format=body.audio_format, engine=body.engine,
     )
+    claim_jobs("narration", [job.id], request)
     return job.to_dict()
 
 
 @app.get("/api/narration/jobs/{job_id}", dependencies=[Depends(require_token)])
-def get_narration_job(job_id: str) -> dict:
+def get_narration_job(job_id: str, request: Request) -> dict:
+    require_job("narration", job_id, request)
     job = narration_engine.jobs.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Unknown job")
@@ -2168,7 +2389,8 @@ def get_narration_job(job_id: str) -> dict:
 
 
 @app.get("/api/narration/audio/{job_id}", dependencies=[Depends(require_token)])
-def get_narration_audio(job_id: str) -> FileResponse:
+def get_narration_audio(job_id: str, request: Request) -> FileResponse:
+    require_job("narration", job_id, request)
     job = narration_engine.jobs.get(job_id)
     if not job or not job.output_path or not Path(job.output_path).exists():
         raise HTTPException(status_code=404, detail="Audio not ready")
@@ -2567,7 +2789,7 @@ class ConversationBody(BaseModel):
 
 
 @app.get("/api/conversations", dependencies=[Depends(require_token)])
-def list_conversations() -> dict:  # noqa: D401
+def list_conversations(request: Request) -> dict:  # noqa: D401
     """Every saved conversation, newest first.
 
     `unreadable` is reported rather than hidden. A conversation the user
@@ -2576,7 +2798,7 @@ def list_conversations() -> dict:  # noqa: D401
     otherwise have no way to notice.
     """
     try:
-        result = conversations_store.listing()
+        result = conversations_store.listing(owner=principal_of(request))
     except conversations_store.EncryptionUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     return {"conversations": result.conversations, "unreadable": result.unreadable,
@@ -2584,17 +2806,19 @@ def list_conversations() -> dict:  # noqa: D401
 
 
 @app.post("/api/conversations", dependencies=[Depends(require_token)])
-def create_conversation(body: ConversationBody) -> dict:
-    conversation = conversations_store.create(body.messages, body.model_path)
+def create_conversation(body: ConversationBody, request: Request) -> dict:
+    conversation = conversations_store.create(
+        body.messages, body.model_path, owner=principal_of(request))
     if body.title:
         conversation.title = body.title
     return conversations_store.save(conversation).to_dict()
 
 
 @app.get("/api/conversations/{conversation_id}", dependencies=[Depends(require_token)])
-def read_conversation(conversation_id: str) -> dict:
+def read_conversation(conversation_id: str, request: Request) -> dict:
     try:
-        conversation = conversations_store.load(conversation_id)
+        conversation = conversations_store.load(
+            conversation_id, owner=principal_of(request))
     except ValueError:
         # `from None`, unlike everywhere else here: a malformed id is a
         # validation failure whose original exception says nothing the message
@@ -2613,7 +2837,7 @@ def read_conversation(conversation_id: str) -> dict:
 
 
 @app.put("/api/conversations/{conversation_id}", dependencies=[Depends(require_token)])
-def write_conversation(conversation_id: str, body: ConversationBody) -> dict:
+def write_conversation(conversation_id: str, body: ConversationBody, request: Request) -> dict:
     """Save, creating the file if this is the first write.
 
     Deliberately an upsert. The alternative is the client having to create
@@ -2621,7 +2845,8 @@ def write_conversation(conversation_id: str, body: ConversationBody) -> dict:
     the user is in the middle of.
     """
     try:
-        existing = conversations_store.load(conversation_id)
+        owner = principal_of(request)
+        existing = conversations_store.load(conversation_id, owner=owner)
     except ValueError:
         # `from None`, unlike everywhere else here: a malformed id is a
         # validation failure whose original exception says nothing the message
@@ -2629,14 +2854,18 @@ def write_conversation(conversation_id: str, body: ConversationBody) -> dict:
         # somebody mistyping a URL.
         raise HTTPException(status_code=400,
                             detail="Not a conversation id") from None
-    except Exception:  # noqa: BLE001 - overwrite a file we cannot read
+    except Exception:  # noqa: BLE001 - handled below as occupied, never overwritten
         existing = None
 
     if existing is None:
+        if conversations_store.exists(conversation_id):
+            # Occupied by another paired session (or unreadable). Never turn an
+            # upsert into a cross-device overwrite oracle.
+            raise HTTPException(status_code=404, detail="No such conversation")
         conversation = conversations_store.Conversation(
             id=conversation_id, title=body.title or "",
             created=time.time(), updated=time.time(),
-            messages=body.messages, model_path=body.model_path)
+            messages=body.messages, model_path=body.model_path, owner=owner)
     else:
         existing.messages = body.messages
         existing.model_path = body.model_path or existing.model_path
@@ -2647,9 +2876,10 @@ def write_conversation(conversation_id: str, body: ConversationBody) -> dict:
 
 
 @app.delete("/api/conversations/{conversation_id}", dependencies=[Depends(require_token)])
-def remove_conversation(conversation_id: str) -> dict:
+def remove_conversation(conversation_id: str, request: Request) -> dict:
     try:
-        return {"deleted": conversations_store.delete(conversation_id)}
+        return {"deleted": conversations_store.delete(
+            conversation_id, owner=principal_of(request))}
     except ValueError:
         # `from None`, unlike everywhere else here: a malformed id is a
         # validation failure whose original exception says nothing the message
@@ -2660,16 +2890,56 @@ def remove_conversation(conversation_id: str) -> dict:
 
 
 # ------------------------------------------------------------------- agent
+_agent_runs: dict[str, tuple[str, asyncio.Task]] = {}
+
+
+@app.delete("/api/agent/runs/{run_id}", dependencies=[Depends(require_token)])
+def cancel_agent_run(run_id: str, request: Request) -> dict:
+    found = _agent_runs.get(run_id)
+    if found is None or found[0] != principal_of(request):
+        raise HTTPException(status_code=404, detail="No such agent run")
+    found[1].cancel()
+    return {"cancelled": True}
+
+
 @app.websocket("/ws/agent")
 async def agent_ws(websocket: WebSocket) -> None:
     if not require_token_ws(websocket):
         await websocket.close(code=4401)
         return
+    owner = principal_of_ws(websocket)
     await websocket.accept()
+    run_id = ""
+    graph: ExecutionGraph | None = None
+    connected = True
+
+    async def send(event: dict) -> bool:
+        """Best-effort progress delivery; the run belongs to the engine.
+
+        Mobile browsers routinely suspend their socket while backgrounded.
+        Losing that viewer must not kill a safe, already-running plan.
+        """
+        nonlocal connected
+        if not connected:
+            return False
+        try:
+            await websocket.send_json(event)
+            return True
+        except (WebSocketDisconnect, RuntimeError, OSError):
+            connected = False
+            return False
+
     try:
         raw = await websocket.receive_text()
         payload = json.loads(raw)
         goal = payload.get("goal", "")
+        run_id = str(payload.get("run_id") or uuid.uuid4().hex)
+        if not re.fullmatch(r"[a-fA-F0-9-]{16,64}", run_id):
+            await send({"type": "error", "message": "Invalid run id"})
+            return
+        current = asyncio.current_task()
+        if current is not None:
+            _agent_runs[run_id] = (owner, current)
         # Effort travels with the run rather than being read from settings, so
         # a person can spend more on one task without changing their default.
         effort = payload.get("effort") or settings.effort
@@ -2680,14 +2950,14 @@ async def agent_ws(websocket: WebSocket) -> None:
         if not isinstance(context, list):
             context = None
         if not goal:
-            await websocket.send_json({"type": "error", "message": "Empty goal"})
+            await send({"type": "error", "message": "Empty goal"})
             return
 
-        await websocket.send_json({"type": "planning"})
-        graph: ExecutionGraph = await orchestrator.plan(goal, context, effort=effort)
+        await send({"type": "planning"})
+        graph = await orchestrator.plan(goal, context, effort=effort)
 
         async def on_update(g: ExecutionGraph) -> None:
-            await websocket.send_json({"type": "graph", "graph": g.to_dict()})
+            await send({"type": "graph", "graph": g.to_dict()})
 
         async def ask(request: PermissionRequest) -> str:
             """Put the question to whoever is watching this run.
@@ -2697,17 +2967,33 @@ async def agent_ws(websocket: WebSocket) -> None:
             ceiling on the wait so a closed window becomes a refusal rather
             than a job that sits in progress for ever.
             """
-            await websocket.send_json({"type": "approval", "request": {
+            nonlocal connected
+            offered = await send({"type": "approval", "request": {
                 "action": request.action, "category": request.category.value,
                 "summary": request.summary, "preview": request.preview,
                 "mode": gate.mode_for(request.category).value,
             }})
-            reply = json.loads(await websocket.receive_text())
+            if not offered:
+                return "no"
+            try:
+                reply = json.loads(await websocket.receive_text())
+            except (WebSocketDisconnect, RuntimeError, OSError, json.JSONDecodeError):
+                connected = False
+                return "no"
             return str(reply.get("answer", "no"))
 
         with agent_approval.asking(ask):
             await orchestrator.run(graph, on_update, effort=effort)
-        await websocket.send_json({"type": "done", "graph": graph.to_dict()})
+        await send({"type": "done", "graph": graph.to_dict()})
+    except asyncio.CancelledError:
+        if graph is not None:
+            for task in graph.tasks.values():
+                if task.status in ("pending", "in_progress"):
+                    task.status = "failed"
+                    task.error = "Stopped by the user"
+        with contextlib.suppress(Exception):
+            await send({"type": "cancelled",
+                        "graph": graph.to_dict() if graph else None})
     except WebSocketDisconnect:
         pass
     except Exception as exc:  # noqa: BLE001 - report any planner/tool failure to the client
@@ -2715,7 +3001,10 @@ async def agent_ws(websocket: WebSocket) -> None:
         # would surface in the UI as a blank error. Always send something useful.
         message = str(exc).strip() or f"{type(exc).__name__} (no further detail)"
         with contextlib.suppress(Exception):
-            await websocket.send_json({"type": "error", "message": message})
+            await send({"type": "error", "message": message})
+    finally:
+        if run_id:
+            _agent_runs.pop(run_id, None)
 
 
 def _web_dist() -> Path | None:

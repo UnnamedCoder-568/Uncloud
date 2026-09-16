@@ -186,6 +186,25 @@ def remember_path(handle: str, location: str) -> Held:
     return held_now
 
 
+def remember_value(handle: str, value: str, *, kind: str = "metadata") -> Held:
+    """Record readable application metadata without treating it as a path.
+
+    JSON and URLs passed through :class:`Path` are silently rewritten on
+    Windows.  Keep non-secret configuration byte-for-byte instead.
+    """
+    from datetime import UTC, datetime
+
+    if not handle or not value:
+        raise ValueError("metadata needs both a handle and a value")
+    held_now = Held(handle=handle, label=value, kind=kind,
+                    stored_at=datetime.now(UTC).isoformat(timespec="seconds"),
+                    secure=True)
+    index = _index()
+    index[handle] = {k: v for k, v in held_now.to_dict().items() if k != "handle"}
+    _save_index(index)
+    return held_now
+
+
 def forget(handle: str) -> bool:
     """Remove a credential. Returns whether there was one."""
     ring = _keyring()
@@ -263,3 +282,9 @@ def path_of(handle: str) -> Path | None:
         return None
     location = row.get("label", "")
     return Path(location) if location else None
+
+
+def value_of(handle: str) -> str | None:
+    """Return readable non-secret metadata exactly as it was stored."""
+    item = held(handle)
+    return item.label if item and item.label else None

@@ -317,7 +317,11 @@ def test_a_redirect_off_the_allowlist_is_refused(monkeypatch) -> None:
     assert fetch("https://github.com/o/r/releases/latest/download/updates.json") is None
 
 
-@pytest.mark.parametrize("body", [b"<html>not json</html>", b"{" * 10, b"x" * (600 * 1024)])
+@pytest.mark.parametrize(
+    "body",
+    [b"<html>not json</html>", b"{" * 10, b"x" * (600 * 1024)],
+    ids=["html", "broken-json", "oversized"],
+)
 def test_fetch_is_quiet_on_anything_that_is_not_a_manifest(monkeypatch, body) -> None:
     from uncloud_engine.core.updates import fetch
 

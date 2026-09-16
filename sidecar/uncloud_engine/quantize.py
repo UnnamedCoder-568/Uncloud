@@ -103,6 +103,7 @@ def _mflux_save_bin() -> Path:
 class QuantizeManager:
     def __init__(self) -> None:
         self.jobs: dict[str, QuantizeJob] = {}
+        self._tasks: set[asyncio.Task] = set()
 
     def list_jobs(self) -> list[dict]:
         return [j.to_dict() for j in self.jobs.values()]
@@ -130,10 +131,12 @@ class QuantizeManager:
         dest = Path(dest_dir) / name
         job = QuantizeJob(id=uuid.uuid4().hex[:12], name=name, dest=str(dest))
         self.jobs[job.id] = job
-        asyncio.create_task(self._run(
+        task = asyncio.create_task(self._run(
             job, source, base, dest, transformer_bits, encoder_bits,
             lora_paths or [], lora_scales or [],
         ))
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
         return job
 
     async def _run(

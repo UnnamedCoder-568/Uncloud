@@ -10,6 +10,7 @@ import type { Settings, AgentTools, ResidentModels } from '../lib/sidecar';
 import { formatBytes } from '../lib/format';
 import OnTheComputer from '../components/OnTheComputer';
 import { inDesktop } from '../lib/platform';
+import AppearanceSection from '../components/AppearanceSection';
 
 export default function SettingsView() {
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -124,6 +125,7 @@ export default function SettingsView() {
       <h1 className="text-2xl font-semibold mb-6">Settings</h1>
 
       <div className="max-w-xl flex flex-col gap-4">
+        <AppearanceSection />
         <section className="card p-4">
           <h2 className="text-sm mb-1">Models folder</h2>
           <p className="text-[11px] text-[var(--text-faint)] mb-3">
@@ -184,6 +186,9 @@ export default function SettingsView() {
                           {v!.split('/').pop()}
                         </li>
                       ))}
+                    {resident.speech_workers > 0 && <li>Voice: {resident.speech_workers} active</li>}
+                    {resident.music_jobs > 0 && <li>Music: {resident.music_jobs} active</li>}
+                    {resident.narration_jobs > 0 && <li>Narration: {resident.narration_jobs} active</li>}
                   </ul>
                 ) : (
                   <p className="text-[11px] text-[var(--text-faint)] max-w-sm">

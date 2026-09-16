@@ -45,7 +45,7 @@ def configure(config: ServerConfig) -> None:
     readable = {"id": config.id, "command": config.command,
                 "args": list(config.args), "cwd": config.cwd,
                 "label": config.label, "env_keys": sorted(config.env)}
-    broker.remember_path(_handle(config.id), json.dumps(readable))
+    broker.remember_value(_handle(config.id), json.dumps(readable), kind="config")
     if config.env:
         broker.store(f"{_handle(config.id)}.env", json.dumps(config.env),
                      label=f"{config.label or config.id} environment",
@@ -74,11 +74,11 @@ def configured() -> list[ServerConfig]:
         if (not name.startswith(f"{_CONFIG}.")
                 or name.endswith((".env", ".risk"))):
             continue
-        stored = broker.path_of(name)
+        stored = broker.value_of(name)
         if stored is None:
             continue
         try:
-            raw = json.loads(str(stored))
+            raw = json.loads(stored)
         except (TypeError, ValueError):
             continue
         out.append(ServerConfig(
@@ -111,11 +111,11 @@ def overrides_for(server_id: str) -> dict:
     """
     from ..permission import Risk
 
-    stored = broker.path_of(f"{_CONFIG}.{server_id}.risk")
+    stored = broker.value_of(f"{_CONFIG}.{server_id}.risk")
     if stored is None:
         return {}
     try:
-        raw = json.loads(str(stored))
+        raw = json.loads(stored)
     except (TypeError, ValueError):
         return {}
     out = {}
@@ -140,7 +140,7 @@ def set_override(server_id: str, tool: str, risk) -> None:
     current = {tool_name: value.value
                for tool_name, value in overrides_for(server_id).items()}
     current[tool] = risk.value if hasattr(risk, "value") else str(risk)
-    broker.remember_path(f"{_CONFIG}.{server_id}.risk", json.dumps(current))
+    broker.remember_value(f"{_CONFIG}.{server_id}.risk", json.dumps(current), kind="config")
     with _lock:
         existing = _servers.get(server_id)
     if existing is not None:
@@ -153,7 +153,7 @@ def clear_override(server_id: str, tool: str) -> bool:
     if tool not in current:
         return False
     del current[tool]
-    broker.remember_path(f"{_CONFIG}.{server_id}.risk", json.dumps(current))
+    broker.remember_value(f"{_CONFIG}.{server_id}.risk", json.dumps(current), kind="config")
     with _lock:
         existing = _servers.get(server_id)
     if existing is not None:

@@ -78,6 +78,7 @@ class ImageEngine:
 
     def __init__(self) -> None:
         self.jobs: dict[str, ImageJob] = {}
+        self._tasks: set[asyncio.Task] = set()
         self._pipe: Any = None
         self._pipe_path: str | None = None
         #: One render at a time. Each holds several gigabytes, and a batch or a
@@ -132,10 +133,12 @@ class ImageEngine:
         job = ImageJob(id=uuid.uuid4().hex[:12], prompt=prompt, total_steps=steps or 0,
                        label=label, seed=seed)
         self.jobs[job.id] = job
-        asyncio.create_task(self._run(
+        task = asyncio.create_task(self._run(
             job, model_path, engine, prompt, negative_prompt, steps, guidance, width, height,
             seed, mflux_cli, mflux_base, text_encoder_path, lora_paths, lora_scales,
         ))
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
         return job
 
     async def _run(
@@ -202,10 +205,12 @@ class ImageEngine:
         job = ImageJob(id=uuid.uuid4().hex[:12], prompt=prompt, total_steps=steps or 0,
                        kind="edit", label=label, seed=seed)
         self.jobs[job.id] = job
-        asyncio.create_task(self._run_edit(
+        task = asyncio.create_task(self._run_edit(
             job, model_path, prompt, reference_path, steps, guidance,
             width, height, seed, strength, mflux_cli,
         ))
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
         return job
 
     async def _run_edit(

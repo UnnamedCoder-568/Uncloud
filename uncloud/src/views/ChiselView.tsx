@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { CheckCircle2, XCircle, Loader2, Circle, Send, ShieldAlert, Cpu, Square, MessagesSquare, AudioLines } from 'lucide-react';
-import { agentSocket, getLibrary, startEngine, engineStatus } from '../lib/sidecar';
+import { CheckCircle2, XCircle, Loader2, Circle, Send, ShieldAlert, Cpu, Square, MessagesSquare, AudioLines, Copy, NotebookPen, Check } from 'lucide-react';
+import { agentSocket, cancelAgentRun, getLibrary, startEngine, engineStatus, saveNote } from '../lib/sidecar';
 import type { LocalModel } from '../lib/sidecar';
 import Dictate from '../components/Dictate';
 import ReplyVoice from '../components/ReplyVoice';
@@ -9,6 +9,7 @@ import { onLibraryChange } from '../lib/library-changed';
 import { describeTalk, useTalk } from '../lib/useTalk';
 import { useSettings } from '../lib/useSettings';
 import { onHandoffSignal, takeHandoff } from '../lib/handoff';
+import Markdown from '../components/Markdown';
 
 interface AgentTask {
   id: string;
@@ -24,6 +25,30 @@ interface AgentGraph {
   goal: string;
   tasks: Record<string, AgentTask>;
   start_node_ids: string[];
+}
+
+function TaskOutput({ task }: { task: AgentTask }) {
+  const [copied, setCopied] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const output = task.output ?? '';
+  if (!output) return null;
+  const shown = output.length > 12_000
+    ? `${output.slice(0, 12_000)}\n\n_(output clipped on screen)_` : output;
+  return (
+    <div className="mt-2 rounded-lg bg-[var(--bg-inset)] p-3 overflow-x-auto">
+      <Markdown>{shown}</Markdown>
+      <div className="mt-2 flex items-center gap-1 text-[10px] text-[var(--text-faint)]">
+        <button className="pill h-7 px-2" onClick={async () => {
+          await navigator.clipboard.writeText(output);
+          setCopied(true); setTimeout(() => setCopied(false), 1400);
+        }}>{copied ? <Check size={11} /> : <Copy size={11} />} {copied ? 'Copied' : 'Copy'}</button>
+        <button className="pill h-7 px-2" onClick={async () => {
+          await saveNote(`${task.description.slice(0, 72)} · ${new Date().toLocaleString()}`, output);
+          setSaved(true); setTimeout(() => setSaved(false), 1800);
+        }}>{saved ? <Check size={11} /> : <NotebookPen size={11} />} {saved ? 'Saved' : 'Note'}</button>
+      </div>
+    </div>
+  );
 }
 
 /** What to say when a spoken goal finishes: how it went, and the result of
@@ -50,6 +75,8 @@ export default function ChiselView() {
   const settings = useSettings();
   const deviceAccess = settings?.agent_device_access ?? true;
   const wsRef = useRef<WebSocket | null>(null);
+  const runIdRef = useRef<string | null>(null);
+  const runEpoch = useRef(0);
   //: Whether the last close was asked for. A close the user requested
   //  must not be reported as the engine having died.
   const stopped = useRef(false);
@@ -57,6 +84,7 @@ export default function ChiselView() {
   //  state: it is read once when the socket opens and never rendered, so
   //  putting it in state would only cost a re-render per handoff.
   const contextRef = useRef<{ role: string; content: string }[]>([]);
+  const handoffModelRef = useRef<{ path: string; engine: string; name: string } | null>(null);
   const [handedOver, setHandedOver] = useState(0);
 
   // The agent plans with whichever text model the engine has loaded. That was
@@ -120,6 +148,25 @@ export default function ChiselView() {
     setGraph(null);
     stopped.current = false;
     setPhase('planning');
+    const epoch = ++runEpoch.current;
+    const runId = crypto.randomUUID().replaceAll('-', '');
+    runIdRef.current = runId;
+    try {
+      const handedModel = handoffModelRef.current;
+      if (handedModel) {
+        const current = await engineStatus().catch(() => null);
+        if (!current?.running || current.model_path !== handedModel.path) {
+          await startEngine(handedModel.path, handedModel.engine);
+          await readState();
+        }
+      }
+    } catch (e) {
+      const message = `Could not load the model from Chat: ${String(e).replace(/^Error:\s*/, '')}`;
+      setError(message);
+      setPhase('error');
+      finish(message);
+      return;
+    }
     const ws = await agentSocket();
     wsRef.current = ws;
     // Any message means the socket worked, so anything onerror reports after
@@ -128,12 +175,14 @@ export default function ChiselView() {
     // task, or "no text model is loaded".
     let spoke = false;
     ws.onopen = () => ws.send(JSON.stringify({
+      run_id: runId,
       goal: target,
       // The conversation this was handed over from, when it was. Background
       // for the planner, so it does not plan from one sentence in isolation.
       context: contextRef.current,
     }));
     ws.onmessage = (ev) => {
+      if (epoch !== runEpoch.current) return;
       spoke = true;
       const msg = JSON.parse(ev.data);
       if (msg.type === 'planning') setPhase('planning');
@@ -151,8 +200,14 @@ export default function ChiselView() {
         setPhase('error');
         finish(`That did not work. ${msg.message}`);
       }
+      if (msg.type === 'cancelled') {
+        if (msg.graph) setGraph(msg.graph);
+        setPhase('idle');
+        finish('');
+      }
     };
     ws.onerror = () => {
+      if (epoch !== runEpoch.current) return;
       if (spoke) return;
       setError('Connection to Uncloud engine lost');
       setPhase('error');
@@ -163,6 +218,7 @@ export default function ChiselView() {
     // moved it out of that state — which is how a dropped socket became a
     // blank screen.
     ws.onclose = () => {
+      if (epoch !== runEpoch.current) return;
       setPhase((current) => {
         if (current === 'planning' || current === 'running') {
           // A close the user asked for is not a fault, and must not be
@@ -186,6 +242,9 @@ export default function ChiselView() {
    */
   function stop() {
     stopped.current = true;
+    runEpoch.current += 1;
+    if (runIdRef.current) void cancelAgentRun(runIdRef.current).catch(() => {});
+    runIdRef.current = null;
     try { wsRef.current?.close(); } catch { /* already gone */ }
     wsRef.current = null;
     setPhase('idle');
@@ -203,6 +262,7 @@ export default function ChiselView() {
       if (!handoff) return;
       setGoal(handoff.goal);
       contextRef.current = handoff.context;
+      handoffModelRef.current = handoff.model ?? null;
       setHandedOver(handoff.context.length);
       void run(handoff.goal);
     };
@@ -323,11 +383,7 @@ export default function ChiselView() {
                 <div className="min-w-0 flex-1">
                   <div className="text-sm">{task.description}</div>
                   <div className="text-[10px] font-mono text-[var(--text-faint)] mt-1 uppercase">{task.tool_id}</div>
-                  {task.output && (
-                    <pre className="text-[11px] text-[var(--text-dim)] mt-2 bg-[var(--bg-inset)] rounded-lg p-2 overflow-x-auto whitespace-pre-wrap">
-                      {task.output.slice(0, 800)}
-                    </pre>
-                  )}
+                  <TaskOutput task={task} />
                   {task.error && <div className="text-[11px] text-rose-400 mt-2">{task.error}</div>}
                 </div>
               </div>

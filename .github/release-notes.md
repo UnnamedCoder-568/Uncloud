@@ -1,6 +1,18 @@
-Uncloud 0.4.0 adds live speech, voice-to-voice conversations, speech studio,
-multi-image generation, local-network access, model import, a refreshed model
-catalogue, and signed in-app update support.
+Uncloud 0.4.1 hardens chat and generation across desktop and paired local-network
+devices. Replies and long-running image jobs now stay owned by the engine when a
+phone browser is backgrounded, conversations and outputs are isolated per paired
+device, and stale work can no longer land in a different chat.
+
+Chat now accepts supported images, readable documents and source files; offers
+notes plus editable/downloadable code blocks; and hands the complete context and
+selected model to Chisel. Reply images remain model-directed: a casual request
+can use a quick draft, while an explicit quality or size request can invoke a
+full-quality render saved to Outputs.
+
+The interface is monochrome by default with user-selectable theme and accent.
+This release also fixes Windows OAuth/MCP configuration storage, model-placement
+estimates, sidecar cleanup, voice status polling, and Stop/Unload handling for
+speech, music and narration.
 
 The Windows x64 installer, Linux x64 AppImage, and Apple-silicon macOS DMG are
 freshly built on GitHub-hosted native runners. Before publication, CI tests the

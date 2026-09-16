@@ -44,6 +44,16 @@ def refused(relative: str) -> None:
     assert "outside the connected folder" in str(raised.value)
 
 
+def symlink(link: Path, target: Path) -> None:
+    """Create a link, or skip where Windows developer mode is unavailable."""
+    try:
+        link.symlink_to(target, target_is_directory=target.is_dir())
+    except OSError as exc:
+        if getattr(exc, "winerror", None) == 1314:
+            pytest.skip("Windows symlink privilege is unavailable")
+        raise
+
+
 # ------------------------------------------------------------------- allowed
 def test_the_folder_itself_and_things_in_it_are_reachable(folder) -> None:
     root, _ = folder
@@ -96,7 +106,7 @@ def test_a_symlink_pointing_out_of_the_folder_is_refused(folder) -> None:
     """The one an attacker would actually use, and the one a string check
     misses entirely."""
     root, outside = folder
-    (root / "shortcut").symlink_to(outside)
+    symlink(root / "shortcut", outside)
     refused("shortcut/secrets.txt")
     refused("shortcut")
 
@@ -105,15 +115,15 @@ def test_a_chain_of_symlinks_is_followed_all_the_way(folder) -> None:
     """One hop is easy to catch. Resolution has to follow the whole chain, or a
     second link is enough to get out."""
     root, outside = folder
-    (root / "hop1").symlink_to(outside)
-    (root / "hop2").symlink_to(root / "hop1")
-    (root / "hop3").symlink_to(root / "hop2")
+    symlink(root / "hop1", outside)
+    symlink(root / "hop2", root / "hop1")
+    symlink(root / "hop3", root / "hop2")
     refused("hop3/secrets.txt")
 
 
 def test_a_symlink_to_a_single_file_outside_is_refused(folder) -> None:
     root, outside = folder
-    (root / "looks-local.txt").symlink_to(outside / "secrets.txt")
+    symlink(root / "looks-local.txt", outside / "secrets.txt")
     refused("looks-local.txt")
 
 
@@ -121,14 +131,14 @@ def test_a_symlink_that_stays_inside_is_allowed(folder) -> None:
     """The fence is about destination, not about links. Refusing every symlink
     would break a legitimate folder somebody organised with them."""
     root, _ = folder
-    (root / "shortcut").symlink_to(root / "reports")
+    symlink(root / "shortcut", root / "reports")
     assert documents.Documents()._resolve("shortcut/q1.txt") \
         == (root / "reports" / "q1.txt").resolve()
 
 
 def test_a_symlink_pointing_at_the_root_itself_is_allowed(folder) -> None:
     root, _ = folder
-    (root / "self").symlink_to(root)
+    symlink(root / "self", root)
     assert documents.Documents()._resolve("self") == root.resolve()
 
 
@@ -164,7 +174,7 @@ def test_reading_through_an_escape_never_returns_content(folder) -> None:
     """The boundary tested through the action a caller actually reaches for,
     rather than only through the helper underneath it."""
     root, outside = folder
-    (root / "shortcut").symlink_to(outside)
+    symlink(root / "shortcut", outside)
     with pytest.raises(IntegrationError):
         documents.Documents()._read("shortcut/secrets.txt")
     with pytest.raises(IntegrationError):
@@ -173,7 +183,7 @@ def test_reading_through_an_escape_never_returns_content(folder) -> None:
 
 def test_listing_through_an_escape_never_reveals_names(folder) -> None:
     root, outside = folder
-    (root / "shortcut").symlink_to(outside)
+    symlink(root / "shortcut", outside)
     with pytest.raises(IntegrationError):
         documents.Documents()._list("shortcut")
 
@@ -189,7 +199,7 @@ def test_searching_stays_inside_the_folder(folder) -> None:
     recursing.
     """
     root, outside = folder
-    (root / "shortcut").symlink_to(outside)
+    symlink(root / "shortcut", outside)
     found = documents.Documents()._search("NOT YOURS")
     assert "secrets.txt" not in found
 
@@ -198,7 +208,7 @@ def test_searching_is_safe_even_if_the_walk_starts_following_links(folder,
                                                                    monkeypatch) -> None:
     """The same guarantee, with the traversal deliberately made hostile."""
     root, outside = folder
-    (root / "shortcut").symlink_to(outside)
+    symlink(root / "shortcut", outside)
 
     real_rglob = Path.rglob
 

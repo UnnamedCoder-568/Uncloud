@@ -179,3 +179,12 @@ class Pool:
             workers = list(self._workers.values())
         for worker in workers:
             worker.stop()
+
+    def resident_count(self) -> int:
+        """Number of live voice worker processes, without changing them."""
+        with self._lock:
+            workers = list(self._workers.values())
+        return sum(
+            1 for worker in workers
+            if worker._process is not None and worker._process.poll() is None  # noqa: SLF001
+        )
