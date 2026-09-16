@@ -5,7 +5,7 @@ import {
   startConversion, startEngine, streamChat, uploadRecording,
 } from '../lib/sidecar';
 import type { ChatMessage, LocalModel, SpeechJob, SpeechModel } from '../lib/sidecar';
-import { describeTalk, useTalk } from '../lib/useTalk';
+import { Sentences, describeTalk, useTalk } from '../lib/useTalk';
 import RecordButton from '../components/RecordButton';
 import ReplyVoice, { useSavedVoices } from '../components/ReplyVoice';
 import SaveActions from '../components/SaveActions';
@@ -72,29 +72,36 @@ function Talk() {
     scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: 'smooth' });
   }, [turns]);
 
-  const talk = useTalk(voice, async (said) => {
+  const talk = useTalk(voice, async (said, say) => {
     const model = models.find((m) => m.path === modelPath);
     if (!model) return 'Choose a model to talk to first.';
     const history: ChatMessage[] = [...turnsRef.current, { role: 'user', content: said }];
     turnsRef.current = history;
-    setTurns(history);
+    setTurns([...history, { role: 'assistant', content: '' }]);
     const status = await engineStatus();
     if (!status.running || status.model_path !== model.path) {
       setLoading(true);
       try { await startEngine(model.path, model.engine); } finally { setLoading(false); }
     }
+    // Spoken a sentence at a time, as they are written. Waiting for the whole
+    // reply before saying any of it is most of what made this feel slow.
+    const sentences = new Sentences();
     let reply = '';
     for await (const chunk of streamChat([
       // Brief: it is read aloud, and lists and markdown do not survive that.
       { role: 'system', content: chatSystemPrompt({ web: false, pictures: false, manner: 'brief' }) },
       ...history,
     ])) {
-      if (chunk.kind === 'text') reply += chunk.text;
+      if (chunk.kind !== 'text') continue;
+      reply += chunk.text;
+      const growing = reply.trim();
+      setTurns([...history, { role: 'assistant', content: growing }]);
+      for (const sentence of sentences.push(chunk.text)) say(sentence);
     }
     const answered: ChatMessage[] = [...history, { role: 'assistant', content: reply.trim() }];
     turnsRef.current = answered;
     setTurns(answered);
-    return reply;
+    return sentences.rest();
   });
 
   return (
@@ -124,7 +131,11 @@ function Talk() {
         <div>
           <label className={label}>Listening with</label>
           <p className="mt-1.5 text-xs text-[var(--text-dim)]">
-            {talk.sttModel ? talk.sttModel.name : 'No speech-to-text model installed. Add Whisper from Models.'}
+            {talk.native
+              ? "This Mac's own recogniser — it transcribes while you speak, so there is no wait when you stop."
+              : talk.sttModel
+                ? `${talk.sttModel.name} — transcribed after you stop speaking.`
+                : 'No speech-to-text model installed. Add Whisper from Models.'}
           </p>
         </div>
         {turns.length > 0 && !talk.active && (
@@ -152,7 +163,7 @@ function Talk() {
         <div className="border-t border-[var(--border-soft)] p-5 flex flex-col items-center gap-2">
           <button
             onClick={talk.toggle}
-            disabled={!talk.sttModel || !modelPath}
+            disabled={!talk.ready || !modelPath}
             className={`w-16 h-16 rounded-full flex items-center justify-center transition disabled:opacity-30 ${
               talk.active ? 'btn-accent' : 'bg-[var(--bg-raised)] hover:bg-[var(--bg-inset)]'}`}
             aria-label={talk.active ? 'Stop talking' : 'Talk'}
@@ -163,6 +174,12 @@ function Talk() {
           <span className="text-xs text-[var(--text-dim)]" aria-live="polite">
             {loading ? 'Loading the model…' : talk.active ? describeTalk(talk.state) : 'Talk'}
           </span>
+          {/* What it has heard so far, while you are still saying it. */}
+          {talk.heard && (
+            <p className="text-[11px] text-[var(--text-faint)] text-center max-w-md line-clamp-2">
+              {talk.heard}
+            </p>
+          )}
           {talk.error && <p className="text-[11px] text-rose-400 text-center max-w-md">{talk.error}</p>}
         </div>
       </div>

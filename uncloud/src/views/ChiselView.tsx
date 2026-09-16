@@ -381,7 +381,7 @@ export default function ChiselView() {
             onText={(t) => setGoal((v) => (v ? v.trimEnd() + ' ' + t : t))}
             className="mb-0.5"
           />
-          {talk.sttModel && (
+          {talk.ready && (
             <button
               onClick={talk.toggle}
               title={talk.active ? 'Stop talking' : 'Talk: say a goal, hear how it went, and carry on'}

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Linked into the helper binary itself. macOS checks the usage description of
+  the process that asks, and a command-line tool has no bundle to read one
+  from — without this the helper is killed the moment it requests speech,
+  which looks exactly like a crash and explains nothing.
+-->
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key>
+    <string>com.uncloud.app.listener</string>
+    <key>CFBundleName</key>
+    <string>Uncloud Listener</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Uncloud uses your microphone so you can talk to it.</string>
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>Uncloud transcribes what you say on this Mac, using Apple's on-device recogniser. Nothing is sent anywhere.</string>
+</dict>
+</plist>

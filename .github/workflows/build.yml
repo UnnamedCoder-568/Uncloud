@@ -236,6 +236,15 @@ jobs:
           fi
           if [ -n "$pubkey" ]; then echo "SIGNED=true" >> "$GITHUB_ENV"; else echo "SIGNED=false" >> "$GITHUB_ENV"; fi
 
+      # Apple's on-device recogniser has no interface but Swift's, so the
+      # listener is compiled here and bundled beside uv. macOS only; every
+      # other platform transcribes with Whisper through the engine.
+      - name: Build the native listener
+        if: matrix.kind == 'macos'
+        working-directory: uncloud
+        shell: bash
+        run: bash scripts/build_listener.sh
+
       - name: Build native package
         working-directory: uncloud
         shell: bash

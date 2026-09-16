@@ -28,3 +28,6 @@ dist-ssr
 src-tauri/binaries/uv
 src-tauri/binaries/uv-aarch64
 src-tauri/binaries/uv-x86_64
+# The native listener, compiled from src-tauri/listener by scripts/build_listener.sh.
+# The Swift source is tracked; the binary is built per release like uv is staged.
+src-tauri/binaries/uncloud-listen
