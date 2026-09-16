@@ -49,6 +49,9 @@ class Conversation:
     #: model is allowed, but it should be a visible choice rather than a
     #: surprise.
     model_path: str | None = None
+    #: Desktop and every paired device have separate shelves. A phone must not
+    #: discover or overwrite a conversation merely because it guessed an id.
+    owner: str = "desktop"
 
     def summary(self) -> dict:
         return {"id": self.id, "title": self.title, "created": self.created,
@@ -57,6 +60,9 @@ class Conversation:
 
     def to_dict(self) -> dict:
         return {**self.summary(), "messages": self.messages}
+
+    def storage_dict(self) -> dict:
+        return {**self.to_dict(), "owner": self.owner}
 
 
 def new_id() -> str:
@@ -157,19 +163,23 @@ def save(conversation: Conversation) -> Conversation:
     conversation.updated = time.time()
     if not conversation.title or conversation.title == "New conversation":
         conversation.title = title_from(conversation.messages)
-    _write(_path(conversation.id), _encrypt(conversation.to_dict()))
+    _write(_path(conversation.id), _encrypt(conversation.storage_dict()))
     return conversation
 
 
-def load(conversation_id: str) -> Conversation | None:
+def load(conversation_id: str, *, owner: str = "desktop") -> Conversation | None:
     path = _path(conversation_id)
     if not path.is_file():
         return None
     data = _decrypt(path.read_bytes())
+    stored_owner = str(data.get("owner") or "desktop")
+    if stored_owner != owner:
+        return None
     return Conversation(
         id=data["id"], title=data.get("title", ""),
         created=data.get("created", 0.0), updated=data.get("updated", 0.0),
         messages=data.get("messages", []), model_path=data.get("model_path"),
+        owner=stored_owner,
     )
 
 
@@ -184,7 +194,7 @@ class Listing:
     backend: str
 
 
-def listing() -> Listing:
+def listing(*, owner: str = "desktop") -> Listing:
     if not DIR.is_dir():
         return Listing([], 0, vault.is_secure, vault.backend)
     found: list[dict] = []
@@ -194,6 +204,8 @@ def listing() -> Listing:
             data = _decrypt(path.read_bytes())
         except Exception:  # noqa: BLE001 - one bad file must not hide the rest
             unreadable += 1
+            continue
+        if str(data.get("owner") or "desktop") != owner:
             continue
         found.append({
             "id": data.get("id", path.stem),
@@ -207,22 +219,29 @@ def listing() -> Listing:
     return Listing(found, unreadable, vault.is_secure, vault.backend)
 
 
-def delete(conversation_id: str) -> bool:
+def delete(conversation_id: str, *, owner: str = "desktop") -> bool:
     path = _path(conversation_id)
     if not path.is_file():
+        return False
+    if load(conversation_id, owner=owner) is None:
         return False
     path.unlink()
     return True
 
 
+def exists(conversation_id: str) -> bool:
+    """Whether an id is already occupied, without revealing who owns it."""
+    return _path(conversation_id).is_file()
+
+
 def create(messages: list[dict] | None = None,
-           model_path: str | None = None) -> Conversation:
+           model_path: str | None = None, *, owner: str = "desktop") -> Conversation:
     now = time.time()
     messages = messages or []
     return Conversation(id=new_id(), title=title_from(messages),
                         created=now, updated=now, messages=messages,
-                        model_path=model_path)
+                        model_path=model_path, owner=owner)
 
 
 __all__ = ["Conversation", "EncryptionUnavailable", "KeyUnavailable", "create",
-           "delete", "listing", "load", "save", "title_from"]
+           "delete", "exists", "listing", "load", "save", "title_from"]

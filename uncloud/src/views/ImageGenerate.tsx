@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ChevronDown, LayoutGrid, Loader2, Shuffle, SlidersHorizontal, Sparkles, UserRound, UserRoundPlus } from 'lucide-react';
 import { getLibrary, generateImage, editImage, getImageJob, fetchImageBlobUrl,
          listCharacters, saveCharacter } from '../lib/sidecar';
@@ -53,11 +53,41 @@ export default function ImageGenerate() {
   }, [count]);
   //: Every job the last press started, and the pictures that have finished.
   const [batch, setBatch] = useState<ImageJob[]>([]);
+  const jobsRestored = useRef(false);
   const [urls, setUrls] = useState<Record<string, string>>({});
   //: The image shown large. In a batch, none until one is chosen from the grid.
   const [focus, setFocus] = useState<string | null>(null);
   const job = batch.find((j) => j.id === focus) ?? (batch.length === 1 ? batch[0] : null);
   const imageUrl = job ? urls[job.id] ?? null : null;
+
+  // A mobile browser is free to discard a backgrounded page. The engine owns
+  // the render; these ids are the receipt that lets a fresh page find it again.
+  useEffect(() => {
+    let ids: string[] = [];
+    try { ids = JSON.parse(localStorage.getItem('uncloud.image.jobs') || '[]'); }
+    catch { ids = []; }
+    Promise.all(ids.slice(0, 8).map((id) => getImageJob(id).catch(() => null)))
+      .then(async (restored) => {
+        const jobs = restored.filter((item): item is ImageJob => item !== null);
+        if (jobs.length) {
+          setBatch(jobs);
+          setFocus(jobs.length === 1 ? jobs[0].id : null);
+          for (const item of jobs) {
+            if (item.done && item.status === 'done') {
+              const url = await fetchImageBlobUrl(item.id).catch(() => null);
+              if (url) setUrls((current) => ({ ...current, [item.id]: url }));
+            }
+          }
+        }
+      })
+      .finally(() => { jobsRestored.current = true; });
+  }, []);
+
+  useEffect(() => {
+    if (!jobsRestored.current || !batch.length) return;
+    try { localStorage.setItem('uncloud.image.jobs', JSON.stringify(batch.map((item) => item.id))); }
+    catch { /* private window: the engine still owns the job */ }
+  }, [batch]);
 
   //: The subject to keep consistent across generations. Creating a character
   //  was already possible; using one was not, which made the feature a filing

@@ -8,6 +8,7 @@ different key, or interrupted halfway through.
 
 from __future__ import annotations
 
+import os
 import secrets
 
 import pytest
@@ -178,6 +179,21 @@ def test_a_rogue_id_cannot_reach_outside_the_folder() -> None:
             convo.load(bad)
 
 
+def test_paired_devices_have_separate_conversation_shelves() -> None:
+    conversation = convo.Conversation(
+        id=convo.new_id(), title="Private to the phone", created=1, updated=1,
+        messages=[{"role": "user", "content": "hello"}], owner="phone-a")
+    convo.save(conversation)
+
+    assert convo.load(conversation.id, owner="desktop") is None
+    assert convo.listing(owner="desktop").conversations == []
+    assert convo.delete(conversation.id, owner="desktop") is False
+
+    restored = convo.load(conversation.id, owner="phone-a")
+    assert restored is not None and restored.title == "Private to the phone"
+    assert convo.listing(owner="phone-a").conversations[0]["id"] == conversation.id
+
+
 # ------------------------------------------------------------------ vault
 def test_the_file_fallback_is_owner_only_and_says_it_is_not_secure(tmp_path, monkeypatch) -> None:
     """No keychain at all — a headless Linux box, or a locked one.
@@ -194,6 +210,10 @@ def test_the_file_fallback_is_owner_only_and_says_it_is_not_secure(tmp_path, mon
     assert len(key) == vault_module.KEY_BYTES
     assert v.is_secure is False
     assert v.backend == "file"
+    if os.name == "nt":
+        # Windows protects this through the inherited directory ACL; POSIX
+        # rwx bits are synthetic there and commonly report 0666 after chmod.
+        return
     mode = (tmp_path / "conversation.key").stat().st_mode & 0o777
     assert mode == 0o600, f"the key file is {oct(mode)}, readable by others"
 

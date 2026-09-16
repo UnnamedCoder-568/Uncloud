@@ -540,3 +540,8 @@ def record_reply(path: str, text: str, voice: str) -> Clip:
 
 def stop() -> None:
     pool.stop_all()
+
+
+def resident_count() -> int:
+    """Live voice workers. Reading status must never stop them."""
+    return pool.resident_count()

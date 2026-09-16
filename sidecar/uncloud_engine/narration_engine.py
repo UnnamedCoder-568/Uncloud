@@ -4,6 +4,8 @@ import asyncio
 import contextlib
 import os
 import shutil
+import subprocess
+import threading
 import time
 import uuid
 from dataclasses import dataclass
@@ -325,12 +327,36 @@ class NarrationEngine:
 
     def __init__(self) -> None:
         self.jobs: dict[str, NarrationJob] = {}
+        self._tasks: set[asyncio.Task] = set()
+        self._processes: dict[str, subprocess.Popen[str]] = {}
+        self._process_lock = threading.Lock()
         self._model = None
         self._processor = None
         self._model_dir: str | None = None
 
     def list_jobs(self) -> list[dict]:
         return [j.to_dict() for j in self.jobs.values()]
+
+    def active_count(self) -> int:
+        return sum(1 for job in self.jobs.values() if not job.to_dict()["done"])
+
+    def cancel_all(self) -> bool:
+        """Stop active narrators and mark their jobs truthfully."""
+        active = [job for job in self.jobs.values() if not job.to_dict()["done"]]
+        with self._process_lock:
+            processes = list(self._processes.values())
+        for process in processes:
+            try:
+                process.terminate()
+                process.wait(timeout=3)
+            except (OSError, subprocess.TimeoutExpired):
+                with contextlib.suppress(OSError):
+                    process.kill()
+        for task in list(self._tasks):
+            task.cancel()
+        for job in active:
+            job.status, job.stage, job.error = "error", "", "Stopped"
+        return bool(active or processes)
 
     def unload(self) -> None:
         self._model = None
@@ -344,8 +370,11 @@ class NarrationEngine:
     ) -> NarrationJob:
         job = NarrationJob(id=uuid.uuid4().hex[:12], chars=len(text))
         self.jobs[job.id] = job
-        asyncio.create_task(self._run(job, model_dir, text, voice_slug, sample_rate,
-                                      bit_depth, cfg_scale, ddpm_steps, audio_format, engine))
+        task = asyncio.create_task(
+            self._run(job, model_dir, text, voice_slug, sample_rate,
+                      bit_depth, cfg_scale, ddpm_steps, audio_format, engine))
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
         return job
 
     async def _run(
@@ -385,8 +414,6 @@ class NarrationEngine:
         audio_format: str = "wav", engine: str = "realtime",
     ) -> str:
         import json
-        import subprocess
-
         spec = ENGINES.get(engine)
         if spec is None:
             raise ValueError(f"Unknown narration engine: {engine}")
@@ -417,15 +444,22 @@ class NarrationEngine:
         }
 
         started = time.monotonic()
-        proc = subprocess.run(
+        proc = subprocess.Popen(
             [str(spec["python"]), str(spec["runner"]), json.dumps(cfg)],
-            capture_output=True, text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
         )
+        with self._process_lock:
+            self._processes[job.id] = proc
+        try:
+            stdout, stderr = proc.communicate()
+        finally:
+            with self._process_lock:
+                self._processes.pop(job.id, None)
         if proc.returncode != 0:
-            tail = (proc.stderr or proc.stdout or "")[-1500:]
+            tail = (stderr or stdout or "")[-1500:]
             raise RuntimeError(f"{spec['label']} exited {proc.returncode}:\n{tail}")
 
-        for line in (proc.stdout or "").splitlines():
+        for line in (stdout or "").splitlines():
             if line.startswith("DURATION::"):
                 with contextlib.suppress(ValueError):
                     job.duration_s = float(line.split("DURATION::", 1)[1])

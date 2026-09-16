@@ -17,6 +17,9 @@ export interface Handoff {
   goal: string;
   /** The conversation it came out of, as background for planning. */
   context: { role: string; content: string }[];
+  /** The exact planning model Chat was using. Chisel reloads it if image or
+   * audio work evicted it between the handoff and the socket opening. */
+  model?: { path: string; engine: string; name: string };
 }
 
 type Listener = () => void;
@@ -58,10 +61,17 @@ export function sendToChisel(handoff: Handoff): void {
  *  refused by the engine, and an odd one is visible in the field before it
  *  runs.
  */
-export function fromConversation(messages: ChatMessage[]): Handoff {
+export function fromConversation(
+  messages: ChatMessage[], model?: { path: string; engine: string; name: string } | null,
+): Handoff {
   const conversation = messages
     .filter((m) => m.role === 'user' || m.role === 'assistant')
-    .map((m) => ({ role: m.role, content: m.content }));
+    .map((m) => ({
+      role: m.role,
+      content: m.content + (m.files ?? []).map((file) =>
+        `\n\n--- Attached file: ${file.name}${file.clipped ? ' (excerpt)' : ''} ---\n${file.text}`,
+      ).join(''),
+    }));
   const lastUser = [...conversation].reverse().find((m) => m.role === 'user');
   return {
     goal: lastUser?.content.trim() ?? '',
@@ -70,5 +80,6 @@ export function fromConversation(messages: ChatMessage[]): Handoff {
     context: lastUser
       ? conversation.slice(0, conversation.lastIndexOf(lastUser))
       : conversation,
+    ...(model ? { model: { path: model.path, engine: model.engine, name: model.name } } : {}),
   };
 }

@@ -12,7 +12,7 @@
  */
 
 import { memo, useState } from 'react';
-import { Check, Copy } from 'lucide-react';
+import { Check, Copy, Download, Pencil, X } from 'lucide-react';
 
 import { parseBlocks, type Block, type Inline } from '../lib/markdown';
 
@@ -52,9 +52,11 @@ function Inlines({ nodes }: { nodes: Inline[] }) {
 
 function CodeBlock({ block }: { block: Extract<Block, { kind: 'code' }> }) {
   const [copied, setCopied] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(block.text);
   const copy = async () => {
     try {
-      await navigator.clipboard.writeText(block.text);
+      await navigator.clipboard.writeText(draft);
       setCopied(true);
       setTimeout(() => setCopied(false), 1400);
     } catch {
@@ -63,16 +65,41 @@ function CodeBlock({ block }: { block: Extract<Block, { kind: 'code' }> }) {
     }
   };
 
+  const download = () => {
+    const extension = (block.lang || 'txt').replace(/[^a-z0-9]+/gi, '') || 'txt';
+    const url = URL.createObjectURL(new Blob([draft], { type: 'text/plain;charset=utf-8' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `uncloud-code.${extension}`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="md-code">
       <div className="md-code-bar">
         <span>{block.lang || 'text'}</span>
-        <button onClick={copy} className="md-copy" title="Copy">
-          {copied ? <Check size={12} /> : <Copy size={12} />}
-          {copied ? 'Copied' : 'Copy'}
-        </button>
+        <span className="flex items-center gap-1">
+          <button onClick={() => setEditing((open) => !open)} className="md-copy"
+                  title={editing ? 'Close editor' : 'Edit a working copy'}>
+            {editing ? <X size={12} /> : <Pencil size={12} />}
+            {editing ? 'Close' : 'Edit'}
+          </button>
+          <button onClick={download} className="md-copy" title="Download code">
+            <Download size={12} /> Download
+          </button>
+          <button onClick={copy} className="md-copy" title="Copy">
+            {copied ? <Check size={12} /> : <Copy size={12} />}
+            {copied ? 'Copied' : 'Copy'}
+          </button>
+        </span>
       </div>
-      <pre><code>{block.text}</code></pre>
+      {editing ? (
+        <textarea value={draft} onChange={(event) => setDraft(event.target.value)}
+                  spellCheck={false} aria-label="Editable code artifact"
+                  className="w-full min-h-56 resize-y bg-transparent p-4 outline-none
+                             font-mono text-xs text-[var(--text)]" />
+      ) : <pre><code>{draft}</code></pre>}
     </div>
   );
 }

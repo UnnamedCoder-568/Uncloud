@@ -153,7 +153,7 @@ def plan(components: list[Component], activations_gb: float,
 
     total = sum(c.gb for c in components)
     pinned = sum(c.gb for c in components if c.pinned)
-    largest = max(c.gb for c in components)
+    largest_movable = max((c.gb for c in components if not c.pinned), default=0.0)
     resident_peak = total + activations_gb
     host_room = hardware.host_gb * HOST_MARGIN
 
@@ -182,7 +182,7 @@ def plan(components: list[Component], activations_gb: float,
     # --------------------------------------------------- component at a time
     # The peak becomes the largest single part rather than their sum. Anything
     # pinned stays put and is charged on top.
-    model_peak = max(largest, pinned) + activations_gb
+    model_peak = pinned + largest_movable + activations_gb
     if hardware.accelerator_gb and model_peak <= hardware.accelerator_gb:
         if total <= host_room:
             return Plan(

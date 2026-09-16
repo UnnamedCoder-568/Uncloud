@@ -37,12 +37,13 @@ async fn start_runtime(
     }
 
     let spawn_app = app.clone();
-    let (child, info) =
+    let (mut child, info) =
         tauri::async_runtime::spawn_blocking(move || sidecar::spawn_sidecar(&spawn_app))
             .await
             .map_err(|e| format!("Start task failed: {e}"))??;
 
     if let Err(e) = sidecar::wait_healthy(info.port, 120).await {
+        sidecar::terminate(&mut child);
         *state.error.lock().unwrap() = Some(e.clone());
         return Err(e);
     }
@@ -76,11 +77,12 @@ async fn set_network_access(
     *state.info.lock().unwrap() = None;
 
     let spawn_app = app.clone();
-    let (child, info) =
+    let (mut child, info) =
         tauri::async_runtime::spawn_blocking(move || sidecar::spawn_sidecar(&spawn_app))
             .await
             .map_err(|e| format!("Restart task failed: {e}"))??;
     if let Err(e) = sidecar::wait_healthy(info.port, 120).await {
+        sidecar::terminate(&mut child);
         *state.error.lock().unwrap() = Some(e.clone());
         return Err(e);
     }
@@ -111,7 +113,7 @@ pub fn run() {
             // cannot do that if this closure returns Err.
             let state = SidecarState::new();
             match sidecar::spawn_sidecar(app.handle()) {
-                Ok((child, info)) => {
+                Ok((mut child, info)) => {
                     let port = info.port;
                     match tauri::async_runtime::block_on(sidecar::wait_healthy(port, 90)) {
                         Ok(()) => {
@@ -119,6 +121,7 @@ pub fn run() {
                             *state.child.lock().unwrap() = Some(child);
                         }
                         Err(e) => {
+                            sidecar::terminate(&mut child);
                             log::warn!("Engine did not become healthy: {e}");
                             *state.error.lock().unwrap() = Some(e);
                         }

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
+import subprocess
+import threading
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -83,9 +86,33 @@ class MusicEngine:
 
     def __init__(self) -> None:
         self.jobs: dict[str, MusicJob] = {}
+        self._tasks: set[asyncio.Task] = set()
+        self._processes: dict[str, subprocess.Popen[str]] = {}
+        self._process_lock = threading.Lock()
 
     def list_jobs(self) -> list[dict]:
         return [j.to_dict() for j in self.jobs.values()]
+
+    def active_count(self) -> int:
+        return sum(1 for job in self.jobs.values() if not job.to_dict()["done"])
+
+    def cancel_all(self) -> bool:
+        """Stop active composers/separators and mark their jobs truthfully."""
+        active = [job for job in self.jobs.values() if not job.to_dict()["done"]]
+        with self._process_lock:
+            processes = list(self._processes.values())
+        for process in processes:
+            try:
+                process.terminate()
+                process.wait(timeout=3)
+            except (OSError, subprocess.TimeoutExpired):
+                with contextlib.suppress(OSError):
+                    process.kill()
+        for task in list(self._tasks):
+            task.cancel()
+        for job in active:
+            job.status, job.stage, job.error = "error", "", "Stopped"
+        return bool(active or processes)
 
     def start(
         self, model_dir: str, prompt: str, *, lyrics: str = "", instrumental: bool = False,
@@ -96,10 +123,12 @@ class MusicEngine:
     ) -> MusicJob:
         job = MusicJob(id=uuid.uuid4().hex[:12], prompt=prompt, duration=duration)
         self.jobs[job.id] = job
-        asyncio.create_task(self._run(
+        task = asyncio.create_task(self._run(
             job, model_dir, prompt, lyrics, instrumental, duration, bpm, keyscale,
             steps, guidance, seed, sample_rate, bit_depth, separate_stems, audio_format,
         ))
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
         return job
 
     async def _run(
@@ -129,7 +158,7 @@ class MusicEngine:
                     job.status = "separating"
                     job.stage = "splitting stems"
                     job.stems = await asyncio.to_thread(
-                        self._separate, out, sample_rate, bit_depth, audio_format)
+                        self._separate, job, out, sample_rate, bit_depth, audio_format)
 
                 job.status = "done"
                 job.stage = ""
@@ -143,7 +172,6 @@ class MusicEngine:
         seed: int | None, sample_rate: int, bit_depth: int, audio_format: str = "wav",
     ) -> str:
         import json
-        import subprocess
 
         if not acestep_available():
             raise RuntimeError(
@@ -169,17 +197,24 @@ class MusicEngine:
             "guidance": guidance,
             "seed": seed if seed is not None else int(time.time()) % (2**31),
         }
-        proc = subprocess.run(
+        proc = subprocess.Popen(
             [str(ACESTEP_PYTHON), str(ACESTEP_RUNNER), json.dumps(cfg)],
-            capture_output=True, text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
         )
+        with self._process_lock:
+            self._processes[job.id] = proc
+        try:
+            stdout, stderr = proc.communicate()
+        finally:
+            with self._process_lock:
+                self._processes.pop(job.id, None)
         if proc.returncode != 0:
-            tail = (proc.stderr or proc.stdout or "")[-1500:]
+            tail = (stderr or stdout or "")[-1500:]
             raise RuntimeError(f"ACE-Step exited {proc.returncode}:\n{tail}")
 
         # The runner prints OUTPUT::<path>; fall back to scanning if that's missing.
         produced = None
-        for line in reversed((proc.stdout or "").splitlines()):
+        for line in reversed((stdout or "").splitlines()):
             if line.startswith("OUTPUT::"):
                 candidate = Path(line.split("OUTPUT::", 1)[1].strip())
                 if candidate.exists():
@@ -215,25 +250,30 @@ class MusicEngine:
                               for c in range(audio.shape[1])], axis=1)
         _write_audio(audio, sample_rate, dest, bit_depth, fmt)
 
-    @staticmethod
-    def _separate(wav_path: str, sample_rate: int, bit_depth: int,
-                  fmt: str = "wav") -> dict[str, str]:
+    def _separate(self, job: MusicJob, wav_path: str, sample_rate: int,
+                  bit_depth: int, fmt: str = "wav") -> dict[str, str]:
         """Split into drums/bass/vocals/other so the result is actually mixable
         in Logic rather than a single frozen stereo file."""
-        import subprocess
         import sys
 
         src = Path(wav_path)
         out_root = src.parent / f"{src.stem}_stems"
         out_root.mkdir(parents=True, exist_ok=True)
 
-        proc = subprocess.run(
+        proc = subprocess.Popen(
             [sys.executable, "-m", "demucs", "-n", "htdemucs",
              "-o", str(out_root), "--filename", "{stem}.{ext}", str(src)],
-            capture_output=True, text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
         )
+        with self._process_lock:
+            self._processes[job.id] = proc
+        try:
+            stdout, stderr = proc.communicate()
+        finally:
+            with self._process_lock:
+                self._processes.pop(job.id, None)
         if proc.returncode != 0:
-            raise RuntimeError(f"Stem separation failed: {proc.stderr[-800:]}")
+            raise RuntimeError(f"Stem separation failed: {(stderr or stdout or '')[-800:]}")
 
         stems: dict[str, str] = {}
         for name in STEM_NAMES:
