@@ -139,9 +139,18 @@ def test_something_that_cannot_move_is_charged_in_every_placement() -> None:
         activations_gb=1.0,
         hardware=Hardware(device="cuda", accelerator_gb=12.0, host_gb=64.0))
 
-    assert made.placement is Placement.MODEL_OFFLOAD
-    # The pinned part sets the floor, not the largest ordinary one.
-    assert made.peak_accelerator_gb == 10.0
+    # The component-at-a-time peak is 9 + 6 + 1 = 16 GB, so it cannot fit on
+    # this 12 GB card and must fall back to layer-at-a-time placement.
+    assert made.placement is Placement.SEQUENTIAL_OFFLOAD
+    assert made.peak_accelerator_gb == 11.0
+
+    roomier = plan(
+        [Component("transformer", 6.0), Component("encoder", 4.0),
+         Component("canvas", 9.0, pinned=True)],
+        activations_gb=1.0,
+        hardware=Hardware(device="cuda", accelerator_gb=16.0, host_gb=64.0))
+    assert roomier.placement is Placement.MODEL_OFFLOAD
+    assert roomier.peak_accelerator_gb == 16.0
 
 
 # ------------------------------------------------------- shape independence

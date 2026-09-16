@@ -28,7 +28,7 @@ const SECTIONS: Section[] = [
       { term: 'Pick a model first', body: 'The selector at the top loads it into memory. Large models take a minute on first load.' },
       { term: 'Talk to it', body: 'If a speech-to-text model is installed, the mic button records and transcribes. The speaker icon reads replies aloud.' },
       { term: 'Vision', body: 'Models such as Gemma 4 and Qwen3.8 can look at images as well as read text.' },
-      { term: 'Pictures in the reply', body: 'A model can show a quick sketch alongside its answer when one would help. These are deliberately rough \u2014 six steps at 512px, made to think with. Use the Image tab for anything you intend to keep.' },
+      { term: 'Pictures in the reply', body: 'A model can add a generated picture alongside its answer when one would help. It chooses a quick draft for playful ideas, or a high-quality render at the requested dimensions for a finished image. The Image tab provides the full manual studio.' },
     ],
   },
   {

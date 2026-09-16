@@ -66,8 +66,8 @@ def configure_provider(config: ProviderConfig, *, client_secret: str = "") -> No
     draw a settings screen. A client secret, where a provider insists on one,
     goes to the keychain like anything else.
     """
-    broker.remember_path(f"{_CONFIG}.{config.provider}",
-                         json.dumps(config.to_dict()))
+    broker.remember_value(f"{_CONFIG}.{config.provider}",
+                          json.dumps(config.to_dict()), kind="config")
     if client_secret:
         broker.store(f"{_SECRET}.{config.provider}", client_secret,
                      label=f"{config.provider} client secret", kind="secret")
@@ -80,11 +80,11 @@ def provider_config(provider: str, defaults: ProviderConfig) -> ProviderConfig:
     and the user supplies the client ID. Merging here means an adapter never
     has to know how configuration is stored.
     """
-    stored = broker.path_of(f"{_CONFIG}.{provider}")
+    stored = broker.value_of(f"{_CONFIG}.{provider}")
     if stored is None:
         return defaults
     try:
-        raw = json.loads(str(stored))
+        raw = json.loads(stored)
     except (TypeError, ValueError):
         return defaults
     return ProviderConfig(

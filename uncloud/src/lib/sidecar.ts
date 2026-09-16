@@ -231,6 +231,10 @@ export interface ChatMessage {
    *  rather than inside it so the conversation stays readable, the thumbnails
    *  can be shown, and the wire format is built at send time. */
   images?: string[];
+  /** Documents explicitly attached to this turn. Their extracted text is kept
+   * with the conversation so reopening it does not depend on the original
+   * file still existing. */
+  files?: ChatAttachment[];
   /** Thumbnails the model asked to show from the web. Shown to the reader and
    *  never sent back to the model — it cannot see them, and describing them to
    *  it as though it could is how a model ends up discussing a picture it has
@@ -293,10 +297,47 @@ export async function deleteConversation(id: string) {
   return api<{ deleted: boolean }>(`/api/conversations/${id}`, { method: 'DELETE' });
 }
 
+export interface SavedNote { key: string; value: string; at: number }
+export const listNotes = () => api<SavedNote[]>('/api/notes');
+export const saveNote = (key: string, value: string) =>
+  apiPost<{ saved: boolean; key: string }>('/api/notes', { key, value });
+export const deleteNote = (key: string) =>
+  api<{ deleted: boolean }>(`/api/notes/${encodeURIComponent(key)}`, { method: 'DELETE' });
+
 /** A streamed chunk: the answer itself, or the model thinking out loud. */
 export interface ChatChunk {
   kind: 'text' | 'thinking';
   text: string;
+}
+
+export interface ChatAttachment {
+  name: string;
+  type: string;
+  text: string;
+  clipped: boolean;
+}
+
+interface ChatRunState {
+  id: string;
+  status: 'running' | 'done' | 'error' | 'cancelled';
+  frames: string[];
+  cursor: number;
+  error: string;
+}
+
+function abortError(): DOMException {
+  return new DOMException('The reply was stopped', 'AbortError');
+}
+
+function pause(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) { reject(abortError()); return; }
+    const timer = window.setTimeout(resolve, ms);
+    signal?.addEventListener('abort', () => {
+      window.clearTimeout(timer);
+      reject(abortError());
+    }, { once: true });
+  });
 }
 
 /** The wire form of a turn.
@@ -308,13 +349,17 @@ export interface ChatChunk {
  *  model's own working into its next prompt as though the user had said it.
  */
 export function wireMessage(message: ChatMessage) {
+  const documents = (message.files ?? []).map((file) =>
+    `\n\n--- Attached file: ${file.name}${file.clipped ? ' (excerpt)' : ''} ---\n${file.text}`,
+  ).join('');
+  const text = message.content + documents;
   if (!message.images?.length) {
-    return { role: message.role, content: message.content };
+    return { role: message.role, content: text };
   }
   return {
     role: message.role,
     content: [
-      { type: 'text', text: message.content },
+      { type: 'text', text },
       ...message.images.map((url) => ({ type: 'image_url', image_url: { url } })),
     ],
   };
@@ -323,48 +368,63 @@ export function wireMessage(message: ChatMessage) {
 export async function* streamChat(
   messages: ChatMessage[], signal?: AbortSignal,
 ): AsyncGenerator<ChatChunk> {
-  const url = `${await baseUrl()}/api/chat`;
-  const headers = { ...(await authHeaders()), 'Content-Type': 'application/json' };
-  const resp = await fetch(url, {
-    method: 'POST', headers,
-    body: JSON.stringify({ messages: messages.map(wireMessage) }), signal,
+  if (signal?.aborted) throw abortError();
+  const run = await apiPost<ChatRunState>('/api/chat/runs', {
+    messages: messages.map(wireMessage),
   });
-  if (!resp.ok || !resp.body) throw new Error(`Chat failed: ${resp.status}`);
-
-  const reader = resp.body.getReader();
-  const decoder = new TextDecoder();
-  let buf = '';
+  let cursor = 0;
   // Some models write their reasoning into the answer as <think> tags rather
   // than into `reasoning_content`. Unsplit, the reader gets several paragraphs
   // of the model talking to itself — in which it may contradict the answer
   // that follows — before reaching the answer.
   const splitter = new ThinkingSplitter();
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buf += decoder.decode(value, { stream: true });
-    const lines = buf.split('\n');
-    buf = lines.pop() || '';
-    for (const line of lines) {
-      if (!line.startsWith('data: ')) continue;
-      const data = line.slice(6).trim();
+  try {
+    while (true) {
+      if (signal?.aborted) throw abortError();
+      const state = await api<ChatRunState>(`/api/chat/runs/${run.id}?cursor=${cursor}`);
+      cursor = state.cursor;
+      for (const data of state.frames) {
       // Anything the splitter was holding back — a reply that ended on a
       // dangling angle bracket, or mid-thought — belongs to the user.
-      if (data === '[DONE]') { yield* splitter.flush(); return; }
-      try {
-        const json = JSON.parse(data);
-        const d = json.choices?.[0]?.delta;
+        if (data === '[DONE]') continue;
+        try {
+          const json = JSON.parse(data);
+          const d = json.choices?.[0]?.delta;
         // Reasoning models put most of their output here and only then produce
         // an answer. Dropping it meant the UI sat blank through a couple of
         // hundred tokens and looked like it had hung.
-        const thinking = d?.reasoning_content ?? d?.reasoning;
-        if (thinking) yield { kind: 'thinking', text: thinking };
-        if (d?.content) yield* splitter.push(d.content);
-      } catch {
-        // ignore partial/malformed chunk
+          const thinking = d?.reasoning_content ?? d?.reasoning;
+          if (thinking) yield { kind: 'thinking', text: thinking };
+          if (d?.content) yield* splitter.push(d.content);
+        } catch {
+          // A malformed frame is not allowed to become visible protocol text.
+        }
       }
+      if (state.status === 'done') { yield* splitter.flush(); return; }
+      if (state.status === 'cancelled') throw abortError();
+      if (state.status === 'error') throw new Error(state.error || 'Chat generation failed');
+      await pause(180, signal);
     }
+  } catch (error) {
+    if (signal?.aborted || (error instanceof DOMException && error.name === 'AbortError')) {
+      await api(`/api/chat/runs/${run.id}`, { method: 'DELETE' }).catch(() => {});
+      throw abortError();
+    }
+    throw error;
   }
+}
+
+export async function uploadChatAttachment(file: File): Promise<ChatAttachment> {
+  const form = new FormData();
+  form.append('file', file, file.name);
+  const response = await fetch(`${await baseUrl()}/api/chat/attachments`, {
+    method: 'POST', headers: await authHeaders(), body: form,
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error(body.detail || `Could not read ${file.name}`);
+  }
+  return response.json();
 }
 
 export interface ImageJob {
@@ -724,6 +784,10 @@ export async function agentSocket(): Promise<WebSocket> {
   return new WebSocket(`ws://127.0.0.1:${port}/ws/agent?token=${token}`);
 }
 
+export async function cancelAgentRun(runId: string) {
+  return api<{ cancelled: boolean }>(`/api/agent/runs/${runId}`, { method: 'DELETE' });
+}
+
 // ------------------------------------------------------------ runtime setup
 
 /**
@@ -907,7 +971,7 @@ export async function setAgentToolGroups(groups: string[] | null) {
  * function calling, because the small local models this app is built for
  * support it unevenly, and a marker works with every one of them.
  */
-export const IMAGE_MARKER = /\[\[image:\s*([^\]\n]{3,400})\]\]/gi;
+export const IMAGE_MARKER = /\[\[image(?:\s+(draft|high))?(?:\s+(\d{1,5})x(\d{1,5}))?\s*:\s*([^\]\n]{3,800})\]\]/gi;
 
 /** Set up one narration engine, streaming its log.
  *
@@ -1076,8 +1140,17 @@ export function chatSystemPrompt(
       + '— write [[pictures: what to show]] on its own line; thumbnails from '
       + 'the web are placed there.\n'
       + 'To draw something that does not exist — a diagram, a sketch, an '
-      + 'invented scene — write [[image: a detailed description]] on its own '
-      + 'line.\n'
+      + 'invented scene — write an image instruction on its own line. Choose '
+      + 'the render yourself from what the user asked for; do not ask them to '
+      + 'operate quality controls. For a casual, playful, or unspecified '
+      + 'picture, use [[image draft 512x512: a detailed description]]. When '
+      + 'the user asks for a polished, high-quality, wallpaper, poster, or '
+      + 'otherwise finished result, use [[image high 1024x1024: a detailed '
+      + 'description]]. Replace the dimensions with the size or aspect ratio '
+      + 'the user requested, between 256 and 2048 pixels per side in multiples '
+      + 'of 64. If they specify only an aspect ratio, choose sensible dimensions '
+      + 'within that range. Never call a draft high quality. The older '
+      + '[[image: description]] form means a 512x512 draft.\n'
       + 'Do neither when the question is about a fact, a number, a name, a '
       + 'date, an episode, code, or anything a sentence answers. Ask yourself '
       + 'whether the reader would be worse off without it; if not, leave it '
@@ -1093,21 +1166,58 @@ export function chatSystemPrompt(
   return parts.join('\n\n');
 }
 
-/**
- * A fast, deliberately low-fidelity render for thinking with, not a finished
- * picture: few steps at 512px so it arrives in seconds rather than minutes.
+export interface ReplyImageRequest {
+  prompt: string;
+  quality: 'draft' | 'high';
+  width: number;
+  height: number;
+}
+
+/** Parse the intentionally simple marker understood by small local models.
+ *
+ * The old `[[image: prompt]]` form remains a square draft. Dimensions are
+ * bounded exactly like the Image workspace: this prevents a hallucinated
+ * 90000px canvas from exhausting the machine while still allowing a model to
+ * honour any supported size or aspect ratio the user requested.
  */
-export async function quickImagePreview(
-  prompt: string,
+export function parseReplyImages(reply: string): ReplyImageRequest[] {
+  const requests: ReplyImageRequest[] = [];
+  for (const match of reply.matchAll(IMAGE_MARKER)) {
+    const quality = match[1]?.toLowerCase() === 'high' ? 'high' : 'draft';
+    const fallback = quality === 'high' ? 1024 : 512;
+    const dimension = (value: string | undefined) => {
+      const number = Number(value) || fallback;
+      return Math.max(256, Math.min(2048, Math.round(number / 64) * 64));
+    };
+    requests.push({
+      quality,
+      width: dimension(match[2]),
+      height: dimension(match[3]),
+      prompt: match[4].trim(),
+    });
+  }
+  return requests.slice(0, 2);
+}
+
+export async function generateReplyImage(
+  request: ReplyImageRequest,
 ): Promise<{ url: string; path: string }> {
   const models = await getLibrary();
-  const img = models.find((m) => m.category === 'image' && m.ready);
+  const img = models.find((m) => m.category === 'image' && m.ready
+    && m.capabilities.includes('text2img')
+    && ['mflux', 'diffusers', 'flux2-profile'].includes(m.engine));
   if (!img) throw new Error('No image model installed');
 
-  const job = await generateImage(img.path, img.engine, prompt, img.catalog_id, {
-    steps: 6,
-    width: 512,
-    height: 512,
+  const highSteps = img.defaults?.steps
+    ?? (img.engine === 'mflux' ? 8 : img.engine === 'flux2-profile' ? 4 : 25);
+  const highGuidance = img.defaults?.guidance
+    ?? (img.engine === 'mflux' || img.engine === 'flux2-profile' ? 1.0 : 7.0);
+
+  const job = await generateImage(img.path, img.engine, request.prompt, img.catalog_id, {
+    steps: request.quality === 'high' ? highSteps : Math.min(6, highSteps),
+    guidance: request.quality === 'high' ? highGuidance : undefined,
+    width: request.width,
+    height: request.height,
     // Which mflux entry point runs this checkpoint, and which base to
     // configure it as. Omitting them fell back to the FLUX.1 default, so every
     // FLUX.2 model failed here looking for `text_encoder_2` — a component
@@ -1273,6 +1383,9 @@ export interface ResidentModels {
   mflux_model: string | null;
   flux2_profile: string | null;
   video_pipeline: string | null;
+  speech_workers: number;
+  music_jobs: number;
+  narration_jobs: number;
   anything: boolean;
 }
 

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ChevronDown, ArrowUp, Square, Mic, Volume2, VolumeX, Loader2, Hammer, ImagePlus, PanelRight, Plus, X, Globe,
   Image as ImageIcon, ImageOff, GlobeLock, AudioLines, MessagesSquare,
-  Settings2 } from 'lucide-react';
+  Settings2, Paperclip, FileText, Copy, Check, NotebookPen } from 'lucide-react';
 import { TitleBarPortal } from '../components/TitleBar';
 import { Mark } from '../components/Wordmark';
 import Markdown from '../components/Markdown';
@@ -12,12 +12,14 @@ import AddFromDisk from '../components/AddFromDisk';
 import { useLibraryVersion } from '../lib/library-changed';
 import { splitThinking } from '../lib/thinking';
 import { Sentences, useTalk } from '../lib/useTalk';
+import { cleanReply } from '../lib/reply';
 import { MAX_ROUNDS, describe, findLookups, resultsTurn, stripLookups } from '../lib/lookup';
-import { getLibrary, startEngine, engineStatus, streamChat, transcribeAudio, speakReply, IMAGE_MARKER, chatSystemPrompt, quickImagePreview,
+import { getLibrary, startEngine, engineStatus, streamChat, transcribeAudio, speakReply, IMAGE_MARKER, chatSystemPrompt, parseReplyImages, generateReplyImage,
   listConversations, readConversation, writeConversation, deleteConversation,
   webSearch, webRead, webImages, MANNERS,
-  outputBlobUrl, revealOutput } from '../lib/sidecar';
-import type { LocalModel, ChatMessage, ConversationList, WebImage } from '../lib/sidecar';
+  outputBlobUrl, revealOutput, uploadChatAttachment, saveNote as saveReplyNote,
+  listNotes, deleteNote } from '../lib/sidecar';
+import type { LocalModel, ChatMessage, ChatAttachment, ConversationList, SavedNote, WebImage } from '../lib/sidecar';
 
 /** A conversation id: sixteen hex characters, which is what the engine accepts
  *  as a filename. `crypto.randomUUID` needs a secure context and is not
@@ -40,10 +42,14 @@ export default function ChatView() {
   //  with empty conversations.
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [notesOpen, setNotesOpen] = useState(false);
+  const [notes, setNotes] = useState<SavedNote[]>([]);
   const [saved, setSaved] = useState<ConversationList | null>(null);
   //: Pictures staged for the next message. Data URLs, so a file the user
   //  moves or deletes afterwards does not empty the conversation later.
   const [attached, setAttached] = useState<string[]>([]);
+  const [attachedFiles, setAttachedFiles] = useState<ChatAttachment[]>([]);
+  const [attachingFile, setAttachingFile] = useState(false);
   const [visionOk, setVisionOk] = useState(false);
   //: What is being fetched right now, and what has been. A conversation that
   //  reaches the internet has to say so while it happens — this is the one
@@ -53,6 +59,10 @@ export default function ChatView() {
   const [input, setInput] = useState('');
   const [generating, setGenerating] = useState(false);
   const chatAbort = useRef<AbortController | null>(null);
+  // Every async continuation proves it still belongs to the conversation on
+  // screen. This is the fence that stops an old reply landing in a newly
+  // opened chat after navigation or a slow LAN reconnect.
+  const generationEpoch = useRef(0);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const [sttModel, setSttModel] = useState<LocalModel | null>(null);
@@ -101,6 +111,31 @@ export default function ChatView() {
   //: The conversation loop has no transcript of its own to fail into — a
   //  microphone that was refused has to say so somewhere.
   const [lastError, setLastError] = useState<string | null>(null);
+  const [copiedReply, setCopiedReply] = useState<number | null>(null);
+  const [notedReply, setNotedReply] = useState<number | null>(null);
+
+  async function copyReply(index: number, content: string) {
+    try {
+      await navigator.clipboard.writeText(cleanReply(content));
+      setCopiedReply(index);
+      setTimeout(() => setCopiedReply((current) => current === index ? null : current), 1400);
+    } catch { /* selectable text remains available */ }
+  }
+
+  async function noteReply(index: number, content: string) {
+    const value = cleanReply(content);
+    if (!value) return;
+    const firstLine = value.split('\n').find((line) => line.trim())?.trim() || 'Reply';
+    const key = `${firstLine.slice(0, 72)} · ${new Date().toLocaleString()}`;
+    try {
+      await saveReplyNote(key, value);
+      setNotes(await listNotes().catch(() => notes));
+      setNotedReply(index);
+      setTimeout(() => setNotedReply((current) => current === index ? null : current), 1800);
+    } catch (error) {
+      setLastError(String(error).replace(/^Error:\s*/, ''));
+    }
+  }
 
   const [web, setWeb] = useState(() => {
     try { return localStorage.getItem('uncloud.chat.web') !== 'off'; }
@@ -184,19 +219,24 @@ export default function ChatView() {
     setPreviews(restored);
   }, []);
 
-  async function renderPreviews(index: number, reply: string) {
+  async function renderPreviews(
+    index: number, reply: string, epoch: number, savedConversationId: string,
+  ) {
     // The switch holds regardless of what the model wrote. A model told not to
     // draw will still occasionally draw, and the user's setting has to win
     // that argument rather than merely take part in it.
-    if (!pictures) return;
-    const prompts = [...reply.matchAll(IMAGE_MARKER)]
-      .map((mm) => mm[1].trim())
-      .slice(0, 2);
-    if (!prompts.length) return;
-    setPreviews((p) => ({ ...p, [index]: prompts.map((prompt) => ({ prompt })) }));
-    for (let i = 0; i < prompts.length; i++) {
+    if (!pictures || epoch !== generationEpoch.current) return;
+    const requests = parseReplyImages(reply);
+    if (!requests.length) return;
+    setPreviews((p) => ({
+      ...p,
+      [index]: requests.map((request) => ({ prompt: request.prompt })),
+    }));
+    for (let i = 0; i < requests.length; i++) {
+      const request = requests[i];
       try {
-        const { url, path } = await quickImagePreview(prompts[i]);
+        const { url, path } = await generateReplyImage(request);
+        if (epoch !== generationEpoch.current) continue;
         setPreviews((p) => {
           const row = [...(p[index] || [])];
           row[i] = { ...row[i], url };
@@ -210,12 +250,16 @@ export default function ChatView() {
             const copy = [...m];
             const turn = copy[index];
             if (!turn) return m;
-            copy[index] = { ...turn, drew: [...(turn.drew ?? []), { prompt: prompts[i], path }] };
-            if (conversationId) void persist(conversationId, copy);
+            copy[index] = {
+              ...turn,
+              drew: [...(turn.drew ?? []), { prompt: request.prompt, path }],
+            };
+            void persist(savedConversationId, copy);
             return copy;
           });
         }
       } catch (e) {
+        if (epoch !== generationEpoch.current) continue;
         setPreviews((p) => {
           const row = [...(p[index] || [])];
           row[i] = { ...row[i], error: String(e).replace(/^Error:\s*/, '') };
@@ -270,14 +314,23 @@ export default function ChatView() {
   }, [activeModel, refreshSaved]);
 
   const startNew = useCallback(() => {
+    generationEpoch.current += 1;
+    chatAbort.current?.abort();
+    chatAbort.current = null;
+    setGenerating(false);
     setMessages([]);
     setPreviews({});
     setConversationId(null);
     setAttached([]);
+    setAttachedFiles([]);
     setInput('');
   }, []);
 
   const openSaved = useCallback(async (id: string) => {
+    generationEpoch.current += 1;
+    chatAbort.current?.abort();
+    chatAbort.current = null;
+    setGenerating(false);
     try {
       const conversation = await readConversation(id);
       // Stored as the model wrote it, tags and all. Splitting on load rather
@@ -291,11 +344,12 @@ export default function ChatView() {
       }));
       setConversationId(conversation.id);
       setAttached([]);
+      setAttachedFiles([]);
     } catch {
       // A conversation that will not decrypt is already reported in the list;
       // failing to open it must not blank the one on screen.
     }
-  }, []);
+  }, [loadDrawn]);
 
   const removeSaved = useCallback(async (id: string) => {
     await deleteConversation(id).catch(() => {});
@@ -330,28 +384,55 @@ export default function ChatView() {
     picker.click();
   }, []);
 
+  const attachDocuments = useCallback(() => {
+    const picker = document.createElement('input');
+    picker.type = 'file';
+    picker.accept = '.txt,.md,.markdown,.csv,.tsv,.json,.yaml,.yml,.py,.js,.jsx,.ts,.tsx,.css,.html,.xml,.toml,.ini,.log,.sql,.rs,.go,.java,.c,.h,.cpp,.docx,.xlsx,.pptx';
+    picker.multiple = true;
+    picker.onchange = async () => {
+      setAttachingFile(true);
+      try {
+        for (const file of Array.from(picker.files ?? [])) {
+          const attachment = await uploadChatAttachment(file);
+          setAttachedFiles((current) => [...current, attachment]);
+        }
+      } catch (error) {
+        setLastError(String(error).replace(/^Error:\s*/, ''));
+      } finally {
+        setAttachingFile(false);
+      }
+    };
+    picker.click();
+  }, []);
+
   async function send(text: string, readAloud: boolean,
                       say?: (sentence: string) => void) {
     // A picture on its own is a perfectly good question — "what is this?" is
     // implied — so an empty box with an attachment still sends.
-    if ((!text.trim() && !attached.length) || !activeModel || generating) return;
+    if ((!text.trim() && !attached.length && !attachedFiles.length)
+        || !activeModel || generating) return;
     const images = attached;
+    const files = attachedFiles;
     const next = [...messages, {
       role: 'user', content: text.trim(), ...(images.length ? { images } : {}),
+      ...(files.length ? { files } : {}),
     } as ChatMessage];
     setMessages(next);
     setAttached([]);
+    setAttachedFiles([]);
     setInput('');
     setConsulted([]);
     setLooking([]);
     setGenerating(true);
     setMessages((m) => [...m, { role: 'assistant', content: '' }]);
+    const epoch = ++generationEpoch.current;
     let full = '';
     const controller = new AbortController();
     chatAbort.current = controller;
     try {
       // Generating an image frees the chat engine to make room — reload it transparently if needed.
       const status = await engineStatus();
+      if (epoch !== generationEpoch.current) return;
       if (!status.running || status.model_path !== activeModel.path) {
         await startEngine(activeModel.path, activeModel.engine);
       }
@@ -370,16 +451,22 @@ export default function ChatView() {
           [{ role: 'system', content: chatSystemPrompt({ pictures, web, manner }) }, ...sent],
           controller.signal,
         )) {
+          if (epoch !== generationEpoch.current) return;
           if (chunk.kind === 'text') full += chunk.text;
           // Hands-free: each finished sentence is spoken while the rest is
           // still being written, which is most of the wait removed.
           if (say && sentences && chunk.kind === 'text') {
-            for (const sentence of sentences.push(chunk.text)) say(stripLookups(sentence));
+            for (const sentence of sentences.push(chunk.text)) {
+              const spoken = cleanReply(stripLookups(sentence), true).trim();
+              if (spoken) say(spoken);
+            }
           }
           setMessages((m) => {
+            if (epoch !== generationEpoch.current) return m;
             const copy = [...m];
-            const prev = copy[copy.length - 1];
-            copy[copy.length - 1] = chunk.kind === 'thinking'
+            const prev = copy[assistantIndex];
+            if (!prev) return m;
+            copy[assistantIndex] = chunk.kind === 'thinking'
               ? { ...prev, reasoning: (prev.reasoning ?? '') + chunk.text }
               : { ...prev, content: prev.content + chunk.text };
             return copy;
@@ -402,9 +489,11 @@ export default function ChatView() {
         // while the user watched.
         if (round >= MAX_ROUNDS - 1) {
           setMessages((m) => {
+            if (epoch !== generationEpoch.current) return m;
             const copy = [...m];
-            const prev = copy[copy.length - 1];
-            copy[copy.length - 1] = {
+            const prev = copy[assistantIndex];
+            if (!prev) return m;
+            copy[assistantIndex] = {
               ...prev,
               content: `${stripLookups(prev.content)}\n\n_Stopped after `
                 + `${MAX_ROUNDS} lookups without an answer._`,
@@ -448,12 +537,15 @@ export default function ChatView() {
           }
         }));
         setLooking([]);
+        if (epoch !== generationEpoch.current) return;
         setConsulted((c) => [...c, ...wanted.map((l) => l.argument)]);
         if (shown.length) {
           setMessages((m) => {
+            if (epoch !== generationEpoch.current) return m;
             const copy = [...m];
-            const prev = copy[copy.length - 1];
-            copy[copy.length - 1] = { ...prev, found: [...(prev.found ?? []), ...shown] };
+            const prev = copy[assistantIndex];
+            if (!prev) return m;
+            copy[assistantIndex] = { ...prev, found: [...(prev.found ?? []), ...shown] };
             return copy;
           });
         }
@@ -466,41 +558,50 @@ export default function ChatView() {
           { role: 'user', content: resultsTurn(fetched) },
         ];
         setMessages((m) => {
+          if (epoch !== generationEpoch.current) return m;
           const copy = [...m];
-          copy[copy.length - 1] = { ...copy[copy.length - 1], content: '' };
+          const prev = copy[assistantIndex];
+          if (!prev) return m;
+          copy[assistantIndex] = { ...prev, content: '' };
           return copy;
         });
       }
 
       // The markers were an instruction to the application, not part of the
       // answer. Left in, the user reads the plumbing.
-      full = stripLookups(full);
+      const rawReply = full;
+      full = cleanReply(stripLookups(full));
       setMessages((m) => {
+        if (epoch !== generationEpoch.current) return m;
         const copy = [...m];
-        copy[copy.length - 1] = { ...copy[copy.length - 1], content: full };
+        const prev = copy[assistantIndex];
+        if (!prev) return m;
+        copy[assistantIndex] = { ...prev, content: full };
         return copy;
       });
-      // Fire and forget: the reply is already readable, and a preview
-      // takes seconds during which the user should not be blocked.
-      void renderPreviews(assistantIndex, full);
-
       // Saved now the exchange is complete. The id is minted on the first
       // save rather than when the view opens, so opening Chat and changing
       // your mind does not leave an empty conversation in the list.
       const id = conversationId ?? newConversationId();
+      if (epoch !== generationEpoch.current) return;
       if (!conversationId) setConversationId(id);
       void persist(id, [...next, { role: 'assistant', content: full } as ChatMessage]);
+      // Fire and forget: the reply is already readable, and a render may take
+      // minutes. Pass the freshly minted id explicitly; state has not rerendered
+      // yet on the first turn, and closing the phone must not orphan the file.
+      void renderPreviews(assistantIndex, rawReply, epoch, id);
 
       // The tail: an answer that ends without punctuation, or a last clause
       // too short to have been spoken on its own.
       if (say && sentences) {
-        const tail = stripLookups(sentences.rest()).trim();
+        const tail = cleanReply(stripLookups(sentences.rest())).trim();
         if (tail) say(tail);
       }
       if (readAloud && !say && full.trim()) {
         setSpeaking(true);
         try {
           const url = await speakReply(full.trim(), voice);
+          if (epoch !== generationEpoch.current) return;
           if (audioRef.current) {
             audioRef.current.src = url;
             await audioRef.current.play();
@@ -515,6 +616,7 @@ export default function ChatView() {
         }
       }
     } catch (e) {
+      if (epoch !== generationEpoch.current) return;
       if (e instanceof DOMException && e.name === 'AbortError') {
         setMessages((m) => {
           const copy = [...m];
@@ -528,13 +630,18 @@ export default function ChatView() {
         setMessages((m) => [...m, { role: 'assistant', content: `⚠ ${e}` }]);
       }
     } finally {
-      chatAbort.current = null;
-      setGenerating(false);
+      if (epoch === generationEpoch.current) {
+        chatAbort.current = null;
+        setGenerating(false);
+      }
     }
   }
 
   function stopGenerating() {
+    generationEpoch.current += 1;
     chatAbort.current?.abort();
+    chatAbort.current = null;
+    setGenerating(false);
   }
 
   async function startRecording() {
@@ -588,7 +695,7 @@ export default function ChatView() {
         {/* What is going with the next message. Shown before sending, and
             removable: attaching the wrong screenshot is easy and noticing
             after the model has answered is too late. */}
-        {attached.length > 0 && (
+        {(attached.length > 0 || attachedFiles.length > 0) && (
           <div className="flex flex-wrap gap-2 px-1 pb-2">
             {attached.map((url, i) => (
               <div key={i} className="relative">
@@ -599,6 +706,22 @@ export default function ChatView() {
                              border border-[var(--border)] flex items-center justify-center"
                   title="Remove"
                   onClick={() => setAttached((a) => a.filter((_, k) => k !== i))}
+                >
+                  <X size={9} />
+                </button>
+              </div>
+            ))}
+            {attachedFiles.map((file, i) => (
+              <div key={`${file.name}-${i}`} className="relative flex items-center gap-2 h-14 max-w-52
+                                                    px-3 pr-6 rounded-lg border border-[var(--border)]
+                                                    bg-[var(--bg-inset)] text-xs">
+                <FileText size={15} className="shrink-0 text-[var(--text-faint)]" />
+                <span className="truncate" title={file.name}>{file.name}</span>
+                <button
+                  className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-[var(--bg-inset)]
+                             border border-[var(--border)] flex items-center justify-center"
+                  title="Remove"
+                  onClick={() => setAttachedFiles((items) => items.filter((_, k) => k !== i))}
                 >
                   <X size={9} />
                 </button>
@@ -655,6 +778,16 @@ export default function ChatView() {
             className="pill pill-icon"
           >
             <ImagePlus size={15} />
+          </button>
+
+          <button
+            onClick={attachDocuments}
+            disabled={!activeModel || attachingFile}
+            title="Attach a readable document or source file"
+            aria-label="Attach a file"
+            className="pill pill-icon"
+          >
+            {attachingFile ? <Loader2 size={14} className="animate-spin" /> : <Paperclip size={15} />}
           </button>
 
           {/* The only control here that governs the network. Labelled plainly,
@@ -763,7 +896,7 @@ export default function ChatView() {
               message is what becomes the goal, and half of it is not a goal. */}
           {messages.some((m) => m.role === 'user') && (
             <button
-              onClick={() => sendToChisel(fromConversation(messages))}
+              onClick={() => sendToChisel(fromConversation(messages, activeModel))}
               disabled={generating}
               title="Continue this in Chisel, carrying the conversation"
               className="pill"
@@ -777,7 +910,8 @@ export default function ChatView() {
 
           <button
             onClick={generating ? stopGenerating : () => send(input, autoSpeak)}
-            disabled={!activeModel || (!generating && !input.trim() && !attached.length)}
+            disabled={!activeModel || (!generating && !input.trim()
+              && !attached.length && !attachedFiles.length)}
             title={generating ? 'Stop response' : 'Send'}
             aria-label={generating ? 'Stop response' : 'Send'}
             className="composer-send"
@@ -861,6 +995,12 @@ export default function ChatView() {
                 title="Saved conversations" aria-label="Saved conversations">
           <PanelRight size={15} />
         </button>
+        <button className="tb-btn" onClick={() => {
+          setNotesOpen(true);
+          void listNotes().then(setNotes).catch(() => {});
+        }} title="Saved notes" aria-label="Saved notes">
+          <NotebookPen size={15} />
+        </button>
       </TitleBarPortal>
 
       {empty ? (
@@ -912,6 +1052,17 @@ export default function ChatView() {
                         ))}
                       </div>
                     )}
+                    {!!m.files?.length && (
+                      <div className="flex flex-wrap gap-1.5 mb-2">
+                        {m.files.map((file, k) => (
+                          <span key={`${file.name}-${k}`} className="inline-flex items-center gap-1.5
+                                rounded-md border border-[var(--border)] px-2 py-1 text-[10px]
+                                text-[var(--text-dim)] bg-[var(--bg-inset)]">
+                            <FileText size={11} /> {file.name}{file.clipped ? ' · excerpt' : ''}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                     <div className="whitespace-pre-wrap">
                       {m.content.replace(IMAGE_MARKER, '').trimEnd()}
                     </div>
@@ -919,7 +1070,7 @@ export default function ChatView() {
                 ) : (
                   <div className="text-sm text-[var(--text)] px-1">
                     {(() => {
-                      const shown = m.content.replace(IMAGE_MARKER, '').trimEnd();
+                      const shown = cleanReply(m.content, generating && i === messages.length - 1);
                       if (shown) return <Markdown>{shown}</Markdown>;
                       // Still arriving.
                       if (i === messages.length - 1 && generating && !m.reasoning) {
@@ -950,6 +1101,27 @@ export default function ChatView() {
                       }
                       return null;
                     })()}
+                  </div>
+                )}
+                {m.role === 'assistant' && cleanReply(m.content).trim()
+                  && !(i === messages.length - 1 && generating) && (
+                  <div className="mt-2 flex items-center gap-1 px-1 text-[10px]
+                                  text-[var(--text-faint)]">
+                    <button className="pill h-7 px-2" title="Copy reply"
+                            onClick={() => void copyReply(i, m.content)}>
+                      {copiedReply === i ? <Check size={11} /> : <Copy size={11} />}
+                      <span>{copiedReply === i ? 'Copied' : 'Copy'}</span>
+                    </button>
+                    <button className="pill h-7 px-2" title="Save this reply as a note"
+                            onClick={() => void noteReply(i, m.content)}>
+                      {notedReply === i ? <Check size={11} /> : <NotebookPen size={11} />}
+                      <span>{notedReply === i ? 'Saved' : 'Note'}</span>
+                    </button>
+                    <button className="pill h-7 px-2" title="Continue from here in Chisel"
+                            onClick={() => sendToChisel(fromConversation(
+                              messages.slice(0, i + 1), activeModel))}>
+                      <Hammer size={11} /><span>Chisel</span>
+                    </button>
                   </div>
                 )}
                 {/* Reaching the internet is the one thing this application
@@ -1088,6 +1260,45 @@ export default function ChatView() {
           <button className="tb-btn" onClick={() => setLastError(null)} title="Dismiss">
             <X size={12} />
           </button>
+        </div>
+      )}
+
+      {notesOpen && (
+        <div className="absolute inset-0 z-40 bg-black/35" onClick={() => setNotesOpen(false)}>
+          <aside className="absolute right-0 top-0 bottom-0 w-[min(420px,92vw)]
+                            bg-[var(--bg)] border-l border-[var(--border)] p-4
+                            chassis-scroll" onClick={(event) => event.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-sm font-medium">Notes</h2>
+                <p className="text-[10px] text-[var(--text-faint)] mt-0.5">
+                  Saved on this device/session. They are never mixed across paired phones.
+                </p>
+              </div>
+              <button className="tb-btn" onClick={() => setNotesOpen(false)} title="Close notes">
+                <X size={14} />
+              </button>
+            </div>
+            {notes.length === 0 ? (
+              <p className="text-xs text-[var(--text-faint)]">No notes yet. Use Note below any reply.</p>
+            ) : (
+              <div className="flex flex-col gap-3">
+                {notes.map((note) => (
+                  <article key={note.key} className="card p-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <h3 className="text-xs font-medium break-words">{note.key}</h3>
+                      <button className="tb-btn shrink-0" title="Delete note" onClick={async () => {
+                        await deleteNote(note.key);
+                        setNotes((items) => items.filter((item) => item.key !== note.key));
+                      }}><X size={12} /></button>
+                    </div>
+                    <div className="mt-2 text-xs text-[var(--text-dim)] whitespace-pre-wrap
+                                    max-h-64 overflow-y-auto">{note.value}</div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </aside>
         </div>
       )}
 

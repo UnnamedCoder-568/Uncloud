@@ -70,24 +70,15 @@
  */
 :root {
   /* ------------------------------------------------------------ the accent
-   * Warm, on a cool monochrome interface, and clear of the colours already
-   * spoken for semantically: rose for errors, emerald for success.
-   *
-   * Amber needs dark text on it, not white — white on #f59e0b is 2.1:1 and
-   * illegible. --accent-on is 11.4:1 and is what the chassis paints on every
-   * accent fill. */
-  --accent:       #F59E0B;
-  --accent-hover: #FBBF24;
-  --accent-on:    #1F1500;
+   * Monochrome by default. Appearance settings may replace it with the user's
+   * colour, while text painted on the accent is derived for contrast. */
+  --accent:       #F2F2F2;
+  --accent-hover: #FFFFFF;
+  --accent-on:    #111111;
 
-  /* The two-stop mark, in the Magic UI register.
-   *
-   * Still reserved for the wordmark and the one hero moment per screen rather
-   * than for chrome: a gradient on every button stops meaning anything. The
-   * red was lightened to a rose, because gradient TYPE has to stay legible
-   * along its whole length and #DC2626 was 3.3:1 against the ground — fine as
-   * a border, not as a word. */
-  --accent-2:    #FB7185;   /* 5.98:1 on --bg — AA */
+  /* The two-stop mark is still reserved for the wordmark and the one hero
+   * moment per screen rather than sprayed over every piece of chrome. */
+  --accent-2:    #8F8F8F;
   --accent-grad: linear-gradient(135deg, var(--accent), var(--accent-2));
   --grad:        linear-gradient(90deg, var(--accent), var(--accent-2));
   --accent-glow: 0 0 40px -8px color-mix(in srgb, var(--accent) 55%, transparent);
@@ -104,6 +95,13 @@
   --border-soft: var(--border);
   --text-dim:    var(--text-2);
   --text-faint:  var(--text-3);
+
+  /* Semantic state stays distinguishable through icon, copy and contrast; it
+   * does not secretly reintroduce a rainbow into the monochrome default. */
+  --success: #D4D4D4;
+  --warning: #B8B8B8;
+  --danger:  #F0F0F0;
+  --info:    #C7C7C7;
 }
 
 * { box-sizing: border-box; }
@@ -117,6 +115,41 @@ body {
   font-size: var(--text-base);
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
+}
+
+/* Legacy views still name Tailwind's semantic colours directly. Keep their
+ * icon/copy distinction but map every piece of application chrome back into
+ * greyscale. Generated pictures and video are media, not chrome, and remain
+ * untouched. A user-selected accent continues through --accent separately. */
+[class*="text-rose-"], [class*="text-red-"],
+[class*="text-amber-"], [class*="text-orange-"], [class*="text-yellow-"],
+[class*="text-emerald-"], [class*="text-green-"], [class*="text-teal-"],
+[class*="text-blue-"], [class*="text-cyan-"], [class*="text-indigo-"],
+[class*="text-violet-"], [class*="text-purple-"], [class*="text-pink-"] {
+  color: var(--text-2) !important;
+}
+[class^="bg-rose-"], [class*=" bg-rose-"], [class^="bg-red-"], [class*=" bg-red-"],
+[class^="bg-amber-"], [class*=" bg-amber-"], [class^="bg-orange-"], [class*=" bg-orange-"],
+[class^="bg-yellow-"], [class*=" bg-yellow-"], [class^="bg-emerald-"], [class*=" bg-emerald-"],
+[class^="bg-green-"], [class*=" bg-green-"], [class^="bg-teal-"], [class*=" bg-teal-"],
+[class^="bg-blue-"], [class*=" bg-blue-"], [class^="bg-cyan-"], [class*=" bg-cyan-"],
+[class^="bg-indigo-"], [class*=" bg-indigo-"], [class^="bg-violet-"], [class*=" bg-violet-"],
+[class^="bg-purple-"], [class*=" bg-purple-"], [class^="bg-pink-"], [class*=" bg-pink-"],
+[class*="hover:bg-rose-"]:hover, [class*="hover:bg-red-"]:hover,
+[class*="hover:bg-amber-"]:hover, [class*="hover:bg-orange-"]:hover,
+[class*="hover:bg-yellow-"]:hover, [class*="hover:bg-emerald-"]:hover,
+[class*="hover:bg-green-"]:hover, [class*="hover:bg-teal-"]:hover,
+[class*="hover:bg-blue-"]:hover, [class*="hover:bg-cyan-"]:hover,
+[class*="hover:bg-indigo-"]:hover, [class*="hover:bg-violet-"]:hover,
+[class*="hover:bg-purple-"]:hover, [class*="hover:bg-pink-"]:hover {
+  background-color: var(--bg-inset) !important;
+}
+[class*="border-rose-"], [class*="border-red-"],
+[class*="border-amber-"], [class*="border-orange-"], [class*="border-yellow-"],
+[class*="border-emerald-"], [class*="border-green-"], [class*="border-teal-"],
+[class*="border-blue-"], [class*="border-cyan-"], [class*="border-indigo-"],
+[class*="border-violet-"], [class*="border-purple-"], [class*="border-pink-"] {
+  border-color: var(--border) !important;
 }
 
 .font-mono { font-family: var(--mono); }

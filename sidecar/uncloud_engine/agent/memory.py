@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import time
 from pathlib import Path
@@ -90,18 +91,37 @@ def plan_clear() -> str:
 
 
 # ------------------------------------------------------------------ notes
-def note_save(key: str, value: str) -> str:
+def _notes_file(namespace: str) -> Path:
+    if namespace == "agent":
+        return NOTES_FILE
+    digest = hashlib.sha256(namespace.encode()).hexdigest()[:20]
+    directory = MEMORY_DIR / "notes"
+    directory.mkdir(parents=True, exist_ok=True)
+    return directory / f"{digest}.json"
+
+
+def note_entries(*, namespace: str = "agent") -> list[dict]:
+    notes = _load(_notes_file(namespace), {})
+    return sorted(
+        ({"key": str(key), "value": str(entry.get("value", "")),
+          "at": float(entry.get("at", 0.0))}
+         for key, entry in notes.items() if isinstance(entry, dict)),
+        key=lambda row: row["at"], reverse=True)
+
+
+def note_save(key: str, value: str, *, namespace: str = "agent") -> str:
     """Durable facts discovered mid-task — paths, IDs, findings worth not re-deriving."""
     if not key:
         raise ValueError("note_save needs a 'key'")
-    notes = _load(NOTES_FILE, {})
+    path = _notes_file(namespace)
+    notes = _load(path, {})
     notes[key] = {"value": value, "at": time.time()}
-    _save(NOTES_FILE, notes)
+    _save(path, notes)
     return f"Saved note '{key}'."
 
 
-def note_recall(key: str = "") -> str:
-    notes = _load(NOTES_FILE, {})
+def note_recall(key: str = "", *, namespace: str = "agent") -> str:
+    notes = _load(_notes_file(namespace), {})
     if not notes:
         return "No notes saved."
     if key:
@@ -112,7 +132,18 @@ def note_recall(key: str = "") -> str:
     return "\n".join(f"{k}: {v['value'][:300]}" for k, v in notes.items())
 
 
-def note_clear() -> str:
-    if NOTES_FILE.exists():
-        NOTES_FILE.unlink()
+def note_delete(key: str, *, namespace: str = "agent") -> bool:
+    path = _notes_file(namespace)
+    notes = _load(path, {})
+    if key not in notes:
+        return False
+    del notes[key]
+    _save(path, notes)
+    return True
+
+
+def note_clear(*, namespace: str = "agent") -> str:
+    path = _notes_file(namespace)
+    if path.exists():
+        path.unlink()
     return "Notes cleared."

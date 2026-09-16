@@ -198,6 +198,7 @@ class VideoJob:
 class VideoEngine:
     def __init__(self) -> None:
         self.jobs: dict[str, VideoJob] = {}
+        self._tasks: set[asyncio.Task] = set()
         self._pipe = None
         self._loaded_path: str | None = None
 
@@ -446,10 +447,12 @@ class VideoEngine:
     ) -> VideoJob:
         job = VideoJob(id=uuid.uuid4().hex[:12], prompt=prompt, total_steps=steps)
         self.jobs[job.id] = job
-        asyncio.create_task(self._run(
+        task = asyncio.create_task(self._run(
             job, model_path, prompt, negative_prompt, frames, fps,
             width, height, steps, guidance, seed,
         ))
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
         return job
 
     async def _run(self, job, model_path, prompt, negative_prompt, frames, fps,
