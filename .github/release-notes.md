@@ -1,4 +1,4 @@
-Uncloud 0.4.2 hardens chat and generation across desktop and paired local-network
+Uncloud 0.4.3 hardens chat and generation across desktop and paired local-network
 devices. Replies and long-running image jobs now stay owned by the engine when a
 phone browser is backgrounded, conversations and outputs are isolated per paired
 device, and stale work can no longer land in a different chat.
