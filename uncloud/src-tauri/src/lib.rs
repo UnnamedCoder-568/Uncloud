@@ -1,3 +1,4 @@
+mod listener;
 mod sidecar;
 mod updates;
 
@@ -95,6 +96,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(updates::UpdateState::default())
+        .manage(listener::Listening::default())
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -139,7 +141,11 @@ pub fn run() {
             network_access,
             set_network_access,
             updates::app_update_check,
-            updates::app_update_install
+            updates::app_update_install,
+            listener::listener_available,
+            listener::listener_start,
+            listener::listener_end_turn,
+            listener::listener_stop
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
