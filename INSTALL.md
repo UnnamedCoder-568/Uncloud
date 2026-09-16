@@ -3,7 +3,7 @@
 ## Normal tester installation
 
 Testers should use a package from the
-[v0.3.0-test.2 prerelease](https://github.com/UnnamedCoder-568/Uncloud/releases/tag/v0.3.0-test.2).
+[v0.4.0 release](https://github.com/UnnamedCoder-568/Uncloud/releases/tag/v0.4.0).
 Building from source is not required.
 
 ### Windows x64
@@ -143,4 +143,4 @@ npm run tauri build -- --target x86_64-pc-windows-msvc --bundles nsis
 
 Pushing a version tag runs source tests, builds each native package, inspects
 its installed contents, starts the packaged application and engine, creates
-checksums, and publishes the GitHub prerelease only if every platform passes.
+checksums, and publishes the GitHub release only if every platform passes.
