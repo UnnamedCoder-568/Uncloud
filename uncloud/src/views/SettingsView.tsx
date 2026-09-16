@@ -11,6 +11,7 @@ import { formatBytes } from '../lib/format';
 import OnTheComputer from '../components/OnTheComputer';
 import { inDesktop } from '../lib/platform';
 import AppearanceSection from '../components/AppearanceSection';
+import PrinterSoundSection from '../components/PrinterSoundSection';
 
 export default function SettingsView() {
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -126,6 +127,7 @@ export default function SettingsView() {
 
       <div className="max-w-xl flex flex-col gap-4">
         <AppearanceSection />
+        <PrinterSoundSection />
         <section className="card p-4">
           <h2 className="text-sm mb-1">Models folder</h2>
           <p className="text-[11px] text-[var(--text-faint)] mb-3">

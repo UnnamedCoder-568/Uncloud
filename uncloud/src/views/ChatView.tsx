@@ -14,6 +14,7 @@ import { splitThinking } from '../lib/thinking';
 import { Sentences, useTalk } from '../lib/useTalk';
 import { cleanReply } from '../lib/reply';
 import { MAX_ROUNDS, describe, findLookups, resultsTurn, stripLookups } from '../lib/lookup';
+import { printerSound } from '../lib/printer-sound';
 import { getLibrary, startEngine, engineStatus, streamChat, transcribeAudio, speakReply, IMAGE_MARKER, chatSystemPrompt, parseReplyImages, generateReplyImage,
   listConversations, readConversation, writeConversation, deleteConversation,
   webSearch, webRead, webImages, MANNERS,
@@ -317,6 +318,7 @@ export default function ChatView() {
     generationEpoch.current += 1;
     chatAbort.current?.abort();
     chatAbort.current = null;
+    printerSound.stop();
     setGenerating(false);
     setMessages([]);
     setPreviews({});
@@ -330,6 +332,7 @@ export default function ChatView() {
     generationEpoch.current += 1;
     chatAbort.current?.abort();
     chatAbort.current = null;
+    printerSound.stop();
     setGenerating(false);
     try {
       const conversation = await readConversation(id);
@@ -350,6 +353,8 @@ export default function ChatView() {
       // failing to open it must not blank the one on screen.
     }
   }, [loadDrawn]);
+
+  useEffect(() => () => printerSound.stop(), []);
 
   const removeSaved = useCallback(async (id: string) => {
     await deleteConversation(id).catch(() => {});
@@ -411,6 +416,10 @@ export default function ChatView() {
     // implied — so an empty box with an attachment still sends.
     if ((!text.trim() && !attached.length && !attachedFiles.length)
         || !activeModel || generating) return;
+    // Audio contexts may only be unlocked by a user gesture. Do that now,
+    // before loading a model, but do not actually make noise until the first
+    // visible reply text arrives.
+    printerSound.prepare();
     const images = attached;
     const files = attachedFiles;
     const next = [...messages, {
@@ -452,7 +461,10 @@ export default function ChatView() {
           controller.signal,
         )) {
           if (epoch !== generationEpoch.current) return;
-          if (chunk.kind === 'text') full += chunk.text;
+          if (chunk.kind === 'text') {
+            full += chunk.text;
+            if (cleanReply(stripLookups(full), true).trim()) printerSound.start();
+          }
           // Hands-free: each finished sentence is spoken while the rest is
           // still being written, which is most of the wait removed.
           if (say && sentences && chunk.kind === 'text') {
@@ -472,6 +484,9 @@ export default function ChatView() {
             return copy;
           });
         }
+        // Lookups can leave a long gap between model streams. The printer is
+        // tied to tokens being written, not to network work happening nearby.
+        printerSound.stop();
 
         // With pictures off, a model that asks for one anyway is simply not
         // given one — the switch has to hold whatever the model does with the
@@ -630,6 +645,7 @@ export default function ChatView() {
         setMessages((m) => [...m, { role: 'assistant', content: `⚠ ${e}` }]);
       }
     } finally {
+      printerSound.stop();
       if (epoch === generationEpoch.current) {
         chatAbort.current = null;
         setGenerating(false);
@@ -641,6 +657,7 @@ export default function ChatView() {
     generationEpoch.current += 1;
     chatAbort.current?.abort();
     chatAbort.current = null;
+    printerSound.stop();
     setGenerating(false);
   }
 
