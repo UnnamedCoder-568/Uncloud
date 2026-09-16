@@ -51,6 +51,21 @@ def main() -> None:
     if args.tag and args.tag != f"v{version}":
         fail(f"tag {args.tag!r} does not match v{version}")
 
+    # The desktop command configures the updater explicitly, while Tauri's
+    # packager reads this JSON when creating signed artifacts. Both must trust
+    # the same key: leaving the JSON empty builds the whole application and
+    # only then fails while signing it.
+    public_key = (TAURI / "updater-pubkey.txt").read_text(encoding="utf-8").strip()
+    updater = tauri.get("plugins", {}).get("updater", {})
+    if updater.get("pubkey") != public_key:
+        fail("tauri.conf.json updater pubkey does not match updater-pubkey.txt")
+    expected_endpoint = (
+        "https://github.com/UnnamedCoder-568/Uncloud/"
+        "releases/latest/download/latest.json"
+    )
+    if updater.get("endpoints") != [expected_endpoint]:
+        fail("tauri.conf.json updater endpoint is missing or incorrect")
+
     resources = tauri["bundle"]["resources"]
     included: set[Path] = set()
     for source in resources:
