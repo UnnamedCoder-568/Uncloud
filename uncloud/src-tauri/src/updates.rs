@@ -183,8 +183,12 @@ mod tests {
     }
 
     #[test]
-    fn this_build_has_no_key_until_one_is_generated() {
-        // Documents the current state. Delete this test when the key lands.
-        assert!(PUBKEY.trim().is_empty());
+    fn this_build_can_verify_an_update() {
+        // The key landed. An empty one here means every installed copy stops
+        // looking for updates, silently — which is the failure this catches.
+        let key = PUBKEY.trim();
+        assert!(!key.is_empty(), "updater-pubkey.txt is empty");
+        assert!(key.len() > 40 && !key.contains('\n'),
+                "the public key should be one line of base64");
     }
 }
