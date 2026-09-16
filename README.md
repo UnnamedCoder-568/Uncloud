@@ -2,26 +2,28 @@
 
 Uncloud is a local-first AI studio for chat, image generation, video, voice,
 model management, and agent workflows. The desktop interface runs on your
-machine and talks to a private Python engine on localhost 
+machine and talks to a private Python engine on localhost.
+
 Created by Aswin Ajith.
 
-> **Tester release:** v0.3.0-test.2 is an early prerelease. Windows, Linux, and
-> macOS packages are intended for external testing and are not code-signed.
+> **Current release:** v0.4.0. Windows, Linux, and Apple-silicon macOS packages
+> are intended for external testing and are not code-signed or notarised.
 
 ## Download
 
 | Platform | Download | Run |
 | --- | --- | --- |
-| Windows 10/11 x64 | [Uncloud-Windows-x64.exe](https://github.com/UnnamedCoder-568/Uncloud/releases/download/v0.3.0-test.2/Uncloud-Windows-x64.exe) | Open the installer, then launch Uncloud from the Start menu. |
-| Linux x64 | [Uncloud-Linux-x64.AppImage](https://github.com/UnnamedCoder-568/Uncloud/releases/download/v0.3.0-test.2/Uncloud-Linux-x64.AppImage) | Make it executable and run it. |
-| macOS Apple Silicon | [Uncloud-macOS-Apple-Silicon.dmg](https://github.com/UnnamedCoder-568/Uncloud/releases/download/v0.3.0-test.2/Uncloud-macOS-Apple-Silicon.dmg) | Open the DMG, then drag Uncloud to Applications. |
+| Windows 10/11 x64 | [Uncloud-Windows-x64.exe](https://github.com/UnnamedCoder-568/Uncloud/releases/download/v0.4.0/Uncloud-Windows-x64.exe) | Open the installer, then launch Uncloud from the Start menu. |
+| Linux x64 | [Uncloud-Linux-x64.AppImage](https://github.com/UnnamedCoder-568/Uncloud/releases/download/v0.4.0/Uncloud-Linux-x64.AppImage) | Make it executable and run it. |
+| macOS Apple Silicon | [Uncloud-macOS-Apple-Silicon.dmg](https://github.com/UnnamedCoder-568/Uncloud/releases/download/v0.4.0/Uncloud-macOS-Apple-Silicon.dmg) | Open the DMG, then drag Uncloud to Applications. |
 
 All release downloads and SHA-256 checksums are also on the
 [Releases page](https://github.com/UnnamedCoder-568/Uncloud/releases).
 
 ### Intel Macs are not supported
 
-The `Uncloud-macOS-Intel.dmg` attached to v0.3.0-test.2 installs, and then its
+The `Uncloud-macOS-Intel.dmg` attached to the older v0.3.0-test.2 release
+installs, and then its
 engine cannot finish setting itself up. PyTorch published its last macOS
 x86_64 build at 2.2.2 and the engine needs 2.13 or newer, so there is no
 version of the dependency to install on an Intel Mac. The download has been
@@ -96,5 +98,5 @@ installer.
 ## Licence
 
 A source licence has not yet been selected. Until one is added, copyright law
-applies by default. The prerelease is provided for testing, not as a grant to
+applies by default. The release is provided for testing, not as a grant to
 redistribute or modify the source.
