@@ -39,3 +39,34 @@ def test_every_engine_package_is_bundled() -> None:
 
 def test_the_package_root_is_bundled() -> None:
     assert "../../sidecar/uncloud_engine/*.py" in _resources()
+
+
+def test_the_native_listener_is_built_and_bundled() -> None:
+    """Talking natively needs three things to agree, and nothing else notices
+    when one of them is dropped: a Swift source, a build step that compiles it
+    on macOS, and a bundle entry that ships it. Miss the build step and the app
+    quietly falls back to Whisper — slower, and only on the machines where the
+    fast path was the whole point."""
+    root = Path(__file__).resolve().parents[2]
+    assert (root / "uncloud" / "src-tauri" / "listener" / "main.swift").is_file()
+    assert (root / "uncloud" / "scripts" / "build_listener.sh").is_file()
+
+    workflow = (root / ".github" / "workflows" / "build.yml").read_text(encoding="utf-8")
+    assert "build_listener.sh" in workflow, "the release build never compiles the listener"
+
+    config = json.loads((root / "uncloud" / "src-tauri" / "tauri.macos.conf.json")
+                        .read_text(encoding="utf-8"))
+    assert config["bundle"]["resources"].get("binaries/uncloud-listen") == "uncloud-listen"
+
+
+def test_the_listener_carries_its_own_usage_descriptions() -> None:
+    """macOS reads them from the process that asks, and a command-line tool has
+    no bundle to read them from: without them the helper is killed on its first
+    request, which reaches the user as a crash with no explanation."""
+    root = Path(__file__).resolve().parents[2]
+    plist = (root / "uncloud" / "src-tauri" / "listener" / "Info.plist").read_text(encoding="utf-8")
+    assert "NSSpeechRecognitionUsageDescription" in plist
+    assert "NSMicrophoneUsageDescription" in plist
+    # And the app, because it is the responsible process when it spawns one.
+    app = (root / "uncloud" / "src-tauri" / "Info.plist").read_text(encoding="utf-8")
+    assert "NSSpeechRecognitionUsageDescription" in app

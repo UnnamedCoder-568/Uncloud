@@ -188,7 +188,9 @@ mod tests {
         // looking for updates, silently — which is the failure this catches.
         let key = PUBKEY.trim();
         assert!(!key.is_empty(), "updater-pubkey.txt is empty");
-        assert!(key.len() > 40 && !key.contains('\n'),
-                "the public key should be one line of base64");
+        assert!(
+            key.len() > 40 && !key.contains('\n'),
+            "the public key should be one line of base64"
+        );
     }
 }

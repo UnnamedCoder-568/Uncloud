@@ -11,7 +11,7 @@ import ReplyVoice from '../components/ReplyVoice';
 import AddFromDisk from '../components/AddFromDisk';
 import { useLibraryVersion } from '../lib/library-changed';
 import { splitThinking } from '../lib/thinking';
-import { Conversation } from '../lib/converse';
+import { Sentences, useTalk } from '../lib/useTalk';
 import { MAX_ROUNDS, describe, findLookups, resultsTurn, stripLookups } from '../lib/lookup';
 import { getLibrary, startEngine, engineStatus, streamChat, transcribeAudio, speakReply, IMAGE_MARKER, chatSystemPrompt, quickImagePreview,
   listConversations, readConversation, writeConversation, deleteConversation,
@@ -92,20 +92,15 @@ export default function ChatView() {
     } catch { /* a browser refusing storage is not worth an error */ }
   }, [voice, manner]);
 
-  //: Hands-free conversation. Held in a ref because it owns a microphone and
-  //  an audio graph, and both have to be released on unmount whatever else
-  //  happens.
-  const conversation = useRef<Conversation | null>(null);
   //: The loop is built once and lives across renders, while `send` closes over
   //  state that changes every keystroke. The ref is what keeps the loop calling
   //  the CURRENT send rather than the one that existed when it started.
-  const sendRef = useRef<(text: string, speak: boolean) => Promise<void>>(
+  const sendRef = useRef<(text: string, speak: boolean,
+                          say?: (sentence: string) => void) => Promise<void>>(
     async () => {});
-  const [conversing, setConversing] = useState(false);
   //: The conversation loop has no transcript of its own to fail into — a
   //  microphone that was refused has to say so somewhere.
   const [lastError, setLastError] = useState<string | null>(null);
-  const [heard, setHeard] = useState<'listening' | 'hearing' | 'thinking' | 'speaking' | 'off'>('off');
 
   const [web, setWeb] = useState(() => {
     try { return localStorage.getItem('uncloud.chat.web') !== 'off'; }
@@ -236,43 +231,20 @@ export default function ChatView() {
    *  only written is not a conversation, and having to notice a separate
    *  toggle to hear it would be a trap.
    */
-  const toggleConversation = useCallback(async () => {
-    if (conversation.current?.active) {
-      conversation.current.stop();
-      conversation.current = null;
-      setConversing(false);
-      return;
-    }
-    const loop = new Conversation({
-      onState: setHeard,
-      onError: (message) => { setLastError(message); setConversing(false); },
-      onUtterance: async (audio) => {
-        // The same speech-to-text model dictation already uses; the loop is
-        // a different way of reaching it, not a second engine. Read through a
-        // ref: the loop is built once, and it used to capture the model as it
-        // was on that render — null, before the library had loaded — so it
-        // listened, heard, and silently did nothing with what it heard.
-        const stt = sttRef.current;
-        if (!stt) return;
-        const said = await transcribeAudio(stt.path, audio, 'turn.webm');
-        if (!said.trim()) return;
-        // Spoken aloud, and the reply is spoken back — which is what makes
-        // this a conversation rather than dictation into a text box.
-        await sendRef.current(said, true);
-      },
-    });
-    conversation.current = loop;
-    setConversing(true);
-    setAutoSpeak(true);
-    await loop.start();
-  }, []);
+  //: Hands-free, on the shared loop: natively where this Mac can listen for
+  //  itself, and through a speech model everywhere else. Each sentence of the
+  //  reply is spoken as it is written rather than the whole answer at the end.
+  const talk = useTalk(voice, async (said, say) => {
+    await sendRef.current(said, true, say);
+  });
 
-  // The microphone must not outlive the view. Nothing else releases it, and a
-  // recording indicator that stays lit is alarming and correct to be alarmed by.
-  useEffect(() => () => {
-    conversation.current?.stop();
-    conversation.current = null;
-  }, []);
+  const toggleConversation = useCallback(() => {
+    // Speaking is forced on while it runs — a conversation whose reply is only
+    // written is not a conversation, and a separate toggle to hear it would be
+    // a trap.
+    if (!talk.active) setAutoSpeak(true);
+    talk.toggle();
+  }, [talk]);
 
   useEffect(() => { sendRef.current = send; });
 
@@ -358,7 +330,8 @@ export default function ChatView() {
     picker.click();
   }, []);
 
-  async function send(text: string, readAloud: boolean) {
+  async function send(text: string, readAloud: boolean,
+                      say?: (sentence: string) => void) {
     // A picture on its own is a perfectly good question — "what is this?" is
     // implied — so an empty box with an attachment still sends.
     if ((!text.trim() && !attached.length) || !activeModel || generating) return;
@@ -387,6 +360,9 @@ export default function ChatView() {
       //  something up, so its own request and the results are both in context
       //  for the answer that follows.
       let sent: ChatMessage[] = [...next];
+      //: Hands-free only: the reply is cut into sentences as it is written so
+      //  each can be spoken while the rest is still coming.
+      const sentences = say ? new Sentences() : null;
 
       for (let round = 0; ; round++) {
         full = '';
@@ -395,6 +371,11 @@ export default function ChatView() {
           controller.signal,
         )) {
           if (chunk.kind === 'text') full += chunk.text;
+          // Hands-free: each finished sentence is spoken while the rest is
+          // still being written, which is most of the wait removed.
+          if (say && sentences && chunk.kind === 'text') {
+            for (const sentence of sentences.push(chunk.text)) say(stripLookups(sentence));
+          }
           setMessages((m) => {
             const copy = [...m];
             const prev = copy[copy.length - 1];
@@ -510,25 +491,24 @@ export default function ChatView() {
       if (!conversationId) setConversationId(id);
       void persist(id, [...next, { role: 'assistant', content: full } as ChatMessage]);
 
-      if (readAloud && full.trim()) {
+      // The tail: an answer that ends without punctuation, or a last clause
+      // too short to have been spoken on its own.
+      if (say && sentences) {
+        const tail = stripLookups(sentences.rest()).trim();
+        if (tail) say(tail);
+      }
+      if (readAloud && !say && full.trim()) {
         setSpeaking(true);
         try {
           const url = await speakReply(full.trim(), voice);
           if (audioRef.current) {
             audioRef.current.src = url;
-            // Deaf while it talks, or the reply becomes the next question and
-            // it converses with itself until stopped.
-            conversation.current?.setSpeaking(true);
-            try {
-              await audioRef.current.play();
-              await new Promise<void>((resolve) => {
-                const done = () => resolve();
-                audioRef.current!.onended = done;
-                audioRef.current!.onerror = done;
-              });
-            } finally {
-              conversation.current?.setSpeaking(false);
-            }
+            await audioRef.current.play();
+            await new Promise<void>((resolve) => {
+              const done = () => resolve();
+              audioRef.current!.onended = done;
+              audioRef.current!.onerror = done;
+            });
           }
         } finally {
           setSpeaking(false);
@@ -721,23 +701,25 @@ export default function ChatView() {
           {/* Hands-free. The state is written out rather than left to a colour,
               because "is it listening to me right now" is the one question a
               voice interface must never leave ambiguous. */}
-          {sttModel && (
+          {talk.ready && (
             <button
               onClick={toggleConversation}
               disabled={!activeModel}
-              title={conversing
+              title={talk.active
                 ? 'Stop the conversation'
-                : 'Talk instead of typing — it listens, answers aloud, and listens again'}
-              className={conversing ? 'pill pill-on' : 'pill'}
-              style={conversing ? { color: 'var(--accent)' } : undefined}
+                : talk.native
+                  ? 'Talk instead of typing — this Mac transcribes as you speak'
+                  : 'Talk instead of typing — it listens, answers aloud, and listens again'}
+              className={talk.active ? 'pill pill-on' : 'pill'}
+              style={talk.active ? { color: 'var(--accent)' } : undefined}
             >
-              {conversing ? <AudioLines size={15} className="animate-pulse" />
+              {talk.active ? <AudioLines size={15} className="animate-pulse" />
                 : <MessagesSquare size={15} />}
               <span>
-                {!conversing ? 'Converse'
-                  : heard === 'hearing' ? 'Listening…'
-                  : heard === 'thinking' ? 'Thinking…'
-                  : heard === 'speaking' ? 'Speaking…'
+                {!talk.active ? 'Converse'
+                  : talk.state === 'hearing' ? 'Listening…'
+                  : talk.state === 'thinking' ? 'Thinking…'
+                  : talk.state === 'speaking' ? 'Speaking…'
                   : 'Your turn'}
               </span>
             </button>

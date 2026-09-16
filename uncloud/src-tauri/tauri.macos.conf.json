@@ -1,7 +1,8 @@
 {
   "bundle": {
     "resources": {
-      "binaries/uv": "uv"
+      "binaries/uv": "uv",
+      "binaries/uncloud-listen": "uncloud-listen"
     },
     "macOS": {
       "entitlements": "entitlements.plist"
