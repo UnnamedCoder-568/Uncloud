@@ -10,6 +10,9 @@ can use a quick draft, while an explicit quality or size request can invoke a
 full-quality render saved to Outputs.
 
 The interface is monochrome by default with user-selectable theme and accent.
+Chat can also, entirely optionally, clatter like an old dot-matrix printer while
+it writes a visible reply. The sound remains off by default and stops for model
+loading, thinking, searches, cancellation, errors and navigation.
 This release also fixes Windows OAuth/MCP configuration storage, model-placement
 estimates, sidecar cleanup, voice status polling, and Stop/Unload handling for
 speech, music and narration.
