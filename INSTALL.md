@@ -3,7 +3,7 @@
 ## Normal tester installation
 
 Testers should use a package from the
-[v0.4.4 release](https://github.com/UnnamedCoder-568/Uncloud/releases/tag/v0.4.4).
+[v0.4.5 release](https://github.com/UnnamedCoder-568/Uncloud/releases/tag/v0.4.5).
 Building from source is not required.
 
 ### Windows x64

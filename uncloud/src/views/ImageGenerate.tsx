@@ -67,6 +67,10 @@ export default function ImageGenerate() {
   const [urls, setUrls] = useState<Record<string, string>>({});
   //: The image shown large. In a batch, none until one is chosen from the grid.
   const [focus, setFocus] = useState<string | null>(null);
+  //: Between pressing Stop and the render noticing. A diffusion step cannot be
+  //  interrupted halfway, so on a slow model there are a few seconds where
+  //  nothing has changed yet and the button must not look ignored.
+  const [stopping, setStopping] = useState(false);
   const job = batch.find((j) => j.id === focus) ?? (batch.length === 1 ? batch[0] : null);
   const imageUrl = job ? urls[job.id] ?? null : null;
 
@@ -209,6 +213,7 @@ export default function ImageGenerate() {
   function begin(started: ImageJob) {
     Object.values(urls).forEach((u) => URL.revokeObjectURL(u));
     setUrls({});
+    setStopping(false);
     const jobs = started.batch?.length ? started.batch : [started];
     setBatch(jobs);
     setFocus(jobs.length === 1 ? jobs[0].id : null);
@@ -449,12 +454,16 @@ export default function ImageGenerate() {
                 </span>
               )}
               {/* A render is minutes of the whole machine. Without this the
-                  only way out of one started by mistake was to quit. */}
+                  only way out of one started by mistake was to quit.
+                  It ends at the next step, which on a slow model is a few
+                  seconds away — so the button says so rather than appearing
+                  to have done nothing. */}
               <button
-                onClick={() => { void stopImage(); }}
-                className="text-xs px-3 py-1 rounded-full border border-[var(--border-soft)] text-[var(--text-dim)] hover:text-white hover:border-[var(--text-faint)] transition"
+                onClick={() => { setStopping(true); void stopImage(); }}
+                disabled={stopping}
+                className="text-xs px-3 py-1 rounded-full border border-[var(--border-soft)] text-[var(--text-dim)] hover:text-white hover:border-[var(--text-faint)] transition disabled:opacity-60"
               >
-                Stop
+                {stopping ? 'Stopping…' : 'Stop'}
               </button>
             </div>
           ) : job?.status === 'cancelled' ? (

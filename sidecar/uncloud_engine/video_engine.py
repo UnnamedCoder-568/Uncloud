@@ -30,6 +30,7 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
+from .cancellation import Cancelled
 from .config import output_dir_for
 from .core import placement
 from .output_check import verify_video
@@ -195,10 +196,6 @@ class VideoJob:
             "placement": self.placement,
             "done": self.status in ("done", "error", "cancelled"),
         }
-
-
-class Cancelled(RuntimeError):
-    """Raised inside a running generation when someone presses Stop."""
 
 
 class VideoEngine:

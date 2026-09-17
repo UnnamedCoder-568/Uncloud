@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .cancellation import Cancelled
 from .config import output_dir_for
 from .flux2_profile import flux2_profile_runtime, profile_for
 from .mflux_runtime import can_run_in_process, mflux_runtime
@@ -44,10 +45,6 @@ def _fit_within_budget(reference_path: str) -> tuple[int, int] | None:
 
 def _mflux_bin(cli_name: str) -> str | None:
     return shutil.which(cli_name)
-
-
-class Cancelled(RuntimeError):
-    """Raised inside a running generation when someone presses Stop."""
 
 
 @dataclass
