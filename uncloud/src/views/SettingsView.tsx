@@ -185,7 +185,10 @@ export default function SettingsView() {
                       .map(([k, v]) => (
                         <li key={k} className="truncate">
                           <span className="text-[var(--text-faint)]">{k}: </span>
-                          {v!.split('/').pop()}
+                          {/* Whatever the engine says, read as a path: a value
+                              of an unexpected shape here took the whole
+                              application down rather than one line of a list. */}
+                          {String(v).split('/').pop()}
                         </li>
                       ))}
                     {resident.speech_workers > 0 && <li>Voice: {resident.speech_workers} active</li>}

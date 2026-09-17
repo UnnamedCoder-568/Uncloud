@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { printerSoundEnabled, setPrinterSoundEnabled } from './printer-sound';
+import { printerSoundEnabled, printerVolume, setPrinterSoundEnabled,
+         setPrinterVolume } from './printer-sound';
 
 function fakeStorage(initial?: string) {
   const values = new Map<string, string>();
@@ -24,6 +25,26 @@ describe('old printer sound preference', () => {
     expect(printerSoundEnabled()).toBe(true);
     setPrinterSoundEnabled(false);
     expect(printerSoundEnabled()).toBe(false);
+  });
+
+  it('starts at a volume somebody can hear, and remembers a new one', () => {
+    vi.stubGlobal('localStorage', fakeStorage());
+    expect(printerVolume()).toBe(0.6);
+    setPrinterVolume(0.25);
+    expect(printerVolume()).toBe(0.25);
+  });
+
+  it('never goes to silent-but-on, or past the top of the slider', () => {
+    vi.stubGlobal('localStorage', fakeStorage());
+    // Off is the switch's job. A volume of zero would be a printer that is
+    // enabled, does its work, and cannot be heard — indistinguishable from
+    // the feature being broken.
+    setPrinterVolume(0);
+    expect(printerVolume()).toBe(0.05);
+    setPrinterVolume(4);
+    expect(printerVolume()).toBe(1);
+    setPrinterVolume(Number.NaN);
+    expect(printerVolume()).toBe(0.6);
   });
 
   it('fails silent when preferences are unavailable', () => {

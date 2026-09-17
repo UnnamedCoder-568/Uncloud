@@ -14,6 +14,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from uncloud_engine.gguf_diffusion import assembly_for
 
 
@@ -91,6 +93,10 @@ def test_the_engine_loads_a_gguf_through_the_assembly(tmp_path: Path) -> None:
     """The branch that matters at generation time: a .gguf image model must not
     be handed to the single-file SDXL loader, which is what every other loose
     checkpoint is."""
+    # The loader reaches for torch and diffusers before it reaches the branch,
+    # and neither is installed where these tests run in CI.
+    pytest.importorskip("diffusers")
+
     from uncloud_engine import gguf_diffusion
     from uncloud_engine import image_engine as engine_mod
 
