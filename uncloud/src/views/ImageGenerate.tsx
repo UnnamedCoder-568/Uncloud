@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ChevronDown, LayoutGrid, Loader2, Shuffle, SlidersHorizontal, Sparkles, UserRound, UserRoundPlus } from 'lucide-react';
 import { getLibrary, generateImage, editImage, getImageJob, fetchImageBlobUrl,
-         listCharacters, saveCharacter } from '../lib/sidecar';
+         listCharacters, saveCharacter, stopImage } from '../lib/sidecar';
 import Dictate from '../components/Dictate';
 import SaveActions from '../components/SaveActions';
 import AddFromDisk from '../components/AddFromDisk';
 import { useLibraryVersion } from '../lib/library-changed';
+import { onWake, remember, remembered } from '../lib/awake';
 import type { LocalModel, ImageJob, Character } from '../lib/sidecar';
 import { onCharacterListChange } from '../lib/characters-changed';
 import { isNarrow } from '../lib/platform';
@@ -25,7 +26,17 @@ function defaultsFor(model: LocalModel | null | undefined) {
 
 // Engines with a generation path behind them. The rest are listed so it's clear
 // they were found, rather than hidden as though they were never there.
-const USABLE = new Set(['mflux', 'diffusers', 'flux2-profile']);
+const USABLE = new Set(['mflux', 'diffusers', 'flux2-profile', 'gguf-diffusion']);
+
+// What to call an engine in the picker. "gguf-diffusion" is the engine's own
+// name for a lone transformer completed from a pipeline already on the disk;
+// what matters to the person choosing is that it was put together, not how.
+const ENGINE_LABEL: Record<string, string> = { 'gguf-diffusion': 'assembled' };
+
+//: Where the ids of the last press are kept. A phone browser discards a
+//  background tab and reloads it on return; the render carries on regardless,
+//  and this is what lets the page find it again.
+const REMEMBERED = 'uncloud.image.jobs';
 
 export default function ImageGenerate() {
   const [models, setModels] = useState<LocalModel[]>([]);
@@ -53,41 +64,11 @@ export default function ImageGenerate() {
   }, [count]);
   //: Every job the last press started, and the pictures that have finished.
   const [batch, setBatch] = useState<ImageJob[]>([]);
-  const jobsRestored = useRef(false);
   const [urls, setUrls] = useState<Record<string, string>>({});
   //: The image shown large. In a batch, none until one is chosen from the grid.
   const [focus, setFocus] = useState<string | null>(null);
   const job = batch.find((j) => j.id === focus) ?? (batch.length === 1 ? batch[0] : null);
   const imageUrl = job ? urls[job.id] ?? null : null;
-
-  // A mobile browser is free to discard a backgrounded page. The engine owns
-  // the render; these ids are the receipt that lets a fresh page find it again.
-  useEffect(() => {
-    let ids: string[] = [];
-    try { ids = JSON.parse(localStorage.getItem('uncloud.image.jobs') || '[]'); }
-    catch { ids = []; }
-    Promise.all(ids.slice(0, 8).map((id) => getImageJob(id).catch(() => null)))
-      .then(async (restored) => {
-        const jobs = restored.filter((item): item is ImageJob => item !== null);
-        if (jobs.length) {
-          setBatch(jobs);
-          setFocus(jobs.length === 1 ? jobs[0].id : null);
-          for (const item of jobs) {
-            if (item.done && item.status === 'done') {
-              const url = await fetchImageBlobUrl(item.id).catch(() => null);
-              if (url) setUrls((current) => ({ ...current, [item.id]: url }));
-            }
-          }
-        }
-      })
-      .finally(() => { jobsRestored.current = true; });
-  }, []);
-
-  useEffect(() => {
-    if (!jobsRestored.current || !batch.length) return;
-    try { localStorage.setItem('uncloud.image.jobs', JSON.stringify(batch.map((item) => item.id))); }
-    catch { /* private window: the engine still owns the job */ }
-  }, [batch]);
 
   //: The subject to keep consistent across generations. Creating a character
   //  was already possible; using one was not, which made the feature a filing
@@ -115,22 +96,62 @@ export default function ImageGenerate() {
     });
   }, [libraryVersion]);
 
+  // Read through refs by the loop below, which is built once and lives for as
+  // long as the view: an interval rebuilt on every progress tick is an
+  // interval that never actually elapses.
+  const batchRef = useRef(batch);
+  const urlsRef = useRef(urls);
+  useEffect(() => { batchRef.current = batch; }, [batch]);
+  useEffect(() => { urlsRef.current = urls; }, [urls]);
+
   useEffect(() => {
-    if (!batch.some((j) => !j.done)) return;
-    const t = setInterval(async () => {
-      const pending = batch.filter((j) => !j.done);
-      const updated = await Promise.all(pending.map((j) => getImageJob(j.id).catch(() => j)));
-      const byId = new Map(updated.map((j) => [j.id, j]));
-      setBatch((current) => current.map((j) => byId.get(j.id) ?? j));
-      for (const u of updated) {
-        if (u.done && u.status === 'done') {
-          const url = await fetchImageBlobUrl(u.id).catch(() => null);
-          if (url) setUrls((m) => ({ ...m, [u.id]: url }));
+    let stopped = false;
+
+    const sync = async () => {
+      if (stopped) return;
+      const pending = batchRef.current.filter((j) => !j.done);
+      if (pending.length) {
+        const updated = await Promise.all(pending.map((j) => getImageJob(j.id).catch(() => j)));
+        const byId = new Map(updated.map((j) => [j.id, j]));
+        if (!stopped) setBatch((current) => current.map((j) => byId.get(j.id) ?? j));
+      }
+      // Any finished picture not collected yet — tried again on every pass
+      // rather than only in the tick where the job turned done. On a phone
+      // that one fetch is often the request the browser cancelled on its way
+      // into the background, and the picture then never appeared at all.
+      for (const j of batchRef.current) {
+        if (stopped) return;
+        if (j.done && j.status === 'done' && !urlsRef.current[j.id]) {
+          const url = await fetchImageBlobUrl(j.id).catch(() => null);
+          if (url && !stopped) setUrls((m) => (m[j.id] ? m : { ...m, [j.id]: url }));
         }
       }
-    }, 800);
-    return () => clearInterval(t);
-  }, [batch]);
+    };
+
+    const t = setInterval(() => { void sync(); }, 800);
+    // Back from a background tab: catch up now rather than at the next tick,
+    // which on a phone may be a tick that has not run since you left.
+    const wake = onWake(() => { void sync(); });
+    return () => { stopped = true; clearInterval(t); wake(); };
+  }, []);
+
+  // The render this view started before the browser put the page away. The
+  // engine kept going; this is how the page finds its way back to it.
+  useEffect(() => {
+    const ids = remembered(REMEMBERED);
+    if (!ids.length) return;
+    let dead = false;
+    // Bounded: a batch is at most eight, and a stored list longer than that is
+    // something corrupted rather than work worth chasing.
+    void Promise.all(ids.slice(0, 8).map((id) => getImageJob(id).catch(() => null)))
+      .then((found) => {
+        const jobs = found.filter((j): j is ImageJob => !!j);
+        if (dead || !jobs.length) return;
+        setBatch(jobs);
+        setFocus(jobs.length === 1 ? jobs[0].id : null);
+      });
+    return () => { dead = true; };
+  }, []);
 
   /** Forget one image — it was discarded, file and all. */
   function forget(id: string) {
@@ -140,7 +161,11 @@ export default function ImageGenerate() {
       delete next[id];
       return next;
     });
-    setBatch((b) => b.filter((j) => j.id !== id));
+    setBatch((b) => {
+      const left = b.filter((j) => j.id !== id);
+      remember(REMEMBERED, left.map((j) => j.id));
+      return left;
+    });
     setFocus(null);
   }
 
@@ -187,6 +212,7 @@ export default function ImageGenerate() {
     const jobs = started.batch?.length ? started.batch : [started];
     setBatch(jobs);
     setFocus(jobs.length === 1 ? jobs[0].id : null);
+    remember(REMEMBERED, jobs.map((j) => j.id));
   }
 
   async function generate() {
@@ -295,11 +321,13 @@ export default function ImageGenerate() {
                     <span className="flex items-center justify-between gap-2">
                       <span className="text-sm truncate">{m.name}</span>
                       <span className="text-[10px] font-mono text-[var(--text-faint)] uppercase shrink-0">
-                        {usable ? m.engine : 'unsupported'}
+                        {usable ? ENGINE_LABEL[m.engine] ?? m.engine : 'unsupported'}
                       </span>
                     </span>
-                    {!usable && m.note && (
-                      <span className="block text-[10px] text-amber-400/70 mt-0.5 leading-snug">
+                    {(!usable || m.engine === 'gguf-diffusion') && m.note && (
+                      <span className={`block text-[10px] mt-0.5 leading-snug ${
+                        usable ? 'text-[var(--text-faint)]' : 'text-amber-400/70'
+                      }`}>
                         {m.note}
                       </span>
                     )}
@@ -420,7 +448,17 @@ export default function ImageGenerate() {
                       + 'Same prompt on a new seed skips straight to rendering.'}
                 </span>
               )}
+              {/* A render is minutes of the whole machine. Without this the
+                  only way out of one started by mistake was to quit. */}
+              <button
+                onClick={() => { void stopImage(); }}
+                className="text-xs px-3 py-1 rounded-full border border-[var(--border-soft)] text-[var(--text-dim)] hover:text-white hover:border-[var(--text-faint)] transition"
+              >
+                Stop
+              </button>
             </div>
+          ) : job?.status === 'cancelled' ? (
+            <div className="text-sm text-[var(--text-faint)]">Stopped.</div>
           ) : job?.status === 'error' ? (
             <div className="text-sm text-rose-400 max-w-md text-center">{job.error}</div>
           ) : (

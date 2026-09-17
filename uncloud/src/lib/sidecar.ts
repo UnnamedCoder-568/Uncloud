@@ -430,7 +430,7 @@ export async function uploadChatAttachment(file: File): Promise<ChatAttachment> 
 export interface ImageJob {
   id: string;
   prompt: string;
-  status: 'pending' | 'running' | 'done' | 'error';
+  status: 'pending' | 'running' | 'done' | 'error' | 'cancelled';
   step: number;
   total_steps: number;
   done: boolean;
@@ -467,6 +467,10 @@ export async function generateImage(model_path: string, engine: string, prompt: 
 }
 export async function getImageJob(id: string) {
   return api<ImageJob>(`/api/image/jobs/${id}`);
+}
+/** Stop a generation, or every one still running when given no job. */
+export async function stopImage(id?: string) {
+  return apiPost<{ stopped: string[] }>(`/api/image/stop${id ? `?job_id=${id}` : ''}`);
 }
 export interface ShotType {
   id: string;
@@ -1246,7 +1250,7 @@ export async function generateReplyImage(
 export interface VideoJob {
   id: string;
   prompt: string;
-  status: 'pending' | 'running' | 'done' | 'error';
+  status: 'pending' | 'running' | 'done' | 'error' | 'cancelled';
   stage: string;
   step: number;
   total_steps: number;
@@ -1289,6 +1293,11 @@ export async function generateVideo(
 
 export async function getVideoJob(id: string) {
   return api<VideoJob>(`/api/video/jobs/${id}`);
+}
+
+/** Stop a clip being made, or every one still running when given no job. */
+export async function stopVideo(id?: string) {
+  return apiPost<{ stopped: string[] }>(`/api/video/stop${id ? `?job_id=${id}` : ''}`);
 }
 
 export async function fetchVideoBlobUrl(id: string): Promise<string> {

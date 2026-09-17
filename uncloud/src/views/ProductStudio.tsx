@@ -10,11 +10,13 @@ import {
   getLibrary,
   getProductCategories,
   listCharacters,
+  stopImage,
   uploadImage,
 } from '../lib/sidecar';
 import Dictate from '../components/Dictate';
 import AddFromDisk from '../components/AddFromDisk';
 import { useLibraryVersion } from '../lib/library-changed';
+import { onWake, remember, remembered } from '../lib/awake';
 import type { LocalModel, ProductCategory, ImageJob, Character } from '../lib/sidecar';
 import { SplitTabs, useSplit } from '../components/Split';
 import { downloadBlob, inDesktop } from '../lib/platform';
@@ -23,6 +25,9 @@ interface Result {
   job: ImageJob;
   url: string | null;
 }
+
+//: The shots of the last press, kept where a reload can find them.
+const REMEMBERED = 'uncloud.product.jobs';
 
 export default function ProductStudio() {
   const libraryVersion = useLibraryVersion();
@@ -45,8 +50,60 @@ export default function ProductStudio() {
   const [extra, setExtra] = useState('');
 
   const [results, setResults] = useState<Result[]>([]);
-  const [running, setRunning] = useState(false);
+  //: Only the moment between pressing and the engine answering. What happens
+  //  after that is the shots' own business, and is read from them — a set of
+  //  shots the page stopped watching is still being rendered.
+  const [starting, setStarting] = useState(false);
+  const running = starting || results.some((r) => !r.job.done);
   const fileInput = useRef<HTMLInputElement>(null);
+
+  // The shots are watched through a ref by one loop, so that losing the page —
+  // a phone discarding a background tab — costs nothing but the view. See
+  // lib/awake.
+  const resultsRef = useRef(results);
+  useEffect(() => { resultsRef.current = results; }, [results]);
+
+  useEffect(() => {
+    let stopped = false;
+
+    const sync = async () => {
+      if (stopped) return;
+      for (const { job, url } of resultsRef.current) {
+        if (stopped) return;
+        if (!job.done) {
+          const updated = await getImageJob(job.id).catch(() => null);
+          if (updated && !stopped) {
+            setResults((rs) => rs.map((r) => (r.job.id === job.id ? { ...r, job: updated } : r)));
+          }
+          continue;
+        }
+        // Finished, but the picture never arrived: fetched again rather than
+        // only at the moment it finished.
+        if (!url && job.status === 'done') {
+          const got = await fetchImageBlobUrl(job.id).catch(() => null);
+          if (got && !stopped) {
+            setResults((rs) => rs.map((r) => (r.job.id === job.id && !r.url ? { ...r, url: got } : r)));
+          }
+        }
+      }
+    };
+
+    const t = setInterval(() => { void sync(); }, 1500);
+    const wake = onWake(() => { void sync(); });
+    return () => { stopped = true; clearInterval(t); wake(); };
+  }, []);
+
+  // Shots started before the page was put away or reloaded.
+  useEffect(() => {
+    const ids = remembered(REMEMBERED);
+    if (!ids.length) return;
+    let dead = false;
+    void Promise.all(ids.map((id) => getImageJob(id).catch(() => null))).then((found) => {
+      const jobs = found.filter((j): j is ImageJob => !!j);
+      if (!dead && jobs.length) setResults(jobs.map((job) => ({ job, url: null })));
+    });
+    return () => { dead = true; };
+  }, []);
 
   useEffect(() => {
     getLibrary().then((list) => {
@@ -105,7 +162,7 @@ export default function ProductStudio() {
 
   async function run() {
     if (!model || !refPath || selectedShots.length === 0 || running) return;
-    setRunning(true);
+    setStarting(true);
     setResults([]);
     try {
       const jobs = await generateProductShots({
@@ -119,26 +176,11 @@ export default function ProductStudio() {
         extra,
       });
       setResults(jobs.map((job) => ({ job, url: null })));
-
-      // Jobs run one at a time on the engine side; poll until all settle.
-      const pending = new Map(jobs.map((j) => [j.id, j]));
-      while (pending.size > 0) {
-        await new Promise((r) => setTimeout(r, 1500));
-        for (const id of [...pending.keys()]) {
-          const updated = await getImageJob(id);
-          if (!updated.done) {
-            setResults((rs) => rs.map((r) => (r.job.id === id ? { ...r, job: updated } : r)));
-            continue;
-          }
-          pending.delete(id);
-          const url = updated.status === 'done' ? await fetchImageBlobUrl(id).catch(() => null) : null;
-          setResults((rs) => rs.map((r) => (r.job.id === id ? { job: updated, url } : r)));
-        }
-      }
+      remember(REMEMBERED, jobs.map((j) => j.id));
     } catch (e) {
       alert(`Generation failed: ${e}`);
     } finally {
-      setRunning(false);
+      setStarting(false);
     }
   }
 
@@ -353,6 +395,16 @@ export default function ProductStudio() {
           {running ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
           {running ? 'Generating…' : `Generate ${selectedShots.length || ''} shot${selectedShots.length === 1 ? '' : 's'}`}
         </button>
+        {/* A set of shots is a queue: Stop clears the ones not started as well
+            as the one being rendered. */}
+        {running && (
+          <button
+            onClick={() => { void stopImage(); }}
+            className="h-9 rounded-xl border border-[var(--border-soft)] text-xs text-[var(--text-dim)] hover:text-white hover:border-[var(--text-faint)] transition shrink-0"
+          >
+            Stop
+          </button>
+        )}
       </div>
 
       {/* ----------------------------------------------------------- results */}

@@ -174,7 +174,7 @@ def valid_frames(n: int, family: Family | None = None) -> int:
 class VideoJob:
     id: str
     prompt: str
-    status: str = "pending"        # pending | running | done | error
+    status: str = "pending"        # pending | running | done | error | cancelled
     stage: str = ""
     step: int = 0
     total_steps: int = 0
@@ -184,6 +184,8 @@ class VideoJob:
     #: the offloads. Reported so a clip that took six minutes can say why it
     #: was not ninety seconds.
     placement: str = ""
+    #: Asked to stop; read at every denoising step.
+    cancelled: bool = False
 
     def to_dict(self) -> dict:
         return {
@@ -191,8 +193,12 @@ class VideoJob:
             "stage": self.stage, "step": self.step, "total_steps": self.total_steps,
             "output_path": self.output_path, "error": self.error,
             "placement": self.placement,
-            "done": self.status in ("done", "error"),
+            "done": self.status in ("done", "error", "cancelled"),
         }
+
+
+class Cancelled(RuntimeError):
+    """Raised inside a running generation when someone presses Stop."""
 
 
 class VideoEngine:
@@ -201,6 +207,21 @@ class VideoEngine:
         self._tasks: set[asyncio.Task] = set()
         self._pipe = None
         self._loaded_path: str | None = None
+
+    def cancel(self, job_id: str | None = None) -> list[str]:
+        """Stop one clip, or every one still going. Returns what was stopped.
+
+        A clip is several minutes of the whole machine. It stops at its next
+        denoising step, which is seconds away — not at the end of the run.
+        """
+        stopped: list[str] = []
+        for job in self.jobs.values():
+            if job_id is not None and job.id != job_id:
+                continue
+            if job.status in ("pending", "running"):
+                job.cancelled = True
+                stopped.append(job.id)
+        return stopped
 
     def _encode(self, prompt: str, negative_prompt: str, guidance: float,
                 family: Family) -> dict:
@@ -478,6 +499,12 @@ class VideoEngine:
                 job.output_path = out
                 job.status = "done"
                 job.stage = ""
+        except Cancelled:
+            job.status = "cancelled"
+            job.stage = ""
+            # Nobody is waiting on these weights now, and they are the largest
+            # thing in memory — which is usually why Stop was pressed.
+            self.unload()
         except Exception as exc:  # noqa: BLE001 - surface any failure to the UI
             job.status = "error"
             job.error = str(exc)
@@ -573,6 +600,8 @@ class VideoEngine:
         job.stage = "generating"
 
         def progress(_p, step_index, _t, cb_kwargs):
+            if job.cancelled:
+                raise Cancelled
             job.step = int(step_index) + 1
             return cb_kwargs
 
