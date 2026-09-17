@@ -1,5 +1,15 @@
-Uncloud 0.4.5 can stop a generation, run a lone quantised transformer, and pick
-its work back up after a phone puts the page to sleep.
+Uncloud 0.4.6 says something useful when an update cannot be installed, and
+carries everything from 0.4.5: stopping a generation, running a lone quantised
+transformer, and picking work back up after a phone puts the page to sleep.
+
+Updates are signed, and the signing key was rotated during 0.4.2. A copy built
+before that carries the old key and can never verify anything published since —
+correct behaviour, reported as "the signature was created with a different key
+than the one provided", which tells a tester nothing they can act on. It now
+says the copy is too old to update itself and that downloading it once fixes it
+for good, with a link to the releases page beside the message. Anyone still on
+0.4.1 or earlier needs that one manual download; from 0.4.2 onwards the in-app
+updater works normally.
 
 Renders can now be stopped. Image and video jobs end at their next step — a
 batch of four stops as four, queued work never starts, and a stopped clip
