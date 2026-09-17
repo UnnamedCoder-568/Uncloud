@@ -9,6 +9,7 @@ import { onLibraryChange } from '../lib/library-changed';
 import { describeTalk, useTalk } from '../lib/useTalk';
 import { useSettings } from '../lib/useSettings';
 import { onHandoffSignal, takeHandoff } from '../lib/handoff';
+import { printerSound } from '../lib/printer-sound';
 import Markdown from '../components/Markdown';
 
 interface AgentTask {
@@ -103,6 +104,8 @@ export default function ChiselView() {
   }, []);
 
   useEffect(() => { readState(); }, [readState]);
+  // A printer must not outlive the view it was describing.
+  useEffect(() => () => printerSound.stop(), []);
   useEffect(() => onLibraryChange(() => { void readState(); }), [readState]);
 
   async function loadModel(m: LocalModel) {
@@ -138,6 +141,20 @@ export default function ChiselView() {
     void run(said);
   }));
 
+  //: How much of the agent's output has been seen. Chisel is handed whole
+  //  graphs rather than a stream of words, so "the model is writing" is the
+  //  total getting longer — and a step that runs a command in silence should
+  //  not sound like one that is typing.
+  const written = useRef(0);
+
+  function clatter(graph: AgentGraph) {
+    const total = Object.values(graph.tasks ?? {})
+      .reduce((n, task) => n + (task.output?.length ?? 0), 0);
+    if (total <= written.current) return;
+    written.current = total;
+    printerSound.writing();
+  }
+
   async function run(override?: string) {
     const target = (override ?? goal).trim();
     if (!target || phase === 'planning' || phase === 'running') {
@@ -147,6 +164,8 @@ export default function ChiselView() {
     setError(null);
     setGraph(null);
     stopped.current = false;
+    written.current = 0;
+    printerSound.prepare();   // while this is still the Run gesture
     setPhase('planning');
     const epoch = ++runEpoch.current;
     const runId = crypto.randomUUID().replaceAll('-', '');
@@ -188,21 +207,25 @@ export default function ChiselView() {
       if (msg.type === 'planning') setPhase('planning');
       if (msg.type === 'graph') {
         setGraph(msg.graph);
+        clatter(msg.graph);
         setPhase('running');
       }
       if (msg.type === 'done') {
         setGraph(msg.graph);
         setPhase('done');
+        printerSound.stop();
         finish(spokenOutcome(msg.graph));
       }
       if (msg.type === 'error') {
         setError(msg.message);
         setPhase('error');
+        printerSound.stop();
         finish(`That did not work. ${msg.message}`);
       }
       if (msg.type === 'cancelled') {
         if (msg.graph) setGraph(msg.graph);
         setPhase('idle');
+        printerSound.stop();
         finish('');
       }
     };

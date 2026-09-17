@@ -78,7 +78,14 @@ def resident() -> dict:
     try:
         from .image_engine import image_engine
 
-        out["image_pipeline"] = getattr(image_engine, "_pipe_path", None)
+        # The engine keys its resident pipeline by (model, text encoder),
+        # because an uncensored encoder can be swapped into one. What belongs
+        # in a list of what is loaded is the model, as a path: handing the pair
+        # over as it stands sent a two-element list to an interface that reads
+        # this as a filename, and Settings went blank for anyone who opened it
+        # after generating an image.
+        loaded = getattr(image_engine, "_pipe_path", None)
+        out["image_pipeline"] = loaded[0] if isinstance(loaded, tuple) else loaded
     except Exception:  # noqa: BLE001
         pass
     try:
