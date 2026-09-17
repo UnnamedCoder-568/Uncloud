@@ -73,7 +73,7 @@ export const setCheckUpdates = (enabled: boolean) =>
 export const RECHECK_MS = 6 * 60 * 60 * 1000;
 
 /** Where to get a copy when this one cannot replace itself. */
-const RELEASES = 'https://github.com/UnnamedCoder-568/Uncloud/releases/latest';
+export const RELEASES = 'https://github.com/UnnamedCoder-568/Uncloud/releases/latest';
 
 /** What went wrong, said to the person rather than about the mechanism.
  *
