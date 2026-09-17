@@ -6,6 +6,18 @@ Testers should use a package from the
 [v0.4.5 release](https://github.com/UnnamedCoder-568/Uncloud/releases/tag/v0.4.5).
 Building from source is not required.
 
+### Already running 0.4.1 or earlier? Install once by hand
+
+Updates are signed, and the signing key was rotated during 0.4.2. A copy built
+before that rotation carries the old key, so it cannot verify anything published
+since — it will offer the update, download it, and refuse it with *"the signature
+was created with a different key than the one provided"*. That is the check
+working, not a fault.
+
+Download the package for your platform from the release above and install it
+over the old one. From 0.4.2 onwards the in-app updater works normally, and this
+step is not needed again.
+
 ### Windows x64
 
 1. Download `Uncloud-Windows-x64.exe`.

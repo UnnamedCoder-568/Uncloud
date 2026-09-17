@@ -15,7 +15,7 @@ import { AlertTriangle, ArrowUpCircle, Info, Loader2, X } from 'lucide-react';
 import { getSettings } from '../lib/sidecar';
 import { inDesktop } from '../lib/platform';
 import {
-  RECHECK_MS, checkAppUpdate, dismissNotice, getNotices, installAppUpdate,
+  RECHECK_MS, RELEASES, checkAppUpdate, dismissNotice, explain, getNotices, installAppUpdate,
 } from '../lib/updates';
 import type { AppUpdateStatus, Notice } from '../lib/updates';
 
@@ -50,7 +50,7 @@ export default function UpdateBanner() {
     try {
       await installAppUpdate(setProgress);
     } catch (e) {
-      setError(String(e));
+      setError(explain(String(e)));
       setInstalling(false);
     }
   }
@@ -73,7 +73,16 @@ export default function UpdateBanner() {
             {available.notes && <span className="text-[var(--text-faint)]"> — {available.notes.split('\n')[0]}</span>}
           </span>
           <span className="flex-1" />
-          {error && <span className="text-rose-400">{error}</span>}
+          {error && (
+            <span className="text-rose-400">
+              {error}
+              {/* A message that says "download it again" and gives no way to
+                  do so is half a message. */}
+              {' '}
+              <a href={RELEASES} target="_blank" rel="noopener noreferrer"
+                 className="underline hover:text-white">Open releases</a>
+            </span>
+          )}
           <button onClick={install} disabled={installing}
                   className="btn-accent text-xs px-3 py-1 rounded-lg flex items-center gap-1.5 disabled:opacity-60 max-md:min-h-11">
             {installing && <Loader2 size={12} className="animate-spin" />}
