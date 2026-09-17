@@ -1,7 +1,11 @@
-Uncloud 0.4.3 hardens chat and generation across desktop and paired local-network
+Uncloud 0.4.4 hardens chat and generation across desktop and paired local-network
 devices. Replies and long-running image jobs now stay owned by the engine when a
 phone browser is backgrounded, conversations and outputs are isolated per paired
 device, and stale work can no longer land in a different chat.
+
+This hotfix allows the production Windows WebView origin to reach the local
+engine and keeps the bundled uv/Python process in the background. Windows no
+longer opens an engine terminal or reports a healthy engine as unavailable.
 
 Chat now accepts supported images, readable documents and source files; offers
 notes plus editable/downloadable code blocks; and hands the complete context and
