@@ -1,4 +1,6 @@
 use serde::{Deserialize, Serialize};
+#[cfg(windows)]
+use std::fs::OpenOptions;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -33,6 +35,21 @@ pub struct SidecarState {
     /// Why the engine isn't running, kept so the window can open and say so
     /// instead of the process dying before it draws anything.
     pub error: Mutex<Option<String>>,
+}
+
+/// Console programs started by a GUI application open a terminal on Windows
+/// unless CreateProcess is told not to make one. The engine and bundled `uv`
+/// are background implementation details; exposing their console also lets a
+/// person accidentally kill the engine by closing that window.
+pub(crate) fn hide_console(command: &mut Command) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    #[cfg(not(windows))]
+    let _ = command;
 }
 
 impl SidecarState {
@@ -134,7 +151,9 @@ pub fn find_uv(app: &AppHandle) -> Option<PathBuf> {
     }
 
     let probe = if cfg!(windows) { "where" } else { "which" };
-    Command::new(probe)
+    let mut command = Command::new(probe);
+    hide_console(&mut command);
+    command
         .arg("uv")
         .output()
         .ok()
@@ -230,14 +249,17 @@ pub fn install_engine(app: &AppHandle) -> Result<(), String> {
     };
     emit(&format!("Installing into {}", dir.display()));
 
-    let mut child = Command::new(&uv)
+    let mut command = Command::new(&uv);
+    command
         .args(["sync", "--locked", "--no-dev"])
         .current_dir(&dir)
         .env("PATH", child_path_env())
         // uv installs a matching interpreter itself, so the machine needs no Python.
         .env("UV_PYTHON_DOWNLOADS", "automatic")
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::piped());
+    hide_console(&mut command);
+    let mut child = command
         .spawn()
         .map_err(|e| format!("Could not run `{}`: {e}", uv.display()))?;
 
@@ -423,7 +445,7 @@ pub fn spawn_sidecar(app: &AppHandle) -> Result<(Child, SidecarInfo), String> {
             app.package_info().version.to_string(),
         )
         .stdout(Stdio::piped())
-        .stderr(Stdio::inherit());
+        .stderr(engine_stderr());
 
     if let Some(dist) = web_dist(app) {
         command.env("UNCLOUD_WEB_DIST", dist);
@@ -440,6 +462,7 @@ pub fn spawn_sidecar(app: &AppHandle) -> Result<(Child, SidecarInfo), String> {
         use std::os::unix::process::CommandExt;
         command.process_group(0);
     }
+    hide_console(&mut command);
 
     let mut child = command
         .spawn()
@@ -453,7 +476,9 @@ pub fn spawn_sidecar(app: &AppHandle) -> Result<(Child, SidecarInfo), String> {
         .map_err(|e| e.to_string())?
         == 0
     {
-        return Err("Engine exited before printing a handshake".into());
+        return Err(
+            "Engine exited before printing a handshake. See ~/.uncloud/logs/engine.log.".into(),
+        );
     }
 
     let info: SidecarInfo = serde_json::from_str(first_line.trim())
@@ -473,6 +498,33 @@ pub fn spawn_sidecar(app: &AppHandle) -> Result<(Child, SidecarInfo), String> {
     });
 
     Ok((child, info))
+}
+
+/// Preserve the latest engine diagnostics without attaching a terminal to the
+/// Windows GUI application. Unix launches keep their established stderr.
+fn engine_stderr() -> Stdio {
+    #[cfg(windows)]
+    {
+        let log = engine_home()
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .join("logs")
+            .join("engine.log");
+        if let Some(parent) = log.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        return OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .open(log)
+            .map(Stdio::from)
+            .unwrap_or_else(|_| Stdio::null());
+    }
+    #[cfg(not(windows))]
+    {
+        Stdio::inherit()
+    }
 }
 
 pub async fn wait_healthy(port: u16, timeout_secs: u64) -> Result<(), String> {
