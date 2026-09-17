@@ -11,10 +11,11 @@ once and reused. Loading stays slow the first time and is then free.
 
 from __future__ import annotations
 
-import contextlib
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
+
+from .cancellation import Cancelled
 
 # CLI name -> (module, class, ModelConfig factory). The CLI names come from the
 # catalog, which is how a model already declares which variant it needs.
@@ -119,8 +120,17 @@ class _StepProgress:
         self._on_step = on_step
 
     def call_in_loop(self, t, seed, prompt, latents, config, time_steps) -> None:  # noqa: ANN001
-        with contextlib.suppress(Exception):  # progress must never break a render
+        try:
             self._on_step(int(t) + 1)
+        except Cancelled:
+            # The one exception that is allowed through. Suppressing everything
+            # here meant Stop did nothing at all to an mflux render: the
+            # cancellation was swallowed with the progress report, the counter
+            # froze at whatever step it had reached, and the render carried on
+            # to the end and handed over a picture nobody was waiting for.
+            raise
+        except Exception:  # noqa: BLE001 - progress must never break a render
+            pass
 
 
 class MfluxRuntime:
