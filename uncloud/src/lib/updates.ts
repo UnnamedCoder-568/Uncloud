@@ -71,3 +71,25 @@ export const setCheckUpdates = (enabled: boolean) =>
 /** How often an open window checks again. The engine spaces manifest checks
  *  itself; this just keeps a window left open for days from going stale. */
 export const RECHECK_MS = 6 * 60 * 60 * 1000;
+
+/** Where to get a copy when this one cannot replace itself. */
+const RELEASES = 'https://github.com/UnnamedCoder-568/Uncloud/releases/latest';
+
+/** What went wrong, said to the person rather than about the mechanism.
+ *
+ *  The one that matters is the signing key. Updates are signed, and the key
+ *  that signs them was rotated — so a copy installed before the rotation
+ *  cannot verify anything published after it, and never will. The plugin
+ *  reports that as "the signature was created with a different key than the
+ *  one provided", which is true, and tells a person nothing they can act on:
+ *  what they need to know is that this copy has to be downloaded once by hand,
+ *  after which updates work again.
+ */
+export function explain(error: string): string {
+  if (/different key|signature/i.test(error)) {
+    return 'This copy is too old to update itself — the signing key changed after it '
+      + 'was built. Download Uncloud once from the releases page and updates will '
+      + 'work from then on.';
+  }
+  return error.replace(/^Error:\s*/, '');
+}
