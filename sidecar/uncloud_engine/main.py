@@ -2149,6 +2149,17 @@ def get_image_job(job_id: str, request: Request) -> dict:
     return job.to_dict()
 
 
+@app.post("/api/image/stop", dependencies=[Depends(require_token)])
+def stop_image_jobs(job_id: str | None = None) -> dict:
+    """Stop a running generation, or all of them with no job named.
+
+    Not gated: stopping work already approved takes nothing and gives the
+    machine back, and a confirmation in front of that would be one more thing
+    between a person and a render they want to be rid of.
+    """
+    return {"stopped": image_engine.cancel(job_id)}
+
+
 @app.get("/api/image/output/{job_id}", dependencies=[Depends(require_token)])
 def get_image_output(job_id: str, request: Request) -> FileResponse:
     require_job("image", job_id, request)
@@ -2208,6 +2219,13 @@ def video_job(job_id: str, request: Request) -> dict:
     if not job:
         raise HTTPException(status_code=404, detail="No such video job")
     return job.to_dict()
+
+
+@app.post("/api/video/stop", dependencies=[Depends(require_token)])
+def stop_video_jobs(job_id: str | None = None) -> dict:
+    from .video_engine import video_engine
+
+    return {"stopped": video_engine.cancel(job_id)}
 
 
 @app.get("/api/video/output/{job_id}", dependencies=[Depends(require_token)])

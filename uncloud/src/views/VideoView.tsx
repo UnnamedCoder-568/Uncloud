@@ -2,14 +2,21 @@ import { useEffect, useRef, useState } from 'react';
 import { Loader2, Film, Download, ChevronDown, AlertCircle } from 'lucide-react';
 import {
   getBudget, getLibrary, getVideoOptions, generateVideo, getVideoJob, fetchVideoBlobUrl,
+  stopVideo,
 } from '../lib/sidecar';
 import Dictate from '../components/Dictate';
 import AddFromDisk from '../components/AddFromDisk';
 import { useLibraryVersion } from '../lib/library-changed';
+import { onWake, remember, remembered } from '../lib/awake';
 import type { LocalModel, VideoJob, MemoryBudget } from '../lib/sidecar';
 import { SplitTabs, useSplit } from '../components/Split';
 
 /** LTX honours frame counts of the form 8n+1; anything else is padded silently. */
+//: The clip being made, kept where a reload can find it. Minutes of work that
+//  the engine finishes whether or not the page that asked for it is still on
+//  screen — see lib/awake.
+const REMEMBERED = 'uncloud.video.job';
+
 const FRAME_CHOICES = [
   { n: 25, label: '1s' },
   { n: 49, label: '2s' },
@@ -108,29 +115,61 @@ export default function VideoView() {
       .catch(() => undefined);
   }, []);
 
+  // Read by the watching loop below, which is built once: a clip takes
+  // minutes, and an interval rebuilt on every progress tick never elapses.
+  const jobRef = useRef(job);
+  const urlRef = useRef(url);
+  useEffect(() => { jobRef.current = job; }, [job]);
+  useEffect(() => { urlRef.current = url; }, [url]);
+
   useEffect(() => {
-    if (!job || job.done) return;
-    const t = window.setInterval(async () => {
-      const next = await getVideoJob(job.id).catch(() => null);
-      if (!next) return;
-      setJob(next);
-      if (next.done && next.status === 'done') {
-        if (lastUrl.current) URL.revokeObjectURL(lastUrl.current);
-        const u = await fetchVideoBlobUrl(next.id).catch(() => null);
-        lastUrl.current = u;
-        setUrl(u);
+    let stopped = false;
+
+    const sync = async () => {
+      const current = jobRef.current;
+      if (stopped || !current) return;
+      if (!current.done) {
+        const next = await getVideoJob(current.id).catch(() => null);
+        if (stopped) return;
+        if (next) setJob(next);
       }
-    }, 2000);
-    return () => window.clearInterval(t);
-  }, [job]);
+      // A finished clip we have not collected. Retried on every pass: the one
+      // fetch that should have brought it back is often the request a phone
+      // browser cancelled as the page went into the background.
+      const latest = jobRef.current;
+      if (!stopped && latest?.done && latest.status === 'done' && !urlRef.current) {
+        const u = await fetchVideoBlobUrl(latest.id).catch(() => null);
+        if (u && !stopped) {
+          if (lastUrl.current) URL.revokeObjectURL(lastUrl.current);
+          lastUrl.current = u;
+          setUrl(u);
+        }
+      }
+    };
+
+    const t = window.setInterval(() => { void sync(); }, 2000);
+    const wake = onWake(() => { void sync(); });
+    return () => { stopped = true; window.clearInterval(t); wake(); };
+  }, []);
+
+  // The clip this view started before the page was put away or reloaded.
+  useEffect(() => {
+    const [id] = remembered(REMEMBERED);
+    if (!id) return;
+    let dead = false;
+    void getVideoJob(id).then((found) => { if (!dead) setJob(found); }).catch(() => undefined);
+    return () => { dead = true; };
+  }, []);
 
   async function run() {
     if (!model || !prompt.trim() || (job && !job.done)) return;
     setUrl(null);
-    setJob(await generateVideo(model.path, prompt.trim(), {
+    const started = await generateVideo(model.path, prompt.trim(), {
       negative_prompt: negative.trim(),
       frames, width: size.w, height: size.h, steps, guidance,
-    }));
+    });
+    setJob(started);
+    remember(REMEMBERED, [started.id]);
   }
 
   const busy = !!job && !job.done;
@@ -316,6 +355,16 @@ export default function VideoView() {
           {busy ? <Loader2 size={14} className="animate-spin" /> : <Film size={14} />}
           {busy ? (job?.stage || 'Generating…') : 'Generate'}
         </button>
+        {/* A clip is minutes of the whole machine; stopping it should not mean
+            quitting the app. It ends at the next denoising step. */}
+        {busy && (
+          <button
+            onClick={() => { void stopVideo(); }}
+            className="h-9 rounded-xl border border-[var(--border-soft)] text-xs text-[var(--text-dim)] hover:text-white hover:border-[var(--text-faint)] transition"
+          >
+            Stop
+          </button>
+        )}
       </div>
 
       <div className={`flex-1 min-w-0 flex flex-col split-pane${split.on(1)}`}>

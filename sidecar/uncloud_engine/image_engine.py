@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import re
 import shutil
 import time
@@ -45,11 +46,15 @@ def _mflux_bin(cli_name: str) -> str | None:
     return shutil.which(cli_name)
 
 
+class Cancelled(RuntimeError):
+    """Raised inside a running generation when someone presses Stop."""
+
+
 @dataclass
 class ImageJob:
     id: str
     prompt: str
-    status: str = "pending"  # pending | running | done | error
+    status: str = "pending"  # pending | running | done | error | cancelled
     step: int = 0
     total_steps: int = 0
     output_path: str | None = None
@@ -58,12 +63,15 @@ class ImageJob:
     label: str | None = None  # e.g. the shot name in a Product batch
     #: Decided before the job runs, so every image in a batch can be made again.
     seed: int | None = None
+    #: Asked to stop. Read at every step, so a job that has already started
+    #: ends at the next one rather than running to completion unwatched.
+    cancelled: bool = False
 
     def to_dict(self) -> dict:
         return {
             "id": self.id, "prompt": self.prompt, "status": self.status,
             "step": self.step, "total_steps": self.total_steps,
-            "done": self.status in ("done", "error"), "error": self.error,
+            "done": self.status in ("done", "error", "cancelled"), "error": self.error,
             "kind": self.kind, "label": self.label, "seed": self.seed,
             # The UI needs the path to offer Save / Save as / Reveal on a result.
             "output_path": self.output_path,
@@ -84,9 +92,34 @@ class ImageEngine:
         #: One render at a time. Each holds several gigabytes, and a batch or a
         #: set of product shots started together used to load them side by side.
         self._queue = asyncio.Lock()
+        #: Jobs that run as a subprocess, so Stop can end them.
+        self._running: dict[str, Any] = {}
 
     def list_jobs(self) -> list[dict]:
         return [j.to_dict() for j in self.jobs.values()]
+
+    def cancel(self, job_id: str | None = None) -> list[str]:
+        """Stop one job, or everything still going. Returns what was stopped.
+
+        A generation is minutes of the whole machine, and until now the only
+        way out of one started by mistake — the wrong model, a 25-step default
+        on a distilled checkpoint, four images instead of one — was to quit the
+        app. Queued jobs never begin; a running one stops at its next step,
+        which for a subprocess means the subprocess ends now.
+        """
+        stopped: list[str] = []
+        for job in self.jobs.values():
+            if job_id is not None and job.id != job_id:
+                continue
+            if job.status not in ("pending", "running"):
+                continue
+            job.cancelled = True
+            stopped.append(job.id)
+            proc = self._running.get(job.id)
+            if proc is not None:
+                with contextlib.suppress(ProcessLookupError):
+                    proc.terminate()
+        return stopped
 
     def unload(self) -> None:
         """Drop the resident pipeline. Called by the stop button and on exit."""
@@ -113,7 +146,7 @@ class ImageEngine:
 
         if engine_manager.active:
             engine_manager.stop()
-        if engine != "diffusers" and self._pipe is not None:
+        if engine not in ("diffusers", "gguf-diffusion") and self._pipe is not None:
             self.unload()
         if engine != "mflux":
             # A diffusers pipeline and a resident mflux model will not both fit.
@@ -149,6 +182,11 @@ class ImageEngine:
         lora_paths: list[str] | None = None, lora_scales: list[float] | None = None,
     ) -> None:
         async with self._queue:
+            # Stopped while it waited its turn behind another render. Checked
+            # here, where the turn is taken, so a queued job never begins.
+            if job.cancelled:
+                job.status = "cancelled"
+                return
             await self._run_now(job, model_path, engine, prompt, negative_prompt, steps,
                                 guidance, width, height, seed, mflux_cli, mflux_base,
                                 text_encoder_path, lora_paths, lora_scales)
@@ -174,7 +212,7 @@ class ImageEngine:
                         self._run_flux2_profile, job, model_path, prompt, steps,
                         guidance, width, height, seed, text_encoder_path,
                     )
-                elif engine == "diffusers":
+                elif engine in ("diffusers", "gguf-diffusion"):
                     out = await asyncio.to_thread(
                         self._run_diffusers, job, model_path, prompt, negative_prompt,
                         steps, guidance, width, height, seed, text_encoder_path,
@@ -190,9 +228,13 @@ class ImageEngine:
                 verify_image(out)
                 job.output_path = out
                 job.status = "done"
+        except Cancelled:
+            job.status = "cancelled"
         except Exception as exc:  # noqa: BLE001 - surface any generation failure to the UI
-            job.status = "error"
-            job.error = str(exc)
+            # A subprocess killed by Stop dies with a failure of its own; what
+            # the person did was stop it, and that is what they should be told.
+            job.status = "cancelled" if job.cancelled else "error"
+            job.error = None if job.cancelled else str(exc)
 
     def start_edit(
         self, model_path: str, prompt: str, reference_path: str, *,
@@ -219,6 +261,9 @@ class ImageEngine:
         seed: int | None, strength: float | None, mflux_cli: str,
     ) -> None:
         async with self._queue:
+            if job.cancelled:
+                job.status = "cancelled"
+                return
             await self._run_edit_now(job, model_path, prompt, reference_path, steps, guidance,
                                      width, height, seed, strength, mflux_cli)
 
@@ -270,28 +315,36 @@ class ImageEngine:
             verify_image(out_path, what="edited image")
             job.output_path = str(out_path)
             job.status = "done"
+        except Cancelled:
+            job.status = "cancelled"
         except Exception as exc:  # noqa: BLE001 - surface any failure to the UI
-            job.status = "error"
-            job.error = str(exc)
+            job.status = "cancelled" if job.cancelled else "error"
+            job.error = None if job.cancelled else str(exc)
 
     async def _stream_mflux(self, job: ImageJob, cmd: list[str], out_path: Path,
                             cli_name: str) -> None:
         proc = await asyncio.create_subprocess_exec(
             *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
         )
+        self._running[job.id] = proc
         tail: list[str] = []
         assert proc.stdout
-        while True:
-            line = await proc.stdout.readline()
-            if not line:
-                break
-            text = line.decode(errors="ignore")
-            tail.append(text)
-            tail[:] = tail[-40:]
-            m = re.search(r"(\d+)\s*/\s*(\d+)", text)
-            if m:
-                job.step, job.total_steps = int(m.group(1)), int(m.group(2))
-        code = await proc.wait()
+        try:
+            while True:
+                line = await proc.stdout.readline()
+                if not line:
+                    break
+                text = line.decode(errors="ignore")
+                tail.append(text)
+                tail[:] = tail[-40:]
+                m = re.search(r"(\d+)\s*/\s*(\d+)", text)
+                if m:
+                    job.step, job.total_steps = int(m.group(1)), int(m.group(2))
+            code = await proc.wait()
+        finally:
+            self._running.pop(job.id, None)
+        if job.cancelled:
+            raise Cancelled
         if code != 0 or not out_path.exists():
             detail = "".join(tail)
             raise RuntimeError(
@@ -314,6 +367,8 @@ class ImageEngine:
         # 22 GB model is minutes of work repeated for no reason.
         if can_run_in_process(mflux_cli):
             def on_step(n: int) -> None:
+                if job.cancelled:
+                    raise Cancelled
                 job.step = n
 
             return await asyncio.to_thread(
@@ -350,6 +405,8 @@ class ImageEngine:
         job.total_steps = steps
 
         def on_step(n: int) -> None:
+            if job.cancelled:
+                raise Cancelled
             job.step = n
 
         return flux2_profile_runtime.generate(
@@ -404,7 +461,17 @@ class ImageEngine:
 
         self._pipe = None  # let the old pipeline get GC'd / freed before loading the next
         dtype = torch.bfloat16
-        if Path(model_path).is_file():
+        if Path(model_path).suffix == ".gguf":
+            # One quantised transformer, completed with the VAE, text encoder,
+            # tokenizer and scheduler of a pipeline already in the models
+            # folder. See gguf_diffusion for what is borrowed and why.
+            from .config import settings
+            from .core.models import identify
+            from .gguf_diffusion import load_pipeline
+
+            family = identify(Path(model_path), sizes=False).family or ""
+            pipe = load_pipeline(model_path, settings.models_dir, family, dtype=dtype)
+        elif Path(model_path).is_file():
             # AutoPipelineForText2Image has no from_single_file — single .safetensors
             # checkpoints in the wild are essentially always SD1.5/SDXL format.
             pipe = StableDiffusionXLPipeline.from_single_file(model_path, torch_dtype=dtype)
@@ -439,6 +506,8 @@ class ImageEngine:
             seed if seed is not None else int(time.time()))
 
         def on_step_end(_pipe, step, _timestep, kwargs):
+            if job.cancelled:
+                raise Cancelled
             job.step = step + 1
             return kwargs
 

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChevronDown, ImagePlus, Loader2, Wand2, X, ArrowRight } from 'lucide-react';
-import { getLibrary, uploadImage, editImage, getImageJob, fetchImageBlobUrl } from '../lib/sidecar';
+import { getLibrary, uploadImage, editImage, getImageJob, fetchImageBlobUrl, stopImage } from '../lib/sidecar';
+import { onWake } from '../lib/awake';
 import Dictate from '../components/Dictate';
 import SaveActions from '../components/SaveActions';
 import AddFromDisk from '../components/AddFromDisk';
@@ -40,17 +41,35 @@ export default function ImageEdit() {
     });
   }, [libraryVersion]);
 
+  // One watching loop for the life of the view, reading through refs — see
+  // lib/awake for why a page can come back knowing nothing.
+  const jobRef = useRef(job);
+  const outRef = useRef(outUrl);
+  useEffect(() => { jobRef.current = job; }, [job]);
+  useEffect(() => { outRef.current = outUrl; }, [outUrl]);
+
   useEffect(() => {
-    if (!job || job.done) return;
-    const t = setInterval(async () => {
-      const updated = await getImageJob(job.id);
-      setJob(updated);
-      if (updated.done && updated.status === 'done') {
-        setOutUrl(await fetchImageBlobUrl(updated.id).catch(() => null));
+    let stopped = false;
+
+    const sync = async () => {
+      const current = jobRef.current;
+      if (stopped || !current) return;
+      if (!current.done) {
+        const updated = await getImageJob(current.id).catch(() => null);
+        if (stopped) return;
+        if (updated) setJob(updated);
       }
-    }, 1200);
-    return () => clearInterval(t);
-  }, [job]);
+      const latest = jobRef.current;
+      if (!stopped && latest?.done && latest.status === 'done' && !outRef.current) {
+        const url = await fetchImageBlobUrl(latest.id).catch(() => null);
+        if (url && !stopped) setOutUrl(url);
+      }
+    };
+
+    const t = setInterval(() => { void sync(); }, 1200);
+    const wake = onWake(() => { void sync(); });
+    return () => { stopped = true; clearInterval(t); wake(); };
+  }, []);
 
   async function onFile(file: File | undefined) {
     if (!file) return;
@@ -218,7 +237,15 @@ export default function ImageEdit() {
             <span className="text-sm">
               {job?.total_steps ? `Editing — step ${job.step}/${job.total_steps}` : 'Editing…'}
             </span>
+            <button
+              onClick={() => { void stopImage(); }}
+              className="text-xs px-3 py-1 rounded-full border border-[var(--border-soft)] text-[var(--text-dim)] hover:text-white hover:border-[var(--text-faint)] transition"
+            >
+              Stop
+            </button>
           </div>
+        ) : job?.status === 'cancelled' ? (
+          <div className="text-sm text-[var(--text-faint)]">Stopped.</div>
         ) : job?.status === 'error' ? (
           <div className="text-sm text-rose-400 max-w-md text-center">{job.error}</div>
         ) : (
