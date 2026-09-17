@@ -1,5 +1,49 @@
 const STORAGE_KEY = 'uncloud.chat.printerSound';
+const VOLUME_KEY = 'uncloud.chat.printerVolume';
 let volatilePreference: boolean | null = null;
+let volatileVolume: number | null = null;
+
+/** Loudest the printer is allowed to be, at the top of the slider.
+ *
+ *  Chosen against speech: this sits under a spoken reply rather than over it,
+ *  and a printer that has to be turned down before anyone can hear the model
+ *  is a printer nobody leaves on. */
+const LOUDEST = 0.26;
+
+/** How long a pause in the writing before the printer falls silent. Long
+ *  enough to ride over the gap between two sentences, short enough that a step
+ *  which stops to think is not narrated. */
+const QUIET_AFTER = 900;
+
+/** How loud, from 0 to 1. Its own setting rather than a property of the
+ *  switch: the sound people want in a quiet room at midnight is not the one
+ *  they want beside a fan, and neither is "off". */
+export function printerVolume(): number {
+  if (volatileVolume !== null) return volatileVolume;
+  try {
+    const stored = Number(localStorage.getItem(VOLUME_KEY));
+    return Number.isFinite(stored) && stored > 0 ? clamp(stored) : 0.6;
+  } catch {
+    return 0.6;
+  }
+}
+
+export function setPrinterVolume(level: number): void {
+  const value = clamp(level);
+  volatileVolume = value;
+  try {
+    localStorage.setItem(VOLUME_KEY, String(value));
+    volatileVolume = null;
+  } catch {
+    // Storage refused. The slider still moves for this visit.
+  }
+  printerSound.refreshVolume();
+}
+
+function clamp(level: number): number {
+  if (!Number.isFinite(level)) return 0.6;
+  return Math.min(1, Math.max(0.05, level));
+}
 
 export function printerSoundEnabled(): boolean {
   try {
@@ -39,6 +83,7 @@ class PrinterSound {
   private motor: OscillatorNode | null = null;
   private needleTimer: ReturnType<typeof setInterval> | null = null;
   private carriageTimer: ReturnType<typeof setInterval> | null = null;
+  private quietTimer: ReturnType<typeof setTimeout> | null = null;
   private running = false;
 
   /** Called from the Send gesture so browser audio policies can be satisfied
@@ -68,7 +113,7 @@ class PrinterSound {
     const now = context.currentTime;
     const master = context.createGain();
     master.gain.setValueAtTime(0.0001, now);
-    master.gain.exponentialRampToValueAtTime(0.16, now + 0.035);
+    master.gain.exponentialRampToValueAtTime(this.peak(), now + 0.035);
     master.connect(context.destination);
     this.master = master;
 
@@ -106,11 +151,43 @@ class PrinterSound {
     this.strikeNeedles();
   }
 
+  /** Text is arriving. Starts the printer if it is not already going, and
+   *  keeps it going until the writing pauses.
+   *
+   *  For anything that writes in bursts rather than one continuous reply —
+   *  Chisel prints a step, then runs a command that says nothing for ten
+   *  seconds. A printer clattering through that silence is describing work
+   *  that is not happening. */
+  writing(): void {
+    if (!printerSoundEnabled()) return;
+    if (!this.running) this.start();
+    if (this.quietTimer !== null) clearTimeout(this.quietTimer);
+    this.quietTimer = setTimeout(() => {
+      this.quietTimer = null;
+      this.stop();
+    }, QUIET_AFTER);
+  }
+
+  /** Apply a volume change to a printer that is already running. */
+  refreshVolume(): void {
+    const context = this.context;
+    const master = this.master;
+    if (!this.running || !context || !master) return;
+    master.gain.cancelScheduledValues(context.currentTime);
+    master.gain.setTargetAtTime(this.peak(), context.currentTime, 0.02);
+  }
+
+  private peak(): number {
+    return Math.max(0.0001, LOUDEST * printerVolume());
+  }
+
   stop(): void {
     if (this.needleTimer !== null) clearInterval(this.needleTimer);
     if (this.carriageTimer !== null) clearInterval(this.carriageTimer);
+    if (this.quietTimer !== null) clearTimeout(this.quietTimer);
     this.needleTimer = null;
     this.carriageTimer = null;
+    this.quietTimer = null;
 
     const context = this.context;
     const master = this.master;

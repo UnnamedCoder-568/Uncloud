@@ -59,3 +59,25 @@ def test_stopping_one_leaves_the_others(tmp_path: Path) -> None:
     jobs = asyncio.run(go())
 
     assert [j.status for j in jobs] == ["done", "cancelled", "done"]
+
+
+def test_what_is_loaded_is_reported_as_a_path(tmp_path: Path) -> None:
+    """Settings lists what is in memory by filename.
+
+    The image engine keys its resident pipeline by (model, text encoder), so
+    handing that pair over as-is put a two-element list where the interface
+    read a path — and Settings went blank for anyone who opened it after
+    generating an image.
+    """
+    from uncloud_engine import lifecycle
+    from uncloud_engine.image_engine import image_engine
+
+    image_engine._pipe = object()
+    image_engine._pipe_path = ("/models/some-model", None)
+    try:
+        loaded = lifecycle.resident()["image_pipeline"]
+    finally:
+        image_engine._pipe = None
+        image_engine._pipe_path = None
+
+    assert loaded == "/models/some-model"
