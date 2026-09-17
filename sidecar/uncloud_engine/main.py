@@ -56,7 +56,16 @@ from .narration_engine import narration_engine
 app = FastAPI(title="Uncloud Engine")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["tauri://localhost", "http://localhost:1420", "http://127.0.0.1:1420"],
+    # Tauri's production origin is platform-specific: Windows and Android use
+    # the HTTP custom-protocol origin, while macOS/Linux use the tauri scheme.
+    # Omitting the Windows origin leaves the healthy engine running but makes
+    # WebView2 reject every API response as cross-origin traffic.
+    allow_origins=[
+        "tauri://localhost",
+        "http://tauri.localhost",
+        "http://localhost:1420",
+        "http://127.0.0.1:1420",
+    ],
     allow_methods=["*"], allow_headers=["*"],
 )
 
