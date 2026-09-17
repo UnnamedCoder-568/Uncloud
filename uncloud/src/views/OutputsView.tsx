@@ -4,6 +4,7 @@ import { FolderOpen, Trash2, Loader2, RefreshCw, FolderCog } from 'lucide-react'
 import { listOutputs, outputBlobUrl, revealOutput, deleteOutput, setOutputDir } from '../lib/sidecar';
 import type { OutputFile } from '../lib/sidecar';
 import { formatBytes } from '../lib/format';
+import { onWake } from '../lib/awake';
 import { inDesktop } from '../lib/platform';
 
 const FILTERS = [
@@ -85,14 +86,18 @@ export default function OutputsView() {
 
   // Cheap poll so work finished in another tab turns up here without a reload.
   useEffect(() => {
-    const t = setInterval(async () => {
+    const look = async () => {
       const r = await listOutputs(filter).catch(() => null);
       if (r && r.files.length !== seen.current) {
         seen.current = r.files.length;
         setFiles(r.files);
       }
-    }, 5000);
-    return () => clearInterval(t);
+    };
+    const t = setInterval(() => { void look(); }, 5000);
+    // Coming back to the page: everything finished while it was away landed in
+    // this folder, and waiting five seconds to say so reads as an empty gallery.
+    const wake = onWake(() => { void look(); });
+    return () => { clearInterval(t); wake(); };
   }, [filter]);
 
   async function remove(f: OutputFile) {

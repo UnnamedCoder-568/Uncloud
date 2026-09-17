@@ -167,7 +167,7 @@ def _gguf_architecture(path: Path) -> tuple[str | None, str | None]:
         return None, None
 
 
-def _classify_gguf(path: Path) -> tuple[str, str, str | None, bool]:
+def _classify_gguf(path: Path, models_dir: Path) -> tuple[str, str, str | None, bool]:
     """(category, engine, note, ready) for a .gguf file, from its header.
 
     Through Core's identifier, which reads the architecture rather than trusting
@@ -175,6 +175,11 @@ def _classify_gguf(path: Path) -> tuple[str, str, str | None, bool]:
     architecture lumina2 — was filed as a chat model, and a Wan one was filed
     correctly only by luck of its filename, with a note claiming the header
     could not be read when it had been.
+
+    A lone diffusion transformer is the one verdict this can overturn. Core can
+    only see the file, and judges it unrunnable because it is: no VAE, no text
+    encoder, no scheduler. Whether those exist elsewhere in the models folder is
+    something only the folder knows — so it is asked here.
     """
     from .core.models import identify
     from .model_import import verdict
@@ -182,6 +187,11 @@ def _classify_gguf(path: Path) -> tuple[str, str, str | None, bool]:
     identification = identify(path, sizes=False)
     v = verdict(identification)
     note = v.note or None
+    if v.engine == "gguf-diffusion" and v.category == "image":
+        from .gguf_diffusion import assembly_for
+
+        assembly = assembly_for(path, identification.family or "", models_dir)
+        return v.category, v.engine, assembly.note(), assembly.ready
     if identification.warnings and not note:
         note = identification.warnings[0]
     return v.category, v.engine, note, v.runnable
@@ -426,7 +436,7 @@ def scan_library(models_dir: Path) -> list[LocalModel]:
         if str(gguf.resolve()) in claimed:
             continue
         seen_paths.add(str(gguf))
-        category, engine, note, ready = _classify_gguf(gguf)
+        category, engine, note, ready = _classify_gguf(gguf, models_dir)
         size_gb = gguf.stat().st_size / (1024 ** 3)
         found.append(LocalModel(
             id=f"local:{gguf}", name=gguf.stem, category=category, engine=engine,
@@ -649,7 +659,15 @@ def _imported(models_dir: Path, already: set[str]) -> list[LocalModel]:
         identification = identify(path, sizes=False)
         identification.size_bytes = (path.stat().st_size if path.is_file()
                                      else int(_dir_size_gb(path) * 1024 ** 3))
-        out.append(local_model(identification, verdict(identification)))
+        model = local_model(identification, verdict(identification))
+        if model.engine == "gguf-diffusion" and model.category == "image":
+            # Same second opinion as the folder walk: a lone transformer is
+            # runnable if something in the models folder can complete it.
+            from .gguf_diffusion import assembly_for
+
+            assembly = assembly_for(path, identification.family or "", models_dir)
+            model.note, model.ready = assembly.note(), assembly.ready
+        out.append(model)
     return out
 
 
