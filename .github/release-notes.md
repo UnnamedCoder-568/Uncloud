@@ -1,11 +1,25 @@
-Uncloud 0.4.4 hardens chat and generation across desktop and paired local-network
-devices. Replies and long-running image jobs now stay owned by the engine when a
-phone browser is backgrounded, conversations and outputs are isolated per paired
-device, and stale work can no longer land in a different chat.
+Uncloud 0.4.5 can stop a generation, run a lone quantised transformer, and pick
+its work back up after a phone puts the page to sleep.
 
-This hotfix allows the production Windows WebView origin to reach the local
-engine and keeps the bundled uv/Python process in the background. Windows no
-longer opens an engine terminal or reports a healthy engine as unavailable.
+Renders can now be stopped. Image and video jobs end at their next step — a
+batch of four stops as four, queued work never starts, and a stopped clip
+releases its weights. Stopping an MLX render previously did nothing at all: the
+cancellation was swallowed with the progress report and the render carried on to
+the end.
+
+A fine-tuned image model shared as a single quantised transformer is no longer
+listed as unsupported when the rest of its pipeline is already on the disk.
+Uncloud finds a complete pipeline of the same family in the models folder and
+lends the loose file its VAE, text encoder, tokenizer and scheduler.
+
+Every view that watches a job now survives a backgrounded tab: it retries a
+finished picture the browser never collected, catches up the moment the page is
+visible again, and finds the render it started after a reload. The engine always
+owned the work; the page can now find its way back to it.
+
+The Windows WebView origin reaches the local engine, and the bundled uv/Python
+process stays in the background — no engine terminal, and no healthy engine
+reported as unavailable.
 
 Chat now accepts supported images, readable documents and source files; offers
 notes plus editable/downloadable code blocks; and hands the complete context and
@@ -13,7 +27,10 @@ selected model to Chisel. Reply images remain model-directed: a casual request
 can use a quick draft, while an explicit quality or size request can invoke a
 full-quality render saved to Outputs.
 
-The interface is monochrome by default with user-selectable theme and accent.
+The interface is monochrome by default, so the only colour on screen is the work
+itself. A theme and an accent are selectable, and every part of the interface —
+background, sidebar, panels, lines and text — can be repainted in Settings and
+reset in one press.
 Chat can also, entirely optionally, clatter like an old dot-matrix printer while
 it writes a visible reply. The sound remains off by default and stops for model
 loading, thinking, searches, cancellation, errors and navigation.
