@@ -2,6 +2,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
+import { ScreenBoundary } from './components/Panes'
 import { inDesktop } from './lib/platform'
 import { initialiseAppearance } from './lib/appearance'
 import { interceptExternalLinks } from './lib/links'
@@ -14,6 +15,9 @@ interceptExternalLinks()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    {/* Last resort: a failure outside any screen still gets a way back. */}
+    <ScreenBoundary whole>
+      <App />
+    </ScreenBoundary>
   </StrictMode>,
 )
