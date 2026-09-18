@@ -17,8 +17,8 @@
  *  should use it.
  */
 
-import { createContext, useContext, useEffect, useRef, useState } from 'react';
-import type { ReactNode } from 'react';
+import { Component, createContext, useContext, useEffect, useRef, useState } from 'react';
+import type { ErrorInfo, ReactNode } from 'react';
 
 export interface Pane<T extends string> {
   id: T;
@@ -39,6 +39,91 @@ export function useWhenVisible(refresh: () => void): void {
     if (visible && !wasVisible.current) latest.current();
     wasVisible.current = visible;
   }, [visible]);
+}
+
+interface BoundaryState { error: Error | null; details: string }
+
+/** A screen that throws while it draws stays that screen's problem.
+ *
+ *  React unmounts everything above an error nobody catches. With no boundary
+ *  in the application, one unexpected value in one screen — a list where a
+ *  path was expected — left the whole window blank, with no way back but to
+ *  quit: the sidebar went with it, so there was nothing left to click.
+ *
+ *  Every pane is wrapped in one of these, so a failure shows as a panel in
+ *  place of that screen while the rest keeps working, and `whole` wraps the
+ *  application itself as the last resort. Styled only with the chassis tokens,
+ *  because this file is shared between both products and has to look right in
+ *  each without either one's stylesheet.
+ */
+export class ScreenBoundary extends Component<
+  { children: ReactNode; whole?: boolean }, BoundaryState
+> {
+  state: BoundaryState = { error: null, details: '' };
+
+  static getDerivedStateFromError(error: Error): Partial<BoundaryState> {
+    return { error };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    // Kept for "Copy details": a bug report with the component stack in it is
+    // one that can be fixed without a way to reproduce it.
+    this.setState({
+      details: `${error.name}: ${error.message}\n${info.componentStack ?? ''}`.trim(),
+    });
+    console.error(error, info.componentStack);
+  }
+
+  private retry = () => {
+    if (this.props.whole) window.location.reload();
+    else this.setState({ error: null, details: '' });
+  };
+
+  private copy = () => {
+    const { error, details } = this.state;
+    void navigator.clipboard?.writeText(details || error?.message || '').catch(() => undefined);
+  };
+
+  render() {
+    const { error } = this.state;
+    if (!error) return this.props.children;
+    const whole = this.props.whole;
+    const button = {
+      font: 'inherit', fontSize: 13, padding: '6px 14px', borderRadius: 8, cursor: 'pointer',
+      border: '1px solid var(--border-strong)', background: 'var(--surface)', color: 'var(--text)',
+    } as const;
+    return (
+      <div role="alert" style={{
+        margin: whole ? '15vh auto' : '48px auto', maxWidth: 520, padding: 24,
+        borderRadius: 12, border: '1px solid var(--border)', background: 'var(--surface-sunken)',
+        color: 'var(--text)', fontSize: 14, lineHeight: 1.5,
+      }}>
+        <div style={{ fontSize: 16, fontWeight: 600 }}>
+          {whole ? 'Something went wrong' : 'This screen ran into a problem'}
+        </div>
+        <p style={{ margin: '8px 0 12px', color: 'var(--text-2)' }}>
+          {whole
+            ? 'Reloading usually clears it. Everything you have saved is on disk and safe.'
+            : 'The rest of the app still works, and everything you have saved is safe. '
+              + 'Try again, or open another screen.'}
+        </p>
+        <code style={{
+          display: 'block', fontSize: 12, padding: '8px 10px', borderRadius: 8,
+          background: 'var(--bg)', color: 'var(--text-3)', overflowWrap: 'anywhere',
+        }}>
+          {error.message || error.name}
+        </code>
+        <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+          <button type="button" style={button} onClick={this.retry}>
+            {whole ? 'Reload' : 'Try again'}
+          </button>
+          <button type="button" style={{ ...button, background: 'transparent' }} onClick={this.copy}>
+            Copy details
+          </button>
+        </div>
+      </div>
+    );
+  }
 }
 
 export default function Panes<T extends string>({ active, panes, className, wrap }: {
@@ -69,7 +154,9 @@ export default function Panes<T extends string>({ active, panes, className, wrap
         return (
           <div key={id} className={isActive ? className : undefined} hidden={!isActive}>
             <VisibleContext.Provider value={isActive}>
-              {wrap ? wrap(render(), isActive) : render()}
+              {wrap
+                ? wrap(<ScreenBoundary>{render()}</ScreenBoundary>, isActive)
+                : <ScreenBoundary>{render()}</ScreenBoundary>}
             </VisibleContext.Provider>
           </div>
         );
