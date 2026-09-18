@@ -97,6 +97,10 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        // Without this nothing could leave the application: every link in a
+        // reply, a release note or the model catalogue was inert, because
+        // the webview has nowhere to send a request for a new window.
+        .plugin(tauri_plugin_opener::init())
         .manage(updates::UpdateState::default())
         .manage(listener::Listening::default())
         .setup(|app| {

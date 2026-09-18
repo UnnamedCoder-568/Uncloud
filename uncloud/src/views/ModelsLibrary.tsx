@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
 import {
-  Check, Download, FolderCog, HardDrive, Loader2, CheckCircle2, XCircle,
+  ArrowUpRight, Check, Download, FolderCog, HardDrive, Loader2, CheckCircle2, XCircle,
 } from 'lucide-react';
 import { forgetModel, getCatalog, getLibrary, startDownload, listDownloads, getSettings, setModelsDir as saveModelsDir,
          acknowledgeModelLicence, getModelLicence, type ModelLicence } from '../lib/sidecar';
@@ -10,6 +10,8 @@ import { formatBytes, formatSpeed } from '../lib/format';
 import OnTheComputer from '../components/OnTheComputer';
 import AddModel from '../components/AddModel';
 import { inDesktop } from '../lib/platform';
+import { openExternal } from '../lib/links';
+import ModelHubs from '../components/ModelHubs';
 
 const CATEGORIES: { id: string; label: string }[] = [
   { id: 'text', label: 'Text' },
@@ -249,6 +251,11 @@ export default function ModelsLibrary() {
           </div>
         )}
 
+        {/* Above the catalogue rather than after it: the text list runs to two
+            dozen entries, and a way out placed below them is a way out nobody
+            scrolls far enough to find. */}
+        <ModelHubs category={category} onAdd={() => setAdding(true)} />
+
         <section>
           <h2 className="text-[10px] uppercase tracking-[0.18em] text-[var(--text-faint)] mb-3">Download</h2>
           {filteredCatalog.length === 0 && (
@@ -267,13 +274,14 @@ export default function ModelsLibrary() {
               const active = activeDownloadFor(entry.id);
               const done = downloads.find((d) => d.catalog_id === entry.id && d.status === 'done');
               return (
-                <div key={entry.id} className="card p-4">
-                  <div className="flex items-start justify-between gap-2 max-md:flex-col-reverse">
-                    <div className="min-w-0">
-                      <div className="text-sm">{entry.name}</div>
-                      <div className="text-[11px] text-[var(--text-faint)] mt-0.5">{entry.description}</div>
-                    </div>
-                    <div className="flex flex-wrap gap-1 justify-end shrink-0 max-md:justify-start">
+                <div key={entry.id} className="card p-4 flex flex-col">
+                  {/* Name, then labels, then the description — each on its own
+                      line. Side by side, the labels were shrink-0, so a card
+                      with three of them left the description a column two
+                      words wide. */}
+                  <div className="text-sm">{entry.name}</div>
+                  {entry.tags.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-1.5">
                       {entry.tags.map((t) => (
                         <span
                           key={t}
@@ -285,11 +293,28 @@ export default function ModelsLibrary() {
                         </span>
                       ))}
                     </div>
-                  </div>
+                  )}
+                  <p className="text-[11px] text-[var(--text-faint)] mt-2 leading-relaxed flex-1">
+                    {entry.description}
+                  </p>
 
-                  <div className="flex items-center justify-between mt-3">
-                    <span className="text-[11px] font-mono text-[var(--text-faint)]">
-                      {entry.size_gb.toFixed(1)} GB{entry.context_length ? ` · ${(entry.context_length / 1000).toFixed(0)}k ctx` : ''}
+                  <div className="flex items-center justify-between gap-2 mt-3">
+                    <span className="flex items-center gap-2 min-w-0 text-[11px] font-mono text-[var(--text-faint)]">
+                      <span className="shrink-0">
+                        {entry.size_gb.toFixed(1)} GB{entry.context_length ? ` · ${(entry.context_length / 1000).toFixed(0)}k ctx` : ''}
+                      </span>
+                      {/* The publisher's own page: its model card, its licence
+                          as they wrote it, and every other file they ship. */}
+                      {/^[\w.-]+\/[\w.-]+$/.test(entry.repo) && (
+                        <button
+                          type="button"
+                          onClick={() => { void openExternal(`https://huggingface.co/${entry.repo}`); }}
+                          title={`Open ${entry.repo} on Hugging Face`}
+                          className="flex items-center gap-0.5 font-sans text-[var(--text-faint)] hover:text-[var(--text)] transition truncate"
+                        >
+                          Hugging Face <ArrowUpRight size={11} className="shrink-0" />
+                        </button>
+                      )}
                     </span>
 
                     {entry.installed || done ? (
