@@ -194,8 +194,13 @@ CATALOG: list[CatalogEntry] = [
         repo="lmstudio-community/Qwen3.5-9B-GGUF",
         files=["Qwen3.5-9B-Q4_K_M.gguf"],
         size_gb=5.6,
-        description="Quick general model that stays loaded comfortably next to anything else.",
-        tags=["general", "fast"],
+        # Chosen over Gemma 4 12B for agents on the publishers' own numbers:
+        # tau2-bench 79.1 against 69.0, BFCL-V4 66.1 (Qwen model card; Gemma 4
+        # model card, which reports no BFCL). Harnesses differ between vendors,
+        # so the ranking is directional, but a ten-point gap is not noise.
+        description="The best small model for agents and chat: reliable tool calls and "
+                    "multi-step tasks, and light enough to stay loaded beside an image model.",
+        tags=["general", "agentic", "recommended", "fast"],
     ),
     CatalogEntry(
         id="qwen3.5-4b-gguf-q4",
@@ -204,9 +209,11 @@ CATALOG: list[CatalogEntry] = [
         repo="lmstudio-community/Qwen3.5-4B-GGUF",
         files=["Qwen3.5-4B-Q4_K_M.gguf"],
         size_gb=2.7,
-        description="Small and fast; good for conversation by voice, where a quick answer "
-                    "matters more than a long one.",
-        tags=["fast"],
+        # Holds multi-step agent work as well as the 9B (tau2-bench 79.9) but
+        # makes exact function calls less reliably (BFCL-V4 50.3 against 66.1).
+        description="Half the size of the 9B and as good at multi-step tasks; less exact "
+                    "with tool calls. Quick enough to talk to by voice.",
+        tags=["fast", "agentic"],
     ),
     CatalogEntry(
         id="minicpm5-2b-gguf-q4",
