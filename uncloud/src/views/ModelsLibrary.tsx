@@ -9,6 +9,7 @@ import type { CatalogEntry, LocalModel, DownloadState } from '../lib/sidecar';
 import { formatBytes, formatSpeed } from '../lib/format';
 import OnTheComputer from '../components/OnTheComputer';
 import AddModel from '../components/AddModel';
+import { libraryChanged, onLibraryChange } from '../lib/library-changed';
 import { inDesktop } from '../lib/platform';
 import { openExternal } from '../lib/links';
 import ModelHubs from '../components/ModelHubs';
@@ -52,6 +53,7 @@ export default function ModelsLibrary() {
     setPendingDir(null);
     setDirSaved(true);
     setTimeout(() => setDirSaved(false), 2500);
+    libraryChanged();
     refresh();
   }
 
@@ -83,11 +85,19 @@ export default function ModelsLibrary() {
 
   useEffect(() => {
     refresh();
+    const completed = new Set<string>();
+    const unsubscribe = onLibraryChange(() => { void refresh(); });
     const t = setInterval(async () => {
       const d = await listDownloads().catch(() => null);
-      if (d) setDownloads(d);
+      if (!d) return;
+      setDownloads(d);
+      const newlyCompleted = d.filter((item) => item.status === 'done' && !completed.has(item.id));
+      if (newlyCompleted.length) {
+        newlyCompleted.forEach((item) => completed.add(item.id));
+        libraryChanged();
+      }
     }, 1200);
-    return () => clearInterval(t);
+    return () => { clearInterval(t); unsubscribe(); };
   }, []);
 
   const activeDownloadFor = (catalogId: string) =>

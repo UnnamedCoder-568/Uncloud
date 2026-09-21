@@ -530,6 +530,25 @@ def _measured_bits(folder: Path, index: dict) -> int | None:
     return int(bits) if bits == int(bits) and 2 <= bits <= 8 else None
 
 
+def mflux_index(folder: Path) -> dict | None:
+    """Read current indexes or older mflux shards carrying metadata in their headers."""
+    index = read_json(folder / "model.safetensors.index.json")
+    if index is not None:
+        return index
+    shards = sorted(folder.glob("*.safetensors"))
+    if not shards or len(shards) > 128:
+        return None
+    weight_map: dict[str, str] = {}
+    metadata: dict = {}
+    for shard in shards:
+        header = read_safetensors(shard)
+        if header is None or "mflux_version" not in header.metadata:
+            return None
+        metadata.update(header.metadata)
+        weight_map.update({name: shard.name for name in header.shapes})
+    return {"metadata": metadata, "weight_map": weight_map}
+
+
 def _mflux(identification: Identification, folder: Path) -> bool:
     marker_path = next((folder / m for m in ("uncloud-mlx.json", "adstudio-mlx.json")
                         if (folder / m).is_file()), None)
@@ -550,7 +569,7 @@ def _mflux(identification: Identification, folder: Path) -> bool:
                                                  + ("" if exists else " — MISSING"))
 
     for base in (weights_folder / "transformer", weights_folder):
-        index = read_json(base / "model.safetensors.index.json")
+        index = mflux_index(base)
         if index is None or not (weights_folder / "vae").is_dir():
             continue
         meta = index.get("metadata") or {}
@@ -589,6 +608,11 @@ def _mflux(identification: Identification, folder: Path) -> bool:
                 identification.warnings.append(
                     f"The marker says {identification.family}, but the tensors are "
                     f"{derived[0]} ({derived[1]}).")
+        elif identification.base_repo.lower() == "black-forest-labs/flux.1-kontext-dev":
+            identification.family = "dev_kontext"
+            identification.confidence = Confidence.INFERRED
+            identification.saw("README.md and mflux headers",
+                               "FLUX.1 Kontext base with mflux checkpoint weights")
         elif derived:
             identification.family = derived[0]
             identification.confidence = Confidence.INFERRED

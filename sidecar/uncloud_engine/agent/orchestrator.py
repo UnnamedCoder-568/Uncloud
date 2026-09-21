@@ -44,6 +44,9 @@ shell commands over many small steps.
 Guidance:
 - Do not add a shell step to slice or summarise text you already have — pass {{t1}} straight
   into the step that needs it. Shell is for running programs, not for editing strings.
+- When the goal creates a file, include a final check that it exists and is readable.
+  Report completion only from a successful tool result, never from planned steps alone.
+- On macOS, a simple text PDF can be made with `cupsfilter -m application/pdf input.txt > output.pdf`.
 - Progress is recorded automatically, so you do not need planning steps just to track state.
 - Use note_save for a fact a later step depends on (a path, an ID, a finding),
   and note_recall to read it back rather than re-deriving it.
@@ -77,29 +80,51 @@ def _active_tool_specs() -> list[dict]:
 
 
 def _extract_json(text: str) -> dict:
-    text = text.strip()
-    fence = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
-    if fence:
-        text = fence.group(1)
-    start = text.find("{")
-    end = text.rfind("}")
-    if start == -1 or end == -1:
-        raise ValueError(f"No JSON object found in planner output: {text[:500]!r}")
-    blob = text[start:end + 1]
-    try:
-        return json.loads(blob)
-    except json.JSONDecodeError:
-        # A model that reasons past the JSON can leave trailing prose. Retry against
-        # the largest balanced object starting at the first brace.
-        depth = 0
-        for i, ch in enumerate(blob):
-            if ch == "{":
-                depth += 1
-            elif ch == "}":
-                depth -= 1
-                if depth == 0:
-                    return json.loads(blob[: i + 1])
-        raise
+    # raw_decode respects braces inside quoted shell commands and document text.
+    # Prefer the plan over unrelated JSON in a model's preamble.
+    decoder = json.JSONDecoder()
+    for match in re.finditer(r"\{", text):
+        try:
+            value, _ = decoder.raw_decode(text[match.start():])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, dict) and "tasks" in value:
+            return value
+    raise ValueError("The model did not return a JSON task plan.")
+
+
+def _graph_from_plan(parsed: dict, goal: str, specs: list[dict]) -> ExecutionGraph:
+    tasks = parsed.get("tasks")
+    if not isinstance(tasks, dict) or not tasks:
+        raise ValueError("The plan must contain at least one task.")
+    if len(tasks) > 40:
+        raise ValueError("The plan has too many tasks; use at most 40.")
+    allowed = {spec["id"] for spec in specs}
+    graph = ExecutionGraph(goal=goal)
+    for task_id, raw in tasks.items():
+        if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", task_id) or not isinstance(raw, dict):
+            raise ValueError("Each task needs a simple identifier and an object.")
+        tool = raw.get("tool_id")
+        args = raw.get("args")
+        deps = raw.get("dependencies", [])
+        if not isinstance(tool, str) or tool not in allowed:
+            raise ValueError(f"Unknown or disabled tool: {tool!r}.")
+        if not isinstance(args, dict):
+            raise ValueError(f"Task {task_id} needs an args object.")
+        if not isinstance(deps, list) or any(not isinstance(d, str) or d not in tasks
+                                             for d in deps):
+            raise ValueError(f"Task {task_id} has an unknown dependency.")
+        graph.add_task(Task(id=task_id, description=str(raw.get("description", "")),
+                            tool_id=tool, args=args, dependencies=deps))
+    resolved: set[str] = set()
+    while len(resolved) < len(tasks):
+        ready = {t.id for t in graph.tasks.values() if t.id not in resolved
+                 and set(t.dependencies) <= resolved}
+        if not ready:
+            raise ValueError("Task dependencies contain a cycle.")
+        resolved.update(ready)
+    graph.start_node_ids = [t.id for t in graph.tasks.values() if not t.dependencies]
+    return graph
 
 
 # Accept {{t1}}, {t1}, {{ t1.output }} — models are inconsistent about brace count,
@@ -125,6 +150,17 @@ def _resolve_refs(args: dict[str, Any], graph: ExecutionGraph) -> dict[str, Any]
         return value
 
     return {k: sub(v) for k, v in args.items()}
+
+
+def _rename_refs(value: Any, names: dict[str, str]) -> Any:
+    if isinstance(value, str):
+        return _REF.sub(lambda match: match.group(0).replace(
+            match.group(1), names.get(match.group(1), match.group(1)), 1), value)
+    if isinstance(value, list):
+        return [_rename_refs(item, names) for item in value]
+    if isinstance(value, dict):
+        return {key: _rename_refs(item, names) for key, item in value.items()}
+    return value
 
 
 #: How much of a handed-over conversation to carry into planning.
@@ -183,56 +219,61 @@ class Orchestrator:
         if not engine_manager.active:
             raise RuntimeError("No text model is loaded. Start one from the Chat tab first.")
 
+        active = engine_manager.active
         plan_budget = translate_effort(effort, _active_profile())
-        system = PLANNING_SYSTEM_PROMPT.format(tools=_tools_description(_active_tool_specs()))
-        # Planning happens once per run and has a long system prompt to chew through;
-        # a large model on a busy machine can legitimately take minutes.
+        specs = _active_tool_specs()
+        system = PLANNING_SYSTEM_PROMPT.format(tools=_tools_description(specs))
+        messages = [
+            {"role": "system", "content": system},
+            {"role": "user", "content": goal + _context_block(context)},
+        ]
+        parameters = _planning_parameters(plan_budget)
+        # Structured planning needs the answer, not a private reasoning trace.
+        # Unknown GGUF templates may otherwise spend the entire budget thinking.
+        if active.engine == "gguf":
+            parameters.update(
+                response_format={"type": "json_object"},
+                chat_template_kwargs={"enable_thinking": False},
+                thinking_budget_tokens=0, reasoning_effort="none")
         try:
             async with httpx.AsyncClient(timeout=900) as client:
-                resp = await client.post(
-                    f"{engine_manager.active.base_url}/v1/chat/completions",
-                    json={
-                        "messages": [
-                            {"role": "system", "content": system},
-                            {"role": "user", "content": goal + _context_block(context)},
-                        ],
-                        "temperature": 0.2,
-                        "stream": False,
-                        # Planning is where thinking earns its keep, so the
-                        # effort level reaches the request rather than only the
-                        # loop around it.
-                        **_planning_parameters(plan_budget),
-                    },
-                )
-                resp.raise_for_status()
-                message = resp.json()["choices"][0]["message"]
-                # Thinking models (Qwen3, and anything served with a reasoning parser)
-                # split their output: the visible answer lands in `content`, the chain of
-                # thought in `reasoning_content`. When a model reasons its way to the JSON
-                # and stops, `content` comes back empty — so fall back to the reasoning.
-                content = (message.get("content") or "").strip()
-                if not content:
-                    content = (message.get("reasoning_content") or "").strip()
+                for attempt in range(2):
+                    resp = await client.post(
+                        f"{active.base_url}/v1/chat/completions",
+                        json={"messages": messages, "temperature": 0.2,
+                              "stream": False, **parameters},
+                    )
+                    resp.raise_for_status()
+                    choice = resp.json()["choices"][0]
+                    content = (choice["message"].get("content") or "").strip()
+                    try:
+                        if choice.get("finish_reason") == "length":
+                            raise ValueError("The plan was cut off. Use fewer, shorter steps.")
+                        return _graph_from_plan(_extract_json(content), goal, specs)
+                    except ValueError as exc:
+                        if attempt:
+                            raise RuntimeError(
+                                "The model could not produce a usable plan after two attempts. "
+                                "No tools were run. Try a shorter goal or another planning model."
+                            ) from exc
+                        # Keep the original goal and background. Repair formatting before
+                        # any side effect, without treating private reasoning as a plan.
+                        messages += [
+                            {"role": "assistant", "content": content[:4000] or "No plan returned."},
+                            {"role": "user", "content":
+                             f"Fix the plan: {exc} Return only the required JSON object, "
+                             "with real tool IDs, args and acyclic dependencies. "
+                             "Do not explain or summarise the goal."},
+                        ]
+                        parameters["chat_template_kwargs"] = {"enable_thinking": False}
         except httpx.TimeoutException as exc:
             raise RuntimeError(
-                "The model took too long to produce a plan. Smaller models can stall on "
-                "long tool lists — try a simpler goal, or load a larger model."
+                "The model took too long to produce a plan. No tools were run. "
+                "Try a shorter goal or another planning model."
             ) from exc
         except httpx.HTTPError as exc:
             raise RuntimeError(f"Could not reach the loaded model: {exc!r}") from exc
-
-        parsed = _extract_json(content)
-        graph = ExecutionGraph(goal=goal)
-        for task_id, raw in parsed.get("tasks", {}).items():
-            graph.add_task(Task(
-                id=task_id,
-                description=raw.get("description", ""),
-                tool_id=raw.get("tool_id", ""),
-                args=raw.get("args", {}),
-                dependencies=raw.get("dependencies", []),
-            ))
-        graph.start_node_ids = parsed.get("start_node_ids", list(graph.tasks.keys())[:1])
-        return graph
+        raise RuntimeError("No usable plan was returned.")
 
     async def run(
         self, graph: ExecutionGraph,
@@ -277,6 +318,12 @@ class Orchestrator:
         while not graph.all_terminal():
             ready = graph.ready_tasks()
             if not ready:
+                for task in graph.tasks.values():
+                    if task.status == "pending":
+                        task.status = "failed"
+                        task.error = "A required earlier step did not complete."
+                self._persist_plan(graph)
+                await on_update(graph)
                 break
             for task in ready:
                 task.status = "in_progress"
@@ -318,8 +365,23 @@ class Orchestrator:
             report += "\n\nAlready finished, available as references:\n" + "\n".join(
                 f"- {{{t.id}}}: {t.description or t.tool_id}" for t in done)
         try:
-            return await self.plan(
+            recovered = await self.plan(
                 RECOVERY_PROMPT.format(report=report) + f"\n\nORIGINAL GOAL: {graph.goal}")
+            # A new plan normally starts at t1 again. Keep its identity distinct
+            # from the first attempt so completed recovery work is visible and
+            # cannot be mistaken for an earlier successful task.
+            names = {task_id: f"r{attempt}_{task_id}" for task_id in recovered.tasks}
+            for task in recovered.tasks.values():
+                task.id = names[task.id]
+                task.dependencies = [names.get(dep, dep) for dep in task.dependencies]
+                task.args = _rename_refs(task.args, names)
+            recovered.tasks = {task.id: task for task in recovered.tasks.values()}
+            recovered.start_node_ids = [names.get(task_id, task_id)
+                                        for task_id in recovered.start_node_ids]
+            for task in graph.tasks.values():
+                if task.status == "completed":
+                    recovered.tasks[task.id] = task
+            return recovered
         except Exception:  # noqa: BLE001 - a failed recovery is not a new failure
             return None
 

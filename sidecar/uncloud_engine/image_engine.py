@@ -44,6 +44,13 @@ def _fit_within_budget(reference_path: str) -> tuple[int, int] | None:
 
 
 def _mflux_bin(cli_name: str) -> str | None:
+    # Finder launches the sidecar with a minimal PATH. The CLI belongs to the
+    # same virtual environment as this Python process, so look there first.
+    import sys
+
+    local = Path(sys.executable).parent / cli_name
+    if local.is_file():
+        return str(local)
     return shutil.which(cli_name)
 
 
