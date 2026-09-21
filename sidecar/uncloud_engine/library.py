@@ -205,6 +205,7 @@ def _classify_gguf(path: Path, models_dir: Path) -> tuple[str, str, str | None, 
 MLX_MARKER = "uncloud-mlx.json"
 
 _MLX_BASE_CLI = {
+    "dev_kontext": "mflux-generate-kontext",
     "flux2_klein_9b": "mflux-generate-flux2-klein",
     "flux2_klein_9b_kv": "mflux-generate-flux2-klein",
     "flux2_klein_base_9b": "mflux-generate-flux2-klein",
@@ -305,19 +306,16 @@ def read_mlx_checkpoint(child: Path) -> MlxCheckpoint | None:
             return None
         weights = candidate
 
-    index = weights / "transformer" / "model.safetensors.index.json"
-    if not index.is_file():
-        # Shards at the root rather than under transformer/.
-        index = weights / "model.safetensors.index.json"
-    if not index.is_file() or not (weights / "vae").is_dir():
-        return None
+    from .core.models.identify import mflux_index
 
+    index = mflux_index(weights / "transformer") or mflux_index(weights)
+    if index is None or not (weights / "vae").is_dir():
+        return None
     quantize = None
     try:
-        meta = json.loads(index.read_text()).get("metadata") or {}
-        raw = meta.get("quantization_level")
+        raw = (index.get("metadata") or {}).get("quantization_level")
         quantize = int(raw) if raw is not None else None
-    except (OSError, ValueError, TypeError):
+    except (ValueError, TypeError):
         pass
 
     base = marker_data.get("base_model")
@@ -481,6 +479,7 @@ def scan_library(models_dir: Path) -> list[LocalModel]:
                     size_gb=_dir_size_gb(mlx.checkpoint),
                     ready=mlx.ready, note=mlx.note(), defaults=mlx.defaults,
                     mflux_cli=mlx.cli, mflux_base=mlx.base,
+                    capabilities=["edit", "reference"] if mlx.base == "dev_kontext" else None,
                     lora_paths=mlx.lora_paths, lora_scales=mlx.lora_scales,
                 ))
                 continue

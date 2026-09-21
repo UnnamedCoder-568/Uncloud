@@ -44,6 +44,7 @@ IMAGE2IMAGE = frozenset({
 VIDEO_FAMILIES = {"ltx-video": "ltx", "wan": "wan"}
 
 _MFLUX_CLI = {
+    "dev_kontext": "mflux-generate-kontext",
     "flux2_klein_4b": "mflux-generate-flux2-klein", "flux2_klein_9b": "mflux-generate-flux2-klein",
     "krea2": "mflux-generate-krea2", "z_image_turbo": "mflux-generate-z-image",
 }
@@ -89,7 +90,9 @@ def verdict(i: Identification) -> Verdict:
         ok = cli is not None and engine_runs_here("mflux")
         note = ("" if ok else "mflux runs only on Apple Silicon." if cli
                 else "Which base model this checkpoint was cut from is not recorded yet.")
-        return Verdict(ok, "image", "mflux", note, ["text2img"], mflux_cli=cli,
+        return Verdict(ok, "image", "mflux", note,
+                       ["edit", "reference"] if family == "dev_kontext" else ["text2img"],
+                       mflux_cli=cli,
                        mflux_base=family or None)
 
     if task is Task.IMAGE and layout in (Layout.DIFFUSERS, Layout.DIFFUSERS_PARTS):

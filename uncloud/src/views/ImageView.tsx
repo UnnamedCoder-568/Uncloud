@@ -40,7 +40,7 @@ export default function ImageView() {
           active={tab}
           className="h-full"
           panes={[
-            { id: 'generate', render: () => <ImageGenerate /> },
+            { id: 'generate', render: () => <ImageGenerate onEdit={() => setTab('edit')} /> },
             { id: 'product', render: () => <ProductStudio /> },
             { id: 'edit', render: () => <ImageEdit /> },
             { id: 'characters', render: () => <CharactersView /> },

@@ -38,3 +38,12 @@ describe('reply image instructions', () => {
     ]);
   });
 });
+
+ it('labels invented file operations as unexecuted', () => {
+  expect(cleanReply('[[filecreate: ~/Desktop/Plan.pdf]]')).toContain('has not created or saved');
+  expect(cleanReply('[[file_create: ~/Desktop/Plan.pdf]]')).toContain('Click Chisel');
+  expect(cleanReply('[[filecreate: ~/Desktop/Plan.pdf]] The PDF has been created.'))
+    .not.toContain('The PDF has been created.');
+  expect(cleanReply('The PDF has been created on your desktop.'))
+    .toContain('has not created or saved');
+});

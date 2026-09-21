@@ -8,6 +8,12 @@ const CONTROL_TOKEN = /<\|(?:assistant|user|system|end|eot_id|im_start|im_end)\|
 const MARKER_NAMES = ['search', 'read', 'pictures', 'images', 'image'];
 
 export function cleanReply(text: string, streaming = false): string {
+  const unsupportedFileAction = /\[\[\s*file_?(?:create|write|save)\s*:[\s\S]*?\]\]/gi;
+  const unverifiedFileClaim = /\b(?:file|pdf|document)\s+(?:has been|was|is)\s+(?:created|saved|written|exported)\b|\b(?:created|saved|wrote|exported)\s+(?:the|a|your)\s+[^.!?\n]{0,80}\b(?:file|pdf|document)\b/i;
+  if (unsupportedFileAction.test(text) || unverifiedFileClaim.test(text)) {
+    return 'Chat has not created or saved that file. Click Chisel below this '
+      + 'message to carry the conversation over and make it with real tools.';
+  }
   let clean = text.replace(INTERNAL_MARKER, '').replace(CONTROL_TOKEN, '');
   if (streaming) {
     const start = clean.lastIndexOf('[[');

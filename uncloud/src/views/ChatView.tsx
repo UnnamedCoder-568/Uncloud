@@ -392,12 +392,27 @@ export default function ChatView() {
   const attachDocuments = useCallback(() => {
     const picker = document.createElement('input');
     picker.type = 'file';
-    picker.accept = '.txt,.md,.markdown,.csv,.tsv,.json,.yaml,.yml,.py,.js,.jsx,.ts,.tsx,.css,.html,.xml,.toml,.ini,.log,.sql,.rs,.go,.java,.c,.h,.cpp,.docx,.xlsx,.pptx';
+    picker.accept = '.png,.jpg,.jpeg,.webp,.txt,.md,.markdown,.csv,.tsv,.json,.yaml,.yml,.py,.js,.jsx,.ts,.tsx,.css,.html,.xml,.toml,.ini,.log,.sql,.rs,.go,.java,.c,.h,.cpp,.docx,.xlsx,.pptx';
     picker.multiple = true;
     picker.onchange = async () => {
       setAttachingFile(true);
       try {
         for (const file of Array.from(picker.files ?? [])) {
+          if (/\.(png|jpe?g|webp)$/i.test(file.name)) {
+            if (!visionOk) {
+              throw new Error('This model cannot see images. Load a vision model from Models, '
+                + 'then attach the screenshot again.');
+            }
+            if (file.size > 10 * 1024 * 1024) throw new Error('That image is larger than 10 MB.');
+            const url = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve(String(reader.result || ''));
+              reader.onerror = () => reject(new Error(`Could not read ${file.name}.`));
+              reader.readAsDataURL(file);
+            });
+            setAttached((current) => [...current, url]);
+            continue;
+          }
           const attachment = await uploadChatAttachment(file);
           setAttachedFiles((current) => [...current, attachment]);
         }
@@ -408,7 +423,7 @@ export default function ChatView() {
       }
     };
     picker.click();
-  }, []);
+  }, [visionOk]);
 
   async function send(text: string, readAloud: boolean,
                       say?: (sentence: string) => void) {
@@ -800,7 +815,7 @@ export default function ChatView() {
           <button
             onClick={attachDocuments}
             disabled={!activeModel || attachingFile}
-            title="Attach a readable document or source file"
+            title="Attach an image, document or source file"
             aria-label="Attach a file"
             className="pill pill-icon"
           >
