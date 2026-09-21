@@ -38,7 +38,8 @@ const ENGINE_LABEL: Record<string, string> = { 'gguf-diffusion': 'assembled' };
 //  and this is what lets the page find it again.
 const REMEMBERED = 'uncloud.image.jobs';
 
-export default function ImageGenerate() {
+export default function ImageGenerate({ onEdit }: { onEdit?: () => void }) {
+  const [hasEditors, setHasEditors] = useState(false);
   const [models, setModels] = useState<LocalModel[]>([]);
   const libraryVersion = useLibraryVersion();
   const [model, setModel] = useState<LocalModel | null>(null);
@@ -86,6 +87,7 @@ export default function ImageGenerate() {
       // Not-ready models stay in the list, disabled: the picker shows their
       // note, which says what is missing. Filtering them out leaves someone
       // hunting for a model the app can see and they cannot.
+      setHasEditors(list.some((m) => m.category === 'image' && m.capabilities.includes('edit')));
       const images = list
         .filter((m) => m.category === 'image' && m.capabilities.includes('text2img'))
         .sort((a, b) => Number(b.ready) - Number(a.ready));
@@ -288,6 +290,12 @@ export default function ImageGenerate() {
   return (
     <div className="h-full flex">
       <div className="flex-1 flex flex-col min-w-0">
+        {hasEditors && !model && (
+          <div className="px-5 py-2 text-xs text-[var(--text-dim)]">
+            A reference-image model is installed.{' '}
+            <button className="underline" onClick={onEdit}>Open Edit to use it with a photo.</button>
+          </div>
+        )}
         <header className="h-14 shrink-0 border-b border-[var(--border-soft)] flex items-center px-5 relative">
           <button
             className="flex items-center gap-2 text-sm px-3 py-1.5 rounded-lg hover:bg-[var(--bg-raised)] transition"
@@ -299,7 +307,7 @@ export default function ImageGenerate() {
                 <span>{model.name}</span>
               </>
             ) : (
-              <span className="text-[var(--text-faint)]">No image model installed</span>
+              <span className="text-[var(--text-faint)]">No text-to-image model selected</span>
             )}
             <ChevronDown size={14} className="text-[var(--text-faint)]" />
           </button>
@@ -308,7 +316,8 @@ export default function ImageGenerate() {
             <div className="absolute top-14 left-5 w-96 max-w-[calc(100vw-2.5rem)] card p-1.5 z-10 shadow-2xl max-h-80 overflow-y-auto">
               {models.length === 0 && (
                 <div className="text-xs text-[var(--text-faint)] px-3 py-4 text-center">
-                  No image models found yet. Download one from the Models tab, or add one you already have.
+                  No text-to-image models found. Reference-image models such as Kontext are in Edit.
+                  Download a generation model from Models, or add one you already have.
                 </div>
               )}
               {models.map((m) => {
