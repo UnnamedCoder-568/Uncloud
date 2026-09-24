@@ -1,8 +1,11 @@
 {
   "bundle": {
-    "targets": ["nsis"],
+    "targets": [
+      "nsis"
+    ],
     "resources": {
-      "binaries/uv.exe": "uv.exe"
+      "binaries/uv.exe": "uv.exe",
+      "binaries/llama/": "llama/"
     }
   }
 }

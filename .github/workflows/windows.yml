@@ -1,0 +1,356 @@
+name: Windows 0.4.9 repair
+on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/windows.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: uncloud-windows-repair
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+env:
+  UV_VERSION: '0.12.13'
+  PYTHON_VERSION: '3.12'
+  NODE_VERSION: '22'
+
+jobs:
+  quality:
+    name: Source tests
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - name: Install Linux build libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            build-essential \
+            libssl-dev \
+            libxdo-dev \
+            libgtk-3-dev \
+            libsndfile1
+
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: uncloud/package-lock.json
+
+      - name: Test frontend
+        working-directory: uncloud
+        run: |
+          npm ci
+          npm test
+          npm run lint
+          npm run build
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - uses: astral-sh/setup-uv@v10.1.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+
+      - name: Verify engine lock and release manifest
+        run: |
+          uv lock --check --directory sidecar
+          python scripts/verify_release.py --tag "${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}"
+
+      # Unit tests do not load model weights. Release jobs separately install
+      # the complete locked engine on Windows and Linux before publication.
+      - name: Test Python engine
+        env:
+          PYTHONPATH: sidecar
+        run: |
+          uv run --no-project --python 3.12 \
+            --with 'pytest>=8.4,<10' \
+            --with 'cryptography>=44' \
+            --with 'fastapi>=0.141.1' \
+            --with 'httpx>=0.28.1' \
+            --with 'keyring>=25.6' \
+            --with pillow \
+            --with 'pydantic>=2.13.4' \
+            --with 'python-multipart>=0.0.32' \
+            --with 'soundfile>=0.14.0' \
+            --with 'uvicorn>=0.52.3' \
+            --with 'websockets>=17.0.1' \
+            pytest -q sidecar/tests
+          uv run --no-project --python 3.12 --with 'ruff>=0.13,<1' \
+            ruff check sidecar/uncloud_engine sidecar/tests scripts
+
+      - name: The engine must resolve on every platform we ship to
+        working-directory: sidecar
+        # The check that was missing when a macOS Intel .dmg shipped whose
+        # engine could not install. Nothing else here resolves the Python
+        # dependencies FOR the target — the engine installs on the customer's
+        # machine at first launch — so a platform with no wheel for one of them
+        # built cleanly, went green, and failed on first open.
+        #
+        # Resolution only: no downloads, seconds, and it catches exactly the
+        # missing-wheel case. Windows and Linux only, because this runner is
+        # macOS and already resolves natively; uv's cross-resolution pins macOS
+        # to a 13.0 deployment target while these wheels start at 14.0, so
+        # asking it about macOS answers the wrong question.
+        run: |
+          set -euo pipefail
+          out="$(mktemp -d)"
+          for platform in x86_64-pc-windows-msvc x86_64-unknown-linux-gnu; do
+            echo "── $platform"
+            uv pip compile pyproject.toml \
+              --python-platform "$platform" --python-version 3.12 \
+              -q -o "$out/$platform.txt"
+          done
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu
+          components: rustfmt
+
+      - uses: swatinem/rust-cache@v2.9.2
+        with:
+          workspaces: uncloud/src-tauri
+
+      - name: Stage Linux runtime for desktop tests
+        run: bash uncloud/scripts/stage_uv.sh x86_64-unknown-linux-gnu
+
+      - name: Test desktop shell
+        working-directory: uncloud/src-tauri
+        run: |
+          cargo fmt --check
+          cargo test --locked --target x86_64-unknown-linux-gnu
+
+  build:
+    name: ${{ matrix.label }}
+    needs: quality
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: Windows x64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+            bundle: nsis
+            artifact: Uncloud-Windows-x64.exe
+            kind: windows
+
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - name: Install Linux package libraries
+        if: matrix.kind == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            build-essential \
+            curl \
+            file \
+            libssl-dev \
+            libxdo-dev \
+            libgtk-3-dev \
+            libsndfile1 \
+            xvfb
+
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: uncloud/package-lock.json
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: swatinem/rust-cache@v2.9.2
+        with:
+          workspaces: uncloud/src-tauri
+          key: ${{ matrix.target }}
+
+      - name: Install frontend dependencies
+        working-directory: uncloud
+        run: npm ci
+
+      - name: Download and verify bundled uv
+        shell: bash
+        run: bash uncloud/scripts/stage_uv.sh "${{ matrix.target }}"
+
+      # Updates are signed or they do not exist. The public key is committed in
+      # src-tauri/updater-pubkey.txt; the private key is only ever a secret.
+      # Either both are present or neither is — one without the other ships an
+      # app that checks for updates it cannot verify, or signs updates no
+      # installed app will accept.
+      - name: Stage verified compiler-free Windows chat runtime
+        shell: pwsh
+        env:
+          PYTHONPATH: sidecar
+        run: python -c "from pathlib import Path; from uncloud_engine.native_chat import install_windows_runtime; install_windows_runtime(Path('uncloud/src-tauri/binaries/llama'))"
+
+      - name: Check the update signing key is complete
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          pubkey="$(tr -d '[:space:]' < uncloud/src-tauri/updater-pubkey.txt)"
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ] && [ -z "$pubkey" ]; then
+            echo "::error::TAURI_SIGNING_PRIVATE_KEY is set but updater-pubkey.txt is empty."; exit 1
+          fi
+          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ] && [ -n "$pubkey" ]; then
+            echo "::error::updater-pubkey.txt has a key but the TAURI_SIGNING_PRIVATE_KEY secret is missing."; exit 1
+          fi
+          if [ -n "$pubkey" ]; then echo "SIGNED=true" >> "$GITHUB_ENV"; else echo "SIGNED=false" >> "$GITHUB_ENV"; fi
+
+      # Apple's on-device recogniser has no interface but Swift's, so the
+      # listener is compiled here and bundled beside uv. macOS only; every
+      # other platform transcribes with Whisper through the engine.
+      - name: Build the native listener
+        if: matrix.kind == 'macos'
+        working-directory: uncloud
+        shell: bash
+        run: bash scripts/build_listener.sh
+
+      - name: Build native package
+        working-directory: uncloud
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          bundles="${{ matrix.bundle }}"
+          extra=()
+          if [ "$SIGNED" = true ]; then
+            extra=(--config '{"bundle":{"createUpdaterArtifacts":true}}')
+            # The Mac updater installs the .app, which a dmg-only build never archives.
+            if [ "${{ matrix.kind }}" = macos ]; then bundles="app,dmg"; fi
+          fi
+          npm run tauri build -- --target "${{ matrix.target }}" --bundles "$bundles" "${extra[@]}"
+
+      - name: Verify Windows installer
+        if: matrix.kind == 'windows'
+        shell: pwsh
+        run: |
+          $bundle = Get-ChildItem "uncloud/src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*-setup.exe" | Select-Object -First 1
+          if (-not $bundle) { throw 'Tauri did not produce an NSIS installer' }
+          ./scripts/verify_windows_bundle.ps1 -Bundle $bundle.FullName -Output "release/${{ matrix.artifact }}"
+
+      - name: Verify Linux AppImage
+        if: matrix.kind == 'linux'
+        shell: bash
+        run: |
+          bundle="$(find "uncloud/src-tauri/target/${{ matrix.target }}/release/bundle/appimage" \
+            -maxdepth 1 -type f -name '*.AppImage' -print -quit)"
+          test -n "$bundle"
+          bash scripts/verify_linux_bundle.sh "$bundle" "release/${{ matrix.artifact }}"
+
+      - name: Verify macOS DMG contents
+        if: matrix.kind == 'macos'
+        shell: bash
+        run: |
+          bundle="$(find "uncloud/src-tauri/target/${{ matrix.target }}/release/bundle/dmg" \
+            -maxdepth 1 -type f -name '*.dmg' -print -quit)"
+          test -n "$bundle"
+          bash scripts/verify_macos_bundle.sh "$bundle" "release/${{ matrix.artifact }}"
+
+      # Signatures travel beside the installers they sign. The verify scripts
+      # above copy byte for byte, so a signature made at build time still holds.
+      - name: Collect updater artifacts
+        if: env.SIGNED == 'true'
+        shell: bash
+        run: |
+          dir="uncloud/src-tauri/target/${{ matrix.target }}/release/bundle"
+          case "${{ matrix.kind }}" in
+            macos)
+              archive="$(find "$dir/macos" -maxdepth 1 -name '*.app.tar.gz' -print -quit)"
+              test -n "$archive" && test -f "$archive.sig"
+              cp "$archive" "release/${{ matrix.updater }}"
+              cp "$archive.sig" "release/${{ matrix.updater }}.sig" ;;
+            windows)
+              sig="$(find "$dir/nsis" -maxdepth 1 -name '*-setup.exe.sig' -print -quit)"
+              test -n "$sig" && cp "$sig" "release/${{ matrix.artifact }}.sig" ;;
+            linux)
+              sig="$(find "$dir/appimage" -maxdepth 1 -name '*.AppImage.sig' -print -quit)"
+              test -n "$sig" && cp "$sig" "release/${{ matrix.artifact }}.sig" ;;
+          esac
+
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: uncloud-${{ matrix.kind }}-${{ matrix.target }}
+          path: release/
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Add verified Windows installer to v0.4.9
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/download-artifact@v8.0.1
+        with:
+          pattern: uncloud-windows-*
+          path: release
+          merge-multiple: true
+      - name: Wait for Mac and Linux publication
+        shell: bash
+        run: |
+          mkdir -p existing
+          for attempt in $(seq 1 40); do
+            if gh release download v0.4.9 --pattern latest.json --pattern SHA256SUMS.txt --dir existing --clobber; then
+              exit 0
+            fi
+            sleep 30
+          done
+          echo 'Mac/Linux release is not available yet; rerun this job after publication.'
+          exit 1
+      - name: Preserve Mac and Linux updates while adding Windows
+        shell: python
+        run: |
+          import json, hashlib, pathlib
+          root = pathlib.Path('release')
+          manifest = json.loads(pathlib.Path('existing/latest.json').read_text())
+          assert manifest['version'] == '0.4.9'
+          assert {'darwin-aarch64', 'linux-x86_64'} <= manifest['platforms'].keys()
+          name = 'Uncloud-Windows-x64.exe'
+          sig = (root / (name + '.sig')).read_text().strip()
+          assert sig and (root / name).is_file()
+          manifest['platforms']['windows-x86_64'] = {
+              'signature': sig,
+              'url': 'https://github.com/UnnamedCoder-568/Uncloud/releases/download/v0.4.9/' + name,
+          }
+          manifest['notes'] = manifest.get('notes', '').replace(
+              'Windows remains on v0.4.7 while installer verification is investigated separately.',
+              'Windows v0.4.9 is now available with a bundled compiler-free CPU chat runtime.')
+          (root / 'latest.json').write_text(json.dumps(manifest, indent=2) + '\n')
+          lines = pathlib.Path('existing/SHA256SUMS.txt').read_text().splitlines()
+          lines = [line for line in lines if not line.endswith(name)]
+          lines.append(hashlib.sha256((root / name).read_bytes()).hexdigest() + '  ' + name)
+          (root / 'SHA256SUMS.txt').write_text('\n'.join(lines) + '\n')
+          pathlib.Path('release-notes.txt').write_text(manifest['notes'])
+      - name: Publish verified Windows installer and combined update manifest
+        run: |
+          gh release upload v0.4.9 release/Uncloud-Windows-x64.exe release/Uncloud-Windows-x64.exe.sig --clobber
+          gh release upload v0.4.9 release/latest.json release/SHA256SUMS.txt --clobber
+          gh release edit v0.4.9 --notes-file release-notes.txt

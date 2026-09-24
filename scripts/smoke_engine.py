@@ -126,6 +126,15 @@ def main() -> None:
             try:
                 with urllib.request.urlopen(f"http://127.0.0.1:{port}/health", timeout=3) as response:
                     if response.status == 200:
+                        if os.name == "nt":
+                            request = urllib.request.Request(
+                                f"http://127.0.0.1:{port}/api/readiness?names=chat",
+                                headers={"Authorization": f"Bearer {handshake['token']}"},
+                            )
+                            with urllib.request.urlopen(request, timeout=40) as ready:
+                                rows = json.load(ready)
+                            if not rows or not all(row['ready'] for row in rows):
+                                raise RuntimeError(f"Packaged chat runtime is not ready: {rows}")
                         print(f"Packaged engine became healthy on localhost port {port}.")
                         return
             except Exception as exc:  # noqa: BLE001 - retry until the deadline
