@@ -111,6 +111,7 @@ export async function apiPost<T>(path: string, body?: unknown): Promise<T> {
 export interface Settings {
   models_dir: string;
   onboarded: boolean;
+  runtime_setup_complete?: boolean;
   agent_device_access: boolean;
   keep_awake: boolean;
   output_dir: string;
@@ -2100,4 +2101,36 @@ export async function speakReply(text: string, voice: string): Promise<string> {
     throw new Error(detail || `Speech synthesis failed: ${resp.status}`);
   }
   return URL.createObjectURL(await resp.blob());
+}
+
+export interface CapabilityReady {
+  id: string; label: string; supported: boolean; ready: boolean; detail: string;
+}
+export const getReadiness = (names = '') => api<CapabilityReady[]>(`/api/readiness?names=${encodeURIComponent(names)}`);
+export async function installCapability(name: string, onLine: (line: string) => void): Promise<void> {
+  const response = await fetch(`${await baseUrl()}/api/readiness/${encodeURIComponent(name)}/install`, {
+    method: 'POST', headers: await authHeaders(),
+  });
+  if (!response.ok || !response.body) throw new Error('Could not start installation. Please retry.');
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let completed = false;
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const event = JSON.parse(line.slice(6));
+        if (event.error) throw new Error(event.error);
+        if (event.line) onLine(event.line);
+        if (event.done) completed = true;
+      }
+    }
+    if (!completed) throw new Error('Installation was interrupted. Retry to finish setup.');
+  } finally { reader.releaseLock(); }
 }

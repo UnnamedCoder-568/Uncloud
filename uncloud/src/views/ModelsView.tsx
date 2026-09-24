@@ -1,3 +1,4 @@
+import CapabilityGate from '../components/CapabilityGate';
 /**
  * Models: what is installed, and the two things you do to a model.
  *
@@ -52,8 +53,8 @@ export default function ModelsView() {
           className="h-full"
           panes={[
             { id: 'library', render: () => <ModelsLibrary /> },
-            { id: 'quantize', render: () => <QuantizeView /> },
-            { id: 'train', render: () => <TrainingView /> },
+            { id: 'quantize', render: () => <CapabilityGate names="quantize"><QuantizeView /></CapabilityGate> },
+            { id: 'train', render: () => <CapabilityGate names="train"><TrainingView /></CapabilityGate> },
           ]}
         />
       </div>

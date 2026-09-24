@@ -93,7 +93,7 @@ def install_acestep(on_line=None) -> None:
             on_line(line)
 
     steps = [
-        [uv, "venv", str(ACESTEP_VENV), "--python", "3.12"],
+        [uv, "venv", str(ACESTEP_VENV), "--python", "3.12", "--allow-existing"],
         [uv, "pip", "install", "--python", str(ACESTEP_VENV),
          "ace-step @ git+https://github.com/ace-step/ACE-Step-1.5"],
     ]

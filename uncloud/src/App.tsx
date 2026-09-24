@@ -1,3 +1,4 @@
+import CapabilityGate from './components/CapabilityGate';
 import ActivityOrb from './components/ActivityOrb';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Sidebar from './components/Sidebar';
@@ -20,7 +21,7 @@ import VideoView from './views/VideoView';
 import GuideView from './views/GuideView';
 import OutputsView from './views/OutputsView';
 import SetupView from './views/SetupView';
-import { getLegalState, getSettings, runtimeStatus } from './lib/sidecar';
+import { getLegalState, getSettings, runtimeStatus, startRuntime } from './lib/sidecar';
 import Wordmark from './components/Wordmark';
 import { inDesktop, useNarrow } from './lib/platform';
 import UpdateBanner from './components/UpdateBanner';
@@ -29,12 +30,12 @@ import { AddFromDiskHost } from './components/AddFromDisk';
 
 /** Rendered once visited, then kept alive so tab switching is not destructive. */
 const PANES: { id: View; render: () => React.ReactElement }[] = [
-  { id: 'chat', render: () => <ChatView /> },
+  { id: 'chat', render: () => <CapabilityGate names="chat"><ChatView /></CapabilityGate> },
   { id: 'models', render: () => <ModelsView /> },
-  { id: 'chisel', render: () => <ChiselView /> },
-  { id: 'image', render: () => <ImageView /> },
-  { id: 'video', render: () => <VideoView /> },
-  { id: 'music', render: () => <MusicView /> },
+  { id: 'chisel', render: () => <CapabilityGate names="chat,tools,browser"><ChiselView /></CapabilityGate> },
+  { id: 'image', render: () => <CapabilityGate names="image"><ImageView /></CapabilityGate> },
+  { id: 'video', render: () => <CapabilityGate names="video"><VideoView /></CapabilityGate> },
+  { id: 'music', render: () => <CapabilityGate names="music"><MusicView /></CapabilityGate> },
   { id: 'voice', render: () => <VoiceView /> },
   { id: 'outputs', render: () => <OutputsView /> },
   { id: 'guide', render: () => <GuideView /> },
@@ -54,6 +55,7 @@ export default function App() {
   const [engineUp, setEngineUp] = useState<boolean | null>(null);
   const [ready, setReady] = useState(false);
   const [onboarded, setOnboarded] = useState(false);
+  const [initialSetup, setInitialSetup] = useState(false);
   const [settled, setSettled] = useState<boolean | null>(null);
   const [engineError, setEngineError] = useState<string | null>(null);
   const [railOpen, setRailOpen] = useState(loadRailOpen);
@@ -122,7 +124,13 @@ export default function App() {
 
   useEffect(() => {
     runtimeStatus()
-      .then((s) => setEngineUp(s.running))
+      .then(async (s) => {
+        if (s.running) setEngineUp(true);
+        else if (s.deps_ready) {
+          try { await startRuntime(); setEngineUp(true); }
+          catch { setEngineUp(false); }
+        } else setEngineUp(false);
+      })
       .catch(() => setEngineUp(false));
   }, []);
 
@@ -131,6 +139,7 @@ export default function App() {
     getSettings()
       .then((s) => {
         setOnboarded(s.onboarded);
+        setInitialSetup(!s.runtime_setup_complete);
         setReady(true);
       })
       .catch((e) => setEngineError(String(e)));
@@ -195,6 +204,7 @@ export default function App() {
   }
 
   return (
+    <CapabilityGate setup names={initialSetup ? "" : "tools"}>
     <div className="h-screen w-screen flex bg-[var(--bg)]">
       {showRail && narrow && (
         <div className="rail-scrim" onClick={() => setDrawerOpen(false)} />
@@ -230,5 +240,6 @@ export default function App() {
       <ApprovalPrompt />
       <AddFromDiskHost />
     </div>
+    </CapabilityGate>
   );
 }
