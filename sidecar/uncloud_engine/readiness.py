@@ -9,6 +9,8 @@ import sys
 import threading
 from pathlib import Path
 
+from .native_chat import install_windows_runtime, server_path
+
 ROOT = Path(__file__).resolve().parent.parent
 _LOCK = threading.Lock()
 # id: label, modules, Apple-only, optional environment
@@ -43,6 +45,18 @@ def check(name: str) -> dict:
     row = {'id': name, 'label': label, 'supported': supported, 'ready': False, 'detail': ''}
     if not supported:
         row['detail'] = 'Requires an Apple silicon Mac.'
+        return row
+    native = server_path() if name == 'chat' else None
+    if name == 'chat' and (native or sys.platform == 'win32'):
+        if native:
+            try:
+                result = subprocess.run([native, '--version'], capture_output=True,
+                                        timeout=30, text=True)
+                row['ready'] = result.returncode == 0
+            except (OSError, subprocess.TimeoutExpired):
+                pass
+        if not row['ready']:
+            row['detail'] = 'The Windows chat runtime needs installation or repair.'
         return row
     probe = f'import importlib; [importlib.import_module(m) for m in {modules!r}]'
     if name == 'browser':
@@ -85,7 +99,9 @@ def install(name: str, say) -> None:
         if not uv:
             raise RuntimeError('The bundled installer is missing. Reinstall Uncloud.')
         say(f"Installing {SPECS[name][0]}…")
-        if name == 'music':
+        if name == 'chat' and sys.platform == 'win32':
+            install_windows_runtime(say=say)
+        elif name == 'music':
             from .music_engine import install_acestep
             install_acestep(say)
         elif name in ('realtime', 'quality'):
