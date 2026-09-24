@@ -47,9 +47,9 @@ export default function PrinterSoundSection() {
     <section className="card p-4">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-sm mb-1">Old printer sound</h2>
+          <h2 className="text-sm mb-1">Printer sound</h2>
           <p className="text-[11px] text-[var(--text-faint)] max-w-sm">
-            Clatter like a dot-matrix printer while a model is actually writing —
+            A soft modern printer feed while a model is actually writing —
             in Chat and in Chisel. Silent while it loads, thinks, or searches.
           </p>
         </div>
@@ -57,7 +57,7 @@ export default function PrinterSoundSection() {
           type="button"
           role="switch"
           aria-checked={enabled}
-          aria-label="Old printer sound"
+          aria-label="Printer sound"
           onClick={toggle}
           className={`w-11 h-6 rounded-full shrink-0 transition relative ${enabled ? 'accent-bar' : 'bg-[var(--border)]'}`}
         >
