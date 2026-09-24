@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Sparkles } from 'lucide-react';
 import { getLibrary } from '../lib/sidecar';
 import type { LocalModel } from '../lib/sidecar';
+import { useLibraryVersion } from '../lib/library-changed';
 
 export default function StudioView({
   title, subtitle, categories, placeholder,
@@ -13,10 +14,12 @@ export default function StudioView({
 }) {
   const [models, setModels] = useState<LocalModel[]>([]);
   const [prompt, setPrompt] = useState('');
+  const libraryVersion = useLibraryVersion();
+  const categoryKey = categories.join(',');
 
   useEffect(() => {
     getLibrary().then((list) => setModels(list.filter((m) => categories.includes(m.category))));
-  }, [categories.join(',')]);
+  }, [categoryKey, libraryVersion]);
 
   return (
     <div className="h-full overflow-y-auto px-6 py-5">

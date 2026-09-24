@@ -1,3 +1,4 @@
+import ActivityOrb from './ActivityOrb';
 /**
  * The one strip across the top that says something has changed.
  *
@@ -11,7 +12,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, ArrowUpCircle, Info, Loader2, X } from 'lucide-react';
+import { AlertTriangle, ArrowUpCircle, Info, X } from 'lucide-react';
 import { getSettings } from '../lib/sidecar';
 import { inDesktop } from '../lib/platform';
 import {
@@ -85,7 +86,7 @@ export default function UpdateBanner() {
           )}
           <button onClick={install} disabled={installing}
                   className="btn-accent text-xs px-3 py-1 rounded-lg flex items-center gap-1.5 disabled:opacity-60 max-md:min-h-11">
-            {installing && <Loader2 size={12} className="animate-spin" />}
+            {installing && <ActivityOrb state="working" size={20} label="Working…" />}
             {installing
               ? progress === null ? 'Downloading…' : `Downloading ${Math.round(progress * 100)}%`
               : 'Install and restart'}

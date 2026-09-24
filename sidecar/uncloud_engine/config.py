@@ -46,7 +46,7 @@ class Settings:
 
     @property
     def onboarded(self) -> bool:
-        return bool(self._data.get("onboarded", False))
+        return bool(self._data.get("onboarded", False) and self._data.get("models_dir"))
 
     def mark_onboarded(self) -> None:
         self._data["onboarded"] = True

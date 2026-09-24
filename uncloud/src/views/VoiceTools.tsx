@@ -1,5 +1,6 @@
+import ActivityOrb from '../components/ActivityOrb';
 import { useEffect, useRef, useState } from 'react';
-import { Mic, Square, Loader2, ChevronDown } from 'lucide-react';
+import { Mic, Square, ChevronDown } from 'lucide-react';
 import { getLibrary, transcribeAudio } from '../lib/sidecar';
 import type { LocalModel } from '../lib/sidecar';
 import AddFromDisk from '../components/AddFromDisk';
@@ -102,7 +103,7 @@ export default function VoiceTools() {
 
           <div className="min-h-[80px] text-sm text-[var(--text-dim)] leading-relaxed">
             {transcribing ? (
-              <span className="flex items-center gap-2 text-[var(--text-faint)]"><Loader2 size={14} className="animate-spin" /> Transcribing…</span>
+              <span className="flex items-center gap-2 text-[var(--text-faint)]"><ActivityOrb state="working" size={20} label="Working…" /> Transcribing…</span>
             ) : transcript || <span className="text-[var(--text-faint)]">Your transcript will appear here.</span>}
           </div>
         </section>

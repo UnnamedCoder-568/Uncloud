@@ -1,5 +1,6 @@
+import ActivityOrb from '../components/ActivityOrb';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AudioLines, BookmarkPlus, Loader2, Upload, X } from 'lucide-react';
+import { AudioLines, BookmarkPlus, Upload, X } from 'lucide-react';
 import {
   deleteSavedVoice, installSpeechEngine, saveVoice, speechClipUrl, speechEngines, speechJob,
   speechPresets, startSpeech, uploadRecording,
@@ -245,7 +246,7 @@ export default function SpeechStudio({ engineId }: { engineId: string }) {
   if (!engine) {
     return (
       <div className="h-full flex items-center justify-center text-sm text-[var(--text-faint)]">
-        {error ?? <Loader2 size={16} className="animate-spin" />}
+        {error ?? <ActivityOrb state="working" size={20} label="Working…" />}
       </div>
     );
   }
@@ -368,7 +369,7 @@ export default function SpeechStudio({ engineId }: { engineId: string }) {
                   <button type="button" onClick={chooseFile} disabled={recordingBusy} className="pill">
                     <Upload size={13} /> <span>Choose file</span>
                   </button>
-                  {recordingBusy && <Loader2 size={13} className="animate-spin text-[var(--text-faint)]" />}
+                  {recordingBusy && <ActivityOrb state="working" size={20} label="Working…" />}
                 </div>
                 <p className="text-[10px] text-[var(--text-faint)] leading-relaxed">
                   {recording ? `Using a ${recording.seconds}s recording. ` : ''}
@@ -419,7 +420,7 @@ export default function SpeechStudio({ engineId }: { engineId: string }) {
 
         <button onClick={generate} disabled={!canGenerate}
                 className="h-10 rounded-xl btn-accent text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-30 transition">
-          {busy ? <Loader2 size={14} className="animate-spin" /> : <AudioLines size={14} />}
+          {busy ? <ActivityOrb state="working" size={20} label="Working…" /> : <AudioLines size={14} />}
           {busy ? (job?.total ? `Speaking ${job.done} of ${job.total}…` : `${job?.stage || 'Starting'}…`) : 'Speak'}
         </button>
         {error && <p className="text-[11px] text-rose-400 whitespace-pre-wrap">{error}</p>}
@@ -461,7 +462,7 @@ export default function SpeechStudio({ engineId }: { engineId: string }) {
               <div className="text-sm text-rose-400 whitespace-pre-wrap">{job.error}</div>
             ) : (
               <div className="flex items-center gap-2 text-sm text-[var(--text-dim)]">
-                <Loader2 size={14} className="animate-spin" />
+                <ActivityOrb state="working" size={20} label="Working…" />
                 {job?.total ? `Speaking part ${job.done} of ${job.total}` : job?.stage || 'Starting'}
                 {engineId !== 'kokoro' && ' — the first run loads the model, which takes a little while.'}
               </div>

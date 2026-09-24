@@ -19,8 +19,10 @@ import { Gauge, Boxes, AlertTriangle } from 'lucide-react';
 import Quantize, { quantisable } from '../components/Quantize';
 import { getLibrary } from '../lib/sidecar';
 import type { LocalModel } from '../lib/sidecar';
+import { useLibraryVersion } from '../lib/library-changed';
 
 export default function QuantizeView() {
+  const libraryVersion = useLibraryVersion();
   const [library, setLibrary] = useState<LocalModel[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -33,7 +35,7 @@ export default function QuantizeView() {
     }
   }, []);
 
-  useEffect(() => { refresh(); }, [refresh]);
+  useEffect(() => { refresh(); }, [refresh, libraryVersion]);
 
   const candidates = library ? quantisable(library) : [];
 

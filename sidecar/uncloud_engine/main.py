@@ -2274,6 +2274,37 @@ def music_options() -> dict:
     }
 
 
+@app.post("/api/music/install", dependencies=[Depends(require_token)])
+async def music_install() -> StreamingResponse:
+    queue: asyncio.Queue = asyncio.Queue()
+    loop = asyncio.get_running_loop()
+
+    def on_line(line: str) -> None:
+        loop.call_soon_threadsafe(queue.put_nowait, line)
+
+    def run() -> None:
+        try:
+            music_engine_mod.install_acestep(on_line)
+            loop.call_soon_threadsafe(queue.put_nowait, "__done__")
+        except Exception as exc:  # noqa: BLE001
+            loop.call_soon_threadsafe(queue.put_nowait, f"__error__{exc}")
+
+    async def stream():
+        task = loop.run_in_executor(None, run)
+        while True:
+            line = await queue.get()
+            if line == "__done__":
+                yield 'data: {"done": true}\n\n'
+                break
+            if line.startswith("__error__"):
+                yield f"data: {json.dumps({'error': line[len('__error__'):]})}\n\n"
+                break
+            yield f"data: {json.dumps({'line': line})}\n\n"
+        await task
+
+    return StreamingResponse(stream(), media_type="text/event-stream")
+
+
 class MusicGenerateBody(BaseModel):
     model_dir: str
     prompt: str
