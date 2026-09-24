@@ -28,16 +28,17 @@ PLATFORMS = {
 }
 
 
-def manifest(folder: Path, tag: str, notes: str = "") -> dict | None:
-    signed = {platform: folder / f"{artifact}.sig" for platform, artifact in PLATFORMS.items()}
+def manifest(folder: Path, tag: str, notes: str = "", platforms: list[str] | None = None) -> dict | None:
+    selected = {p: PLATFORMS[p] for p in platforms} if platforms else PLATFORMS
+    signed = {platform: folder / f"{artifact}.sig" for platform, artifact in selected.items()}
     present = {p for p, sig in signed.items() if sig.is_file()}
     if not present:
         return None
-    missing = sorted(set(PLATFORMS) - present)
+    missing = sorted(set(selected) - present)
     if missing:
         raise SystemExit(f"Signatures are missing for {', '.join(missing)}. Refusing to publish "
                          "a manifest that would leave those platforms never updated.")
-    for artifact in PLATFORMS.values():
+    for artifact in selected.values():
         if not (folder / artifact).is_file():
             raise SystemExit(f"{artifact} is signed but not present.")
     return {
@@ -49,7 +50,7 @@ def manifest(folder: Path, tag: str, notes: str = "") -> dict | None:
                 "signature": signed[platform].read_text().strip(),
                 "url": f"https://github.com/{REPOSITORY}/releases/download/{tag}/{artifact}",
             }
-            for platform, artifact in PLATFORMS.items()
+            for platform, artifact in selected.items()
         },
     }
 
@@ -57,7 +58,7 @@ def manifest(folder: Path, tag: str, notes: str = "") -> dict | None:
 def main(argv: list[str]) -> int:
     folder, tag = Path(argv[1]), argv[2]
     notes = Path(argv[3]).read_text() if len(argv) > 3 and Path(argv[3]).is_file() else ""
-    result = manifest(folder, tag, notes)
+    result = manifest(folder, tag, notes, argv[4:] or None)
     if result is None:
         print("No updater signatures in this release; latest.json not written. "
               "Installed apps will not be offered this version.")

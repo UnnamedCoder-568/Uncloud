@@ -386,10 +386,20 @@ class _Client:
     """A TestClient over the real app, with the module's own gate."""
 
     def __enter__(self):
+        import tempfile
+        from pathlib import Path
+
         from fastapi.testclient import TestClient
+        from pytest import MonkeyPatch
 
-        from uncloud_engine import main
+        from uncloud_engine import config, main
+        from uncloud_engine.core import AuditLog
 
+        self.temp = tempfile.TemporaryDirectory()
+        self.patch = MonkeyPatch()
+        self.patch.setattr(config, "CONFIG_FILE", Path(self.temp.name) / "settings.json")
+        self.patch.setattr(main, "_audit", AuditLog(Path(self.temp.name) / "audit.jsonl"))
+        self.patch.setattr(main.settings, "_data", dict(main.settings._data))
         self.main = main
         self.saved = dict(main.gate.policy)
         main.gate.forget_session()
@@ -401,6 +411,8 @@ class _Client:
     def __exit__(self, *exc):
         self.main.gate.policy.update(self.saved)
         self.main.gate.forget_session()
+        self.patch.undo()
+        self.temp.cleanup()
 
 
 def test_chats_own_web_lookup_goes_through_the_gate() -> None:
@@ -505,3 +517,11 @@ def test_the_shell_starts_in_the_workspace_when_device_access_is_off(monkeypatch
     source = inspect.getsource(tools._shell)
     assert "WORKSPACE_DIR" in source and "agent_device_access" in source
     assert Risk.SHELL in ALWAYS_ASK
+
+
+def test_network_denial_explains_how_to_enable_access(gate) -> None:
+    gate.set_mode(Risk.NETWORK, Mode.DENY)
+    decision = gate.check(req(action="web_search", category=Risk.NETWORK))
+    assert decision is not None and not decision.allowed
+    assert "Reach the internet" in decision.reason
+    assert "Ask once a session" in decision.reason

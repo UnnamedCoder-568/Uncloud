@@ -249,7 +249,14 @@ class Gate:
         """
         mode = self.mode_for(request.category)
         if mode is Mode.DENY:
-            return Decision(False, mode, f"{request.category.value} is never allowed")
+            reason = f"{request.category.value} is never allowed"
+            if request.category is Risk.NETWORK:
+                reason = (
+                    "Internet access is disabled. In Settings > What Uncloud may do > "
+                    "Reach the internet, change Never to Ask once a session or Always. "
+                    "Enabling the Web tool alone does not grant permission."
+                )
+            return Decision(False, mode, reason)
         if mode is Mode.ALLOW:
             return Decision(True, mode)
         if mode is Mode.ASK_ONCE and request.key in self._session_actions:
