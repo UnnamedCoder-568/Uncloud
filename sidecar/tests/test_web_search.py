@@ -1,6 +1,6 @@
 """Search parsing survives the provider's no-JavaScript layouts."""
 
-from uncloud_engine.agent.tools import _parse_web_search
+from uncloud_engine.agent.tools import _parse_bing_rss, _parse_web_search
 
 
 def test_parses_duckduckgo_lite_results() -> None:
@@ -23,3 +23,16 @@ def test_refuses_an_empty_or_denial_page() -> None:
         assert "no readable results" in str(exc)
     else:
         raise AssertionError("a provider denial must not be reported as search results")
+
+
+def test_parses_bing_rss_results() -> None:
+    result = _parse_bing_rss("""
+      <rss><channel><item>
+        <title>Official &amp; useful</title>
+        <link>https://example.com/specs</link>
+        <description>The current specification.</description>
+      </item></channel></rss>
+    """)
+    assert "Official & useful" in result
+    assert "https://example.com/specs" in result
+    assert "The current specification." in result

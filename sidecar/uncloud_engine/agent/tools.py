@@ -762,12 +762,21 @@ async def _web_search(query: str) -> str:
     }
     async with httpx.AsyncClient(follow_redirects=True, timeout=25,
                                  headers=headers) as client:
-        resp = await client.get("https://lite.duckduckgo.com/lite/",
-                                params={"q": query})
-        resp.raise_for_status()
-        html = resp.text
-
-    return _parse_web_search(html)
+        try:
+            resp = await client.get("https://lite.duckduckgo.com/lite/",
+                                    params={"q": query})
+            resp.raise_for_status()
+            return _parse_web_search(resp.text)
+        except (httpx.HTTPError, RuntimeError):
+            # DuckDuckGo sometimes answers with a successful HTTP status but
+            # serves its automated-request challenge instead of results. A
+            # second independent endpoint keeps ordinary web access working
+            # through that provider-side refusal; it is not a permission
+            # prompt and retrying the same page cannot repair it.
+            resp = await client.get("https://www.bing.com/search",
+                                    params={"format": "rss", "q": query})
+            resp.raise_for_status()
+            return _parse_bing_rss(resp.text)
 
 
 def _parse_web_search(html: str) -> str:
@@ -799,6 +808,29 @@ def _parse_web_search(html: str) -> str:
 
     if not results:
         raise RuntimeError("The search provider returned no readable results.")
+    return "\n\n".join(results)
+
+
+def _parse_bing_rss(xml: str) -> str:
+    """Read Bing's small RSS search response without accepting page markup."""
+    from xml.etree import ElementTree
+
+    try:
+        root = ElementTree.fromstring(xml)
+    except ElementTree.ParseError as exc:
+        raise RuntimeError("The fallback search provider returned invalid results.") from exc
+
+    results = []
+    for item in root.findall(".//item"):
+        title = " ".join((item.findtext("title") or "").split())
+        link = (item.findtext("link") or "").strip()
+        snippet = " ".join((item.findtext("description") or "").split())
+        if title and link.startswith(("http://", "https://")):
+            results.append(f"{len(results) + 1}. {title}\n   {link}\n   {snippet}")
+        if len(results) >= 8:
+            break
+    if not results:
+        raise RuntimeError("The fallback search provider returned no readable results.")
     return "\n\n".join(results)
 
 
