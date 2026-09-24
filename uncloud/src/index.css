@@ -168,6 +168,8 @@ body {
 }
 
 .spinner {
+  display: inline-block;
+  flex: 0 0 auto;
   width: 14px; height: 14px;
   border: 2px solid var(--border-strong);
   border-top-color: var(--text-2);

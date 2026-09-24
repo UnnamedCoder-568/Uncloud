@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import logging
 import re
 import secrets
 import sys
@@ -54,6 +55,7 @@ from .music_engine import music_engine
 from .narration_engine import narration_engine
 
 app = FastAPI(title="Uncloud Engine")
+logger = logging.getLogger(__name__)
 app.add_middleware(
     CORSMiddleware,
     # Tauri's production origin is platform-specific: Windows and Android use
@@ -1442,7 +1444,17 @@ def mcp_forget(server_id: str) -> list[dict]:
 def catalog() -> list[dict]:
     from .budget import engine_runs_here
 
-    installed = {m.catalog_id for m in scan_library_cached(settings.models_dir) if m.catalog_id}
+    # The catalogue itself is bundled with Uncloud and does not depend on the
+    # chosen models folder. A protected Downloads folder, a disconnected drive
+    # or one malformed file must not make every downloadable model disappear.
+    try:
+        installed = {
+            m.catalog_id for m in scan_library_cached(settings.models_dir) if m.catalog_id
+        }
+    except Exception as exc:  # noqa: BLE001 - filesystem/model probes are untrusted input
+        logger.warning("Could not scan %s while building the catalogue: %s",
+                       settings.models_dir, exc)
+        installed = set()
     out = []
     for entry in get_catalog():
         # A model whose runtime does not exist here is not a model this machine
@@ -1488,7 +1500,16 @@ def model_profiles() -> list[dict]:
 
 @app.get("/api/library", dependencies=[Depends(require_token)])
 def library() -> list[dict]:
-    return [m.to_dict() for m in scan_library_cached(settings.models_dir)]
+    try:
+        return [m.to_dict() for m in scan_library_cached(settings.models_dir)]
+    except Exception as exc:  # noqa: BLE001 - turn a scan failure into an HTTP response
+        logger.warning("Could not scan models folder %s: %s", settings.models_dir, exc)
+        raise HTTPException(
+            status_code=503,
+            detail=(f"Uncloud could not read the models folder ({settings.models_dir}). "
+                    "Choose a dedicated folder such as ~/Uncloud/models in Models or "
+                    "Settings, then retry."),
+        ) from exc
 
 
 # ------------------------------------------------------------ adding a model

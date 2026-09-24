@@ -657,7 +657,19 @@ export default function ChatView() {
           return copy;
         });
       } else {
-        setMessages((m) => [...m, { role: 'assistant', content: `⚠ ${e}` }]);
+        setMessages((m) => {
+          const copy = [...m];
+          const last = copy[copy.length - 1];
+          const message = `⚠ ${e instanceof Error ? e.message : String(e)}`;
+          // Replace the pending reply. Appending left an empty assistant row
+          // behind, which is the tiny vertical artifact seen when generation
+          // failed before producing its first token.
+          if (last?.role === 'assistant' && !last.content.trim()) {
+            copy[copy.length - 1] = { ...last, content: message };
+            return copy;
+          }
+          return [...copy, { role: 'assistant', content: message }];
+        });
       }
     } finally {
       printerSound.stop();
