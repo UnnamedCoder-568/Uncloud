@@ -1,5 +1,6 @@
+import ActivityOrb from '../components/ActivityOrb';
 import { useEffect, useRef, useState } from 'react';
-import { Loader2, Film, Download, ChevronDown, AlertCircle } from 'lucide-react';
+import { Film, Download, ChevronDown, AlertCircle } from 'lucide-react';
 import {
   getBudget, getLibrary, getVideoOptions, generateVideo, getVideoJob, fetchVideoBlobUrl,
   stopVideo,
@@ -352,7 +353,7 @@ export default function VideoView() {
           disabled={!model || !prompt.trim() || busy || budget?.fits === false}
           className="h-10 rounded-xl btn-accent text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-30 transition"
         >
-          {busy ? <Loader2 size={14} className="animate-spin" /> : <Film size={14} />}
+          {busy ? <ActivityOrb state="working" size={20} label="Working…" /> : <Film size={14} />}
           {busy ? (job?.stage || 'Generating…') : 'Generate'}
         </button>
         {/* A clip is minutes of the whole machine; stopping it should not mean
@@ -418,7 +419,7 @@ export default function VideoView() {
           ) : busy ? (
             <div className="w-full max-w-sm">
               <div className="flex items-center gap-2 text-sm text-[var(--text-dim)] mb-3">
-                <Loader2 size={14} className="animate-spin" />
+                <ActivityOrb state="working" size={20} label="Working…" />
                 {job?.stage || 'Working'}
                 {job && job.total_steps > 0 && ` — step ${job.step} of ${job.total_steps}`}
               </div>

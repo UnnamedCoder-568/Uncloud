@@ -1,5 +1,6 @@
+import ActivityOrb from '../components/ActivityOrb';
 import { useEffect, useRef, useState } from 'react';
-import { ChevronDown, ImagePlus, Loader2, Wand2, X, ArrowRight } from 'lucide-react';
+import { ChevronDown, ImagePlus, Wand2, X, ArrowRight } from 'lucide-react';
 import { getLibrary, uploadImage, editImage, getImageJob, fetchImageBlobUrl, stopImage } from '../lib/sidecar';
 import { onWake } from '../lib/awake';
 import Dictate from '../components/Dictate';
@@ -163,7 +164,7 @@ export default function ImageEdit() {
               disabled={uploading}
               className="mt-1.5 w-full h-28 rounded-lg border border-dashed border-[var(--border)] flex flex-col items-center justify-center gap-1.5 text-[var(--text-faint)] hover:border-[#3a3a42] hover:text-[var(--text-dim)] transition"
             >
-              {uploading ? <Loader2 size={16} className="animate-spin" /> : <ImagePlus size={18} />}
+              {uploading ? <ActivityOrb state="working" size={20} label="Working…" /> : <ImagePlus size={18} />}
               <span className="text-[11px]">{uploading ? 'Uploading…' : 'Add an image'}</span>
             </button>
           )}
@@ -207,7 +208,7 @@ export default function ImageEdit() {
           disabled={!model || !refPath || !instruction.trim() || busy}
           className="h-10 rounded-xl btn-accent text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-30 transition"
         >
-          {busy ? <Loader2 size={14} className="animate-spin" /> : <Wand2 size={14} />}
+          {busy ? <ActivityOrb state="working" size={20} label="Working…" /> : <Wand2 size={14} />}
           {busy ? 'Editing…' : 'Apply edit'}
         </button>
       </div>
@@ -233,7 +234,7 @@ export default function ImageEdit() {
           </div>
         ) : busy ? (
           <div className="flex flex-col items-center gap-3 text-[var(--text-dim)]">
-            <Loader2 size={22} className="animate-spin" />
+            <ActivityOrb state="working" size={20} label="Working…" />
             <span className="text-sm">
               {job?.total_steps ? `Editing — step ${job.step}/${job.total_steps}` : 'Editing…'}
             </span>

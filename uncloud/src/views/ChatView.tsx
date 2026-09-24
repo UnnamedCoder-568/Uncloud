@@ -1,11 +1,11 @@
+import ActivityOrb from '../components/ActivityOrb';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { ChevronDown, ArrowUp, Square, Mic, Volume2, VolumeX, Loader2, Hammer, ImagePlus, PanelRight, Plus, X, Globe,
+import { ChevronDown, ArrowUp, Square, Mic, Volume2, VolumeX, Hammer, ImagePlus, PanelRight, Plus, X, Globe,
   Image as ImageIcon, ImageOff, GlobeLock, AudioLines, MessagesSquare,
   Settings2, Paperclip, FileText, Copy, Check, NotebookPen } from 'lucide-react';
 import { TitleBarPortal } from '../components/TitleBar';
 import { Mark } from '../components/Wordmark';
 import Markdown from '../components/Markdown';
-import ActivityOrb from '../components/ActivityOrb';
 import { fromConversation, sendToChisel } from '../lib/handoff';
 import Conversations from '../components/Conversations';
 import ReplyVoice from '../components/ReplyVoice';
@@ -803,7 +803,7 @@ export default function ChatView() {
               className={recording ? 'pill pill-icon pill-on' : 'pill pill-icon'}
               style={recording ? { color: 'var(--danger)' } : undefined}
             >
-              {transcribing ? <Loader2 size={14} className="animate-spin" />
+              {transcribing ? <ActivityOrb state="working" size={20} label="Working…" />
                 : recording ? <Square size={11} fill="currentColor" />
                 : <Mic size={15} />}
             </button>
@@ -832,7 +832,7 @@ export default function ChatView() {
             aria-label="Attach a file"
             className="pill pill-icon"
           >
-            {attachingFile ? <Loader2 size={14} className="animate-spin" /> : <Paperclip size={15} />}
+            {attachingFile ? <ActivityOrb state="working" size={20} label="Working…" /> : <Paperclip size={15} />}
           </button>
 
           {/* The only control here that governs the network. Labelled plainly,
@@ -871,7 +871,7 @@ export default function ChatView() {
             title={autoSpeak ? 'Speak replies: on' : 'Speak replies: off'}
             className={autoSpeak ? 'pill pill-on' : 'pill'}
           >
-            {speaking ? <Loader2 size={14} className="animate-spin" />
+            {speaking ? <ActivityOrb state="working" size={20} label="Working…" />
               : autoSpeak ? <Volume2 size={15} /> : <VolumeX size={15} />}
             <span>Speak</span>
           </button>

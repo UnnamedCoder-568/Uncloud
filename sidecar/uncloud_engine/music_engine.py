@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
+import shutil
 import subprocess
 import threading
 import time
@@ -79,6 +80,34 @@ ACESTEP_RUNNER = Path(__file__).resolve().parent.parent / "scripts" / "acestep_r
 
 def acestep_available() -> bool:
     return ACESTEP_PYTHON.is_file() and ACESTEP_RUNNER.is_file()
+
+
+def install_acestep(on_line=None) -> None:
+    """Install ACE-Step into its isolated environment with the bundled uv."""
+    uv = os.environ.get("UNCLOUD_UV") or shutil.which("uv")
+    if not uv:
+        raise RuntimeError("Uncloud could not find its bundled installer. Reinstall the app.")
+
+    def say(line: str) -> None:
+        if on_line:
+            on_line(line)
+
+    steps = [
+        [uv, "venv", str(ACESTEP_VENV), "--python", "3.12"],
+        [uv, "pip", "install", "--python", str(ACESTEP_VENV),
+         "ace-step @ git+https://github.com/ace-step/ACE-Step-1.5"],
+    ]
+    for step in steps:
+        process = subprocess.Popen(
+            step, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+            cwd=str(Path(__file__).resolve().parent.parent),
+        )
+        for line in process.stdout or []:
+            say(line.rstrip())
+        if process.wait() != 0:
+            raise RuntimeError("ACE-Step setup failed. The installation log explains why.")
+    if not acestep_available():
+        raise RuntimeError("ACE-Step finished installing but its runtime was not found.")
 
 
 class MusicEngine:

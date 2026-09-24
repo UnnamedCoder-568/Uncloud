@@ -1,5 +1,6 @@
+import ActivityOrb from '../components/ActivityOrb';
 import { useCallback, useEffect, useState } from 'react';
-import { Check, Loader2, Pencil, Play, X } from 'lucide-react';
+import { Check, Pencil, Play, X } from 'lucide-react';
 import { renameClip, speechClips, speechClipUrl } from '../lib/sidecar';
 import type { SpeechClip } from '../lib/sidecar';
 import SaveActions from '../components/SaveActions';
@@ -74,7 +75,7 @@ export default function ClipsView() {
         </div>
         {error && <p className="text-[11px] text-rose-400">{error}</p>}
         {clips === null ? (
-          <Loader2 size={16} className="animate-spin text-[var(--text-faint)]" />
+          <ActivityOrb state="working" size={20} label="Working…" />
         ) : clips.length === 0 ? (
           <p className="text-sm text-[var(--text-faint)] leading-relaxed">
             Nothing here yet. Everything you make in Text to voice, Narration and Voice to

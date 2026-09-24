@@ -1,7 +1,8 @@
+import ActivityOrb from '../components/ActivityOrb';
 import { useEffect, useRef, useState } from 'react';
-import { Loader2, Music, Download, Layers, ChevronDown } from 'lucide-react';
+import { Music, Download, Layers, ChevronDown } from 'lucide-react';
 import {
-  getMusicOptions, generateMusic, getMusicJob, musicAudioUrl, getLibrary,
+  getMusicOptions, generateMusic, getMusicJob, musicAudioUrl, getLibrary, installMusicEngine,
 } from '../lib/sidecar';
 import Dictate from '../components/Dictate';
 import AddFromDisk from '../components/AddFromDisk';
@@ -31,6 +32,9 @@ export default function MusicView() {
   const [job, setJob] = useState<MusicJob | null>(null);
   const [mixUrl, setMixUrl] = useState<string | null>(null);
   const [stemUrls, setStemUrls] = useState<Record<string, string>>({});
+  const [installing, setInstalling] = useState(false);
+  const [installLog, setInstallLog] = useState<string[]>([]);
+  const [installError, setInstallError] = useState<string | null>(null);
   const pollRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -81,6 +85,23 @@ export default function MusicView() {
       bit_depth: bitDepth,
       separate_stems: wantStems,
     }));
+  }
+
+  async function setUpMusic() {
+    setInstalling(true);
+    setInstallLog([]);
+    setInstallError(null);
+    try {
+      for await (const event of installMusicEngine()) {
+        if (event.line) setInstallLog((lines) => [...lines.slice(-80), event.line!]);
+        if (event.error) throw new Error(event.error);
+      }
+      setOptions(await getMusicOptions());
+    } catch (e) {
+      setInstallError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setInstalling(false);
+    }
   }
 
   function download(url: string, name: string) {
@@ -134,9 +155,24 @@ export default function MusicView() {
             </div>
           )}
           {options && !options.installed && (
-            <p className="mt-1.5 text-[10px] text-amber-400/90">
-              ACE-Step runtime not installed — see Settings.
-            </p>
+            <div className="mt-2 rounded-lg border border-[var(--border)] bg-[var(--bg-inset)] p-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[11px] text-[var(--text-dim)]">ACE-Step needs setup</span>
+                <button onClick={setUpMusic} disabled={installing}
+                  className="text-[11px] px-2.5 py-1 rounded-md btn-accent disabled:opacity-40">
+                  {installing ? 'Installing…' : 'Install'}
+                </button>
+              </div>
+              <p className="mt-1 text-[10px] text-[var(--text-faint)]">
+                Downloads the music runtime once. Keep Uncloud open while it finishes.
+              </p>
+              {installing && installLog.length > 0 && (
+                <pre className="mt-2 max-h-28 overflow-y-auto text-[10px] font-mono text-[var(--text-faint)] whitespace-pre-wrap">
+                  {installLog.join('\n')}
+                </pre>
+              )}
+              {installError && <p className="mt-2 text-[10px] text-rose-400">{installError}</p>}
+            </div>
           )}
         </div>
 
@@ -255,7 +291,7 @@ export default function MusicView() {
           disabled={!model || !prompt.trim() || busy}
           className="h-10 rounded-xl btn-accent text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-30 transition"
         >
-          {busy ? <Loader2 size={14} className="animate-spin" /> : <Music size={14} />}
+          {busy ? <ActivityOrb state="working" size={20} label="Working…" /> : <Music size={14} />}
           {busy ? (job?.stage || 'Working…') : 'Generate'}
         </button>
       </div>
@@ -304,7 +340,7 @@ export default function MusicView() {
           </div>
         ) : busy ? (
           <div className="h-full flex flex-col items-center justify-center gap-3 text-[var(--text-dim)]">
-            <Loader2 size={22} className="animate-spin" />
+            <ActivityOrb state="working" size={20} label="Working…" />
             <span className="text-sm">{job?.stage || 'Working…'}</span>
             <span className="text-[11px] text-[var(--text-faint)]">
               First run loads ~10GB — later runs are quicker.

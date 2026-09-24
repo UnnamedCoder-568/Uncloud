@@ -1052,6 +1052,28 @@ export async function* installNarrationEngine(
   }
 }
 
+export async function* installMusicEngine(): AsyncGenerator<{
+  line?: string; error?: string; done?: boolean
+}> {
+  const url = `${await baseUrl()}/api/music/install`;
+  const resp = await fetch(url, { method: 'POST', headers: await authHeaders() });
+  if (!resp.ok || !resp.body) throw new Error(`Setup failed: ${resp.status}`);
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = '';
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    const lines = buf.split('\n');
+    buf = lines.pop() || '';
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue;
+      try { yield JSON.parse(line.slice(6)); } catch { /* partial chunk */ }
+    }
+  }
+}
+
 export async function webSearch(query: string) {
   return apiPost<{ results: string }>('/api/web/search', { query });
 }

@@ -1,6 +1,7 @@
+import ActivityOrb from '../components/ActivityOrb';
 import { useEffect, useRef, useState } from 'react';
 import { listen } from '@tauri-apps/api/event';
-import { Check, Loader2, Download, AlertCircle } from 'lucide-react';
+import { Check, Download, AlertCircle } from 'lucide-react';
 import { runtimeStatus, installRuntime, startRuntime } from '../lib/sidecar';
 import type { RuntimeStatus } from '../lib/sidecar';
 import Wordmark from '../components/Wordmark';
@@ -73,7 +74,10 @@ export default function SetupView({ onReady }: { onReady: () => void }) {
   return (
     <div className="h-screen w-screen overflow-y-auto bg-[var(--bg)]">
       <div className="max-w-lg mx-auto px-8 py-14">
-        <Wordmark size={28} spinning={busy} />
+        <div className="flex items-center gap-3">
+          {busy && <ActivityOrb state="connecting" size={32} label="Installing the engine…" />}
+          <Wordmark size={28} />
+        </div>
 
         <h1 className="mt-8 text-xl font-semibold">Set up the engine</h1>
         <p className="mt-2 text-sm text-[var(--text-dim)] leading-relaxed">
@@ -88,7 +92,7 @@ export default function SetupView({ onReady }: { onReady: () => void }) {
             <div key={c.label} className="flex items-start gap-3">
               <div className={`mt-0.5 shrink-0 ${c.ok ? 'text-emerald-400' : 'text-[var(--text-faint)]'}`}>
                 {c.ok ? <Check size={14} strokeWidth={2.5} />
-                      : busy ? <Loader2 size={14} className="animate-spin" />
+                      : busy ? <ActivityOrb state="working" size={20} label="Working…" />
                       : <div className="w-[14px] h-[14px] rounded-full border border-current" />}
               </div>
               <div className="min-w-0">
@@ -124,7 +128,7 @@ export default function SetupView({ onReady }: { onReady: () => void }) {
           disabled={busy || phase === 'checking'}
           className="mt-5 w-full h-11 rounded-xl btn-accent text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-30 transition"
         >
-          {busy ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}
+          {busy ? <ActivityOrb state="working" size={20} label="Working…" /> : <Download size={15} />}
           {phase === 'installing' ? 'Installing…'
             : phase === 'starting' ? 'Starting the engine…'
             : phase === 'failed' ? 'Try again'

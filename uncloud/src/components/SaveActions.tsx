@@ -1,6 +1,7 @@
+import ActivityOrb from './ActivityOrb';
 import { useState } from 'react';
 import { open, save } from '@tauri-apps/plugin-dialog';
-import { Check, Download, FolderOpen, Loader2, Save, SaveAll, Trash2 } from 'lucide-react';
+import { Check, Download, FolderOpen, Save, SaveAll, Trash2 } from 'lucide-react';
 import { deleteOutput, getSettings, outputBlob, revealOutput, saveCopy } from '../lib/sidecar';
 import { downloadBlob, inDesktop } from '../lib/platform';
 
@@ -109,19 +110,19 @@ export default function SaveActions({
         {!inDesktop() && (
           <button className={button} onClick={download} disabled={busy !== null}
                   title="Download to this device">
-            {busy === 'download' ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
+            {busy === 'download' ? <ActivityOrb state="working" size={20} label="Working…" /> : <Download size={13} />}
             Download
           </button>
         )}
         {inDesktop() && <>
         <button className={button} onClick={() => run('save')} disabled={busy !== null}
                 title="Copy to a folder, keeping the name">
-          {busy === 'save' ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
+          {busy === 'save' ? <ActivityOrb state="working" size={20} label="Working…" /> : <Save size={13} />}
           Save
         </button>
         <button className={button} onClick={() => run('saveAs')} disabled={busy !== null}
                 title="Copy somewhere with a name of your choosing">
-          {busy === 'saveAs' ? <Loader2 size={13} className="animate-spin" /> : <SaveAll size={13} />}
+          {busy === 'saveAs' ? <ActivityOrb state="working" size={20} label="Working…" /> : <SaveAll size={13} />}
           Save as…
         </button>
         <button className={button} onClick={() => revealOutput(saved ?? path!)}
@@ -135,7 +136,7 @@ export default function SaveActions({
           disabled={busy !== null}
           title="Delete this render, including the auto-saved copy"
         >
-          {busy === 'discard' ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+          {busy === 'discard' ? <ActivityOrb state="working" size={20} label="Working…" /> : <Trash2 size={13} />}
           {confirming ? 'Delete for good?' : 'Discard'}
         </button>
       </div>

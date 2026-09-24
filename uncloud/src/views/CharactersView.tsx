@@ -1,5 +1,6 @@
+import ActivityOrb from '../components/ActivityOrb';
 import { useEffect, useRef, useState } from 'react';
-import { ImagePlus, Loader2, Plus, Trash2, UserRound, X } from 'lucide-react';
+import { ImagePlus, Plus, Trash2, UserRound, X } from 'lucide-react';
 import { listCharacters, saveCharacter, deleteCharacter, uploadImage, characterReferenceUrl } from '../lib/sidecar';
 import { characterListChanged } from '../lib/characters-changed';
 import Dictate from '../components/Dictate';
@@ -156,7 +157,7 @@ export default function CharactersView() {
                 disabled={uploading}
                 className="mt-1.5 w-40 h-24 rounded-lg border border-dashed border-[var(--border)] flex flex-col items-center justify-center gap-1.5 text-[var(--text-faint)] hover:border-[#3a3a42] transition"
               >
-                {uploading ? <Loader2 size={15} className="animate-spin" /> : <ImagePlus size={16} />}
+                {uploading ? <ActivityOrb state="working" size={20} label="Working…" /> : <ImagePlus size={16} />}
                 <span className="text-[11px]">{uploading ? 'Uploading…' : 'Optional'}</span>
               </button>
             )}

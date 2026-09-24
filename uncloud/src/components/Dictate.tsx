@@ -1,7 +1,9 @@
+import ActivityOrb from './ActivityOrb';
 import { useEffect, useRef, useState } from 'react';
-import { Mic, Loader2 } from 'lucide-react';
+import { Mic } from 'lucide-react';
 import { getLibrary, transcribeAudio } from '../lib/sidecar';
 import type { LocalModel } from '../lib/sidecar';
+import { onLibraryChange } from '../lib/library-changed';
 
 /**
  * Dictation for any text field. Records while held open, transcribes locally
@@ -40,7 +42,11 @@ export default function Dictate({
   const recorder = useRef<MediaRecorder | null>(null);
   const chunks = useRef<Blob[]>([]);
 
-  useEffect(() => { sttModel().then(setModel); }, []);
+  useEffect(() => {
+    const refresh = () => { cached = null; sttModel().then(setModel); };
+    refresh();
+    return onLibraryChange(refresh);
+  }, []);
 
   // Releasing the microphone matters: the OS shows a recording indicator for as
   // long as the track is live, even if this component is gone.
@@ -95,7 +101,7 @@ export default function Dictate({
           : 'text-[var(--text-faint)] hover:text-[var(--text-dim)] hover:bg-[var(--bg-raised)]'
       } disabled:opacity-40 ${className}`}
     >
-      {busy ? <Loader2 size={13} className="animate-spin" /> : <Mic size={13} />}
+      {busy ? <ActivityOrb state="working" size={20} label="Working…" /> : <Mic size={13} />}
     </button>
   );
 }

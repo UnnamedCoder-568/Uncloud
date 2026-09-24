@@ -1,3 +1,4 @@
+import ActivityOrb from './ActivityOrb';
 /** Settings → Integrations: what Uncloud can reach, and what each one needs.
  *
  *  The screen is built around six states rather than a connected boolean,
@@ -15,8 +16,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
-import { AlertTriangle, Check, ChevronRight, FolderOpen, KeyRound, Loader2,
-         Lock, Plug, Server, Settings2, X } from 'lucide-react';
+import { AlertTriangle, Check, ChevronRight, FolderOpen, KeyRound, Lock, Plug, Server, Settings2, X } from 'lucide-react';
 
 import {
   addMcpServer, authorizeIntegration, classifyMcpTool, configureIntegration,
@@ -183,7 +183,7 @@ function Row({ integration, busy, open, onToggle, onAct }: {
           </span>
         </span>
         <span className="flex items-center gap-2 shrink-0">
-          {busy && <Loader2 size={13} className="animate-spin" />}
+          {busy && <ActivityOrb state="working" size={20} label="Working…" />}
           <span className="text-[10px] text-[var(--text-faint)]">
             {integration.capabilities.length} capabilities
           </span>
@@ -492,7 +492,7 @@ function McpSection({ servers, busy, onAct, onReload }: {
                 </div>
               </div>
               <div className="flex items-center gap-2 shrink-0">
-                {busy === server.id && <Loader2 size={12} className="animate-spin" />}
+                {busy === server.id && <ActivityOrb state="working" size={20} label="Working…" />}
                 <button
                   onClick={() => onAct(server.id, () => (
                     server.connected

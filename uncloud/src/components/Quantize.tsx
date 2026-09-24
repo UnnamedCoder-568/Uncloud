@@ -1,5 +1,6 @@
+import ActivityOrb from './ActivityOrb';
 import { useEffect, useState } from 'react';
-import { Gauge, Loader2, CheckCircle2, XCircle } from 'lucide-react';
+import { Gauge, CheckCircle2, XCircle } from 'lucide-react';
 import {
   getQuantizeBases, startQuantize, listQuantizeJobs,
 } from '../lib/sidecar';
@@ -211,7 +212,7 @@ export default function Quantize({ models, onBuilt }: {
           {jobs.slice(-4).map((j) => (
             <div key={j.id} className="bg-[var(--bg-inset)] rounded-lg px-3 py-2">
               <div className="flex items-center gap-2 text-xs">
-                {j.status === 'running' && <Loader2 size={13} className="animate-spin text-[var(--text-dim)]" />}
+                {j.status === 'running' && <ActivityOrb state="working" size={20} label="Working…" />}
                 {j.status === 'done' && <CheckCircle2 size={13} className="text-emerald-400" />}
                 {j.status === 'error' && <XCircle size={13} className="text-rose-400" />}
                 <span className="truncate">{j.name}</span>

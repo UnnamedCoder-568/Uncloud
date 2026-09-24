@@ -1,10 +1,11 @@
+import ActivityOrb from './ActivityOrb';
 /**
  * Settings: which version this is, whether it looks for newer ones, and every
  * notice — including the optional ones the banner leaves out.
  */
 
 import { useEffect, useState } from 'react';
-import { ArrowUpCircle, Loader2, RefreshCw } from 'lucide-react';
+import { ArrowUpCircle, RefreshCw } from 'lucide-react';
 import { getSettings } from '../lib/sidecar';
 import { inDesktop } from '../lib/platform';
 import {
@@ -76,7 +77,7 @@ export default function UpdatesSection() {
       <div className="mt-3 flex flex-wrap items-center gap-3 text-[12px]">
         <button onClick={checkNow} disabled={checking}
                 className="text-xs px-3 py-1.5 rounded-lg bg-[var(--bg-inset)] text-[var(--text-dim)] hover:text-white transition flex items-center gap-1.5 disabled:opacity-60 max-md:min-h-11">
-          {checking ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />} Check now
+          {checking ? <ActivityOrb state="working" size={20} label="Working…" /> : <RefreshCw size={12} />} Check now
         </button>
         {report?.checked_at && (
           <span className="text-[11px] text-[var(--text-faint)]">
@@ -100,7 +101,7 @@ export default function UpdatesSection() {
           <span>Uncloud {app.available.version} is available.</span>
           <button onClick={install} disabled={installing}
                   className="btn-accent text-xs px-3 py-1.5 rounded-lg flex items-center gap-1.5 disabled:opacity-60 max-md:min-h-11">
-            {installing && <Loader2 size={12} className="animate-spin" />}
+            {installing && <ActivityOrb state="working" size={20} label="Working…" />}
             {installing ? (progress === null ? 'Downloading…' : `${Math.round(progress * 100)}%`) : 'Install and restart'}
           </button>
         </div>
