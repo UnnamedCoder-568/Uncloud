@@ -29,6 +29,9 @@ The optional writing sound now remains audible even when a fast model delivers
 its reply in one large chunk, and its synthesis resembles a soft modern inkjet
 feed instead of an old dot-matrix clatter.
 
+The public interface no longer shows an “Uncensored only” catalogue filter or
+an image-generation control for replacing a model's text encoder.
+
 Links can leave the desktop app correctly, model cards are easier to read, and
 the Models page links to publisher pages and alternative model hubs.
 

@@ -27,7 +27,6 @@ export default function ModelsLibrary() {
   const [catalog, setCatalog] = useState<CatalogEntry[]>([]);
   const [library, setLibrary] = useState<LocalModel[]>([]);
   const [downloads, setDownloads] = useState<DownloadState[]>([]);
-  const [onlyUncensored, setOnlyUncensored] = useState(false);
   const [disclosing, setDisclosing] = useState<
     { terms: ModelLicence; entry: CatalogEntry } | null>(null);
 
@@ -130,9 +129,7 @@ export default function ModelsLibrary() {
     refresh();
   }
 
-  const filteredCatalog = catalog
-    .filter((e) => e.category === category)
-    .filter((e) => !onlyUncensored || e.tags.includes('uncensored'));
+  const filteredCatalog = catalog.filter((e) => e.category === category);
   const filteredLocal = library.filter((m) => m.category === category);
 
   return (
@@ -152,12 +149,6 @@ export default function ModelsLibrary() {
               </button>
             ))}
           </div>
-          {category === 'text' && (
-            <label className="flex items-center gap-2 text-xs text-[var(--text-dim)] cursor-pointer select-none max-md:min-h-11">
-              <input type="checkbox" checked={onlyUncensored} onChange={(e) => setOnlyUncensored(e.target.checked)} />
-              Uncensored only
-            </label>
-          )}
         </div>
       </header>
 
@@ -274,9 +265,7 @@ export default function ModelsLibrary() {
                 ? 'Loading…'
                 : catalog.length === 0
                   ? 'The catalog could not be loaded.'
-                  : onlyUncensored
-                    ? 'No uncensored models in this category.'
-                    : 'Nothing to download in this category.'}
+                  : 'Nothing to download in this category.'}
             </p>
           )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
