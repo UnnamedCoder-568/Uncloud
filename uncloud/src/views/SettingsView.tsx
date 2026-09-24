@@ -12,6 +12,7 @@ import OnTheComputer from '../components/OnTheComputer';
 import { inDesktop } from '../lib/platform';
 import AppearanceSection from '../components/AppearanceSection';
 import PrinterSoundSection from '../components/PrinterSoundSection';
+import { Check } from 'lucide-react';
 
 export default function SettingsView() {
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -312,10 +313,15 @@ export default function SettingsView() {
                     }`}
                   >
                     <span
-                      className={`mt-0.5 w-3.5 h-3.5 rounded shrink-0 ${
-                        on ? 'accent-bar' : 'border border-[var(--border)]'
+                      aria-hidden="true"
+                      className={`mt-0.5 w-4 h-4 rounded shrink-0 flex items-center justify-center border ${
+                        on
+                          ? 'accent-bar border-[var(--accent)] text-[var(--accent-on)]'
+                          : 'bg-[var(--bg-inset)] border-[var(--border-strong)]'
                       }`}
-                    />
+                    >
+                      {on && <Check size={12} strokeWidth={3} />}
+                    </span>
                     <span className="min-w-0">
                       <span className="text-xs block">
                         {g.label}
