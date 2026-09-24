@@ -1,5 +1,5 @@
 import CapabilityGate from './components/CapabilityGate';
-import ActivityOrb from './components/ActivityOrb';
+import StartupScreen from './components/StartupScreen';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Sidebar from './components/Sidebar';
 import type { View } from './components/Sidebar';
@@ -158,15 +158,9 @@ export default function App() {
 
   const handleEngineReady = useCallback(() => setEngineUp(true), []);
 
-  const splash = (
-    <div className="h-screen w-screen flex items-center justify-center dot-ground">
-      <div className="glow flex flex-col items-center gap-4">
-        <ActivityOrb state="connecting" size={64} label="Starting Uncloud…" />
-        <Wordmark size={32} />
-        <span className="text-xs text-[var(--text-faint)]">Starting Uncloud…</span>
-      </div>
-    </div>
-  );
+  const splash = <StartupScreen status={engineUp
+    ? 'Preparing your workspace…'
+    : 'Starting your local AI engine…'} />;
 
   // Mounted before any branch returns, so a request that needs a decision
   // during setup or onboarding still has somewhere to be answered.

@@ -1,8 +1,5 @@
 name: Publish verified Mac and Linux 0.4.8
 on:
-  push:
-    branches: [main]
-    paths: [.github/workflows/publish-mac-linux.yml]
   workflow_dispatch:
 permissions:
   contents: write
@@ -39,7 +36,7 @@ jobs:
         with:
           tag_name: v0.4.8
           name: Uncloud v0.4.8 — macOS and Linux
-          make_latest: true
+          make_latest: false
           fail_on_unmatched_files: true
           body: |
             Available now for Apple silicon Macs and Linux x64 using the verified artifacts from release build 35963335100.
