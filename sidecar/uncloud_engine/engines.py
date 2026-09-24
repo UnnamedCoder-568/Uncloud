@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import shutil
 import socket
 import subprocess
 import sys
@@ -10,7 +9,9 @@ from dataclasses import dataclass
 
 import httpx
 
-LLAMA_SERVER_BIN = shutil.which("llama-server")
+from .native_chat import server_path
+
+LLAMA_SERVER_BIN = server_path()
 
 
 def _free_port() -> int:
@@ -65,8 +66,9 @@ class EngineManager:
             return active
 
     def _spawn_llama_cpp(self, model_path: str, port: int) -> subprocess.Popen:
-        if LLAMA_SERVER_BIN:
-            command = [LLAMA_SERVER_BIN, "-m", model_path, "--port", str(port),
+        native = LLAMA_SERVER_BIN or server_path()
+        if native:
+            command = [native, "-m", model_path, "--port", str(port),
                        "--host", "127.0.0.1", "-ngl", "999", "-c", "8192"]
         else:
             try:

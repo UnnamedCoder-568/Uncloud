@@ -68,3 +68,6 @@ uncloud/src-tauri/vendor/
 # `models/` above keeps downloaded weights out of git. It also matched Core's
 # source package for identifying models, which is code and must be committed.
 !sidecar/uncloud_engine/core/models/
+
+# Staged native Windows chat runtime
+uncloud/src-tauri/binaries/llama/

@@ -23,7 +23,7 @@ $engineManifest = Get-ChildItem -LiteralPath $installDir -Recurse -File -Filter 
 $app = Get-ChildItem -LiteralPath $installDir -Recurse -File -Filter '*.exe' |
     Where-Object {
         $_.Name -notin @('uv.exe', 'Uninstall.exe', 'uninstall.exe') -and
-        $_.DirectoryName -notmatch '\\engine(\\|$)'
+        $_.DirectoryName -notmatch '\\(engine|llama)(\\|$)'
     } |
     Sort-Object Length -Descending |
     Select-Object -First 1
@@ -35,7 +35,11 @@ if (-not $app) { throw 'Installed package does not include the Uncloud applicati
 $uvVersion = & $uv.FullName --version
 if ($uvVersion -notlike 'uv 0.12.13*') { throw "Unexpected bundled runtime: $uvVersion" }
 
-$env:HOME = $stateDir
+$server = Get-ChildItem -LiteralPath $installDir -Recurse -File -Filter 'llama-server.exe' | Select-Object -First 1
+if (-not $server) { throw 'Installed package does not include the Windows chat runtime' }
+& $server.FullName --version
+if ($LASTEXITCODE -ne 0) { throw 'Bundled Windows chat runtime cannot start' }
+$env:UNCLOUD_LLAMA_SERVER = $server.FullName
 $env:USERPROFILE = $stateDir
 $appProcess = Start-Process -FilePath $app.FullName -PassThru
 try {
