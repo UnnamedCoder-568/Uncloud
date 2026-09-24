@@ -183,20 +183,6 @@ export default function ImageGenerate({ onEdit }: { onEdit?: () => void }) {
     setGuidance(d.guidance);
   }
 
-  // Present only when an encoder component is installed. Klein's encoder is a
-  // causal LM, which is where its restraint lives; other pipelines ignore this.
-  const [encoder, setEncoder] = useState<LocalModel | null>(null);
-  const [useEncoder, setUseEncoder] = useState(false);
-
-  useEffect(() => {
-    getLibrary()
-      .then((ms) => setEncoder(ms.find((m) => m.engine === 'text-encoder') ?? null))
-      .catch(() => undefined);
-  }, [libraryVersion]);
-
-  const encoderApplies =
-    !!encoder && (model?.engine === 'diffusers' || model?.engine === 'flux2-profile');
-
   const loadCharacters = useCallback(
     () => listCharacters().then(setCharacters).catch(() => undefined), []);
   useEffect(() => {
@@ -244,7 +230,6 @@ export default function ImageGenerate({ onEdit }: { onEdit?: () => void }) {
       negative_prompt: negativePrompt.trim() || undefined,
       steps, guidance, width, height, count,
       seed: seed.trim() ? Number(seed.trim()) : undefined,
-      text_encoder_path: encoderApplies && useEncoder ? encoder!.path : undefined,
       // Set for MLX checkpoints found on disk; catalog models leave these
       // unset and the engine falls back to the catalog's own entry point.
       mflux_cli: model.mflux_cli ?? undefined,
@@ -639,25 +624,6 @@ export default function ImageGenerate({ onEdit }: { onEdit?: () => void }) {
               </button>
             </div>
           </label>
-
-          {encoderApplies && (
-            <label className="flex items-start gap-2.5 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={useEncoder}
-                onChange={(e) => setUseEncoder(e.target.checked)}
-                className="mt-0.5 accent-[var(--accent)]"
-              />
-              <span className="min-w-0">
-                <span className="text-xs block">Uncensored text encoder</span>
-                <span className="text-[10px] text-[var(--text-faint)] block leading-snug">
-                  Swaps this pipeline's text encoder for {encoder!.name}. Only affects
-                  models whose encoder is a language model — FLUX.2 Klein. Models
-                  that already bring their own encoder are unchanged by this.
-                </span>
-              </span>
-            </label>
-          )}
 
           {model && (
             <button
