@@ -68,7 +68,7 @@ def test_the_publish_step_no_longer_expects_the_withdrawn_intel_build() -> None:
     fail_on_unmatched_files after Intel left the matrix."""
     assert "Intel.dmg" not in WORKFLOW
     assert "-eq 4" not in WORKFLOW
-    for installer in ("Uncloud-Windows-x64.exe", "Uncloud-Linux-x64.AppImage",
+    for installer in ("Uncloud-Linux-x64.AppImage",
                       "Uncloud-macOS-Apple-Silicon.dmg"):
         assert installer in WORKFLOW
 
@@ -85,3 +85,18 @@ def test_no_private_key_is_ever_committed() -> None:
         pytest.fail(f"a private key file is in the repository: {path}")
     pubkey = (REPO / "uncloud" / "src-tauri" / "updater-pubkey.txt").read_text()
     assert "PRIVATE" not in pubkey.upper()
+
+
+def test_explicit_mac_linux_release_keeps_correct_signed_urls(tmp_path: Path) -> None:
+    platforms = ["darwin-aarch64", "linux-x86_64"]
+    result = _script().manifest(_release(tmp_path, signed=set(platforms)), "v0.4.9",
+                                platforms=platforms)
+    assert set(result["platforms"]) == set(platforms)
+    assert all("/v0.4.9/" in entry["url"] for entry in result["platforms"].values())
+    assert "darwin-aarch64 linux-x86_64" in WORKFLOW
+
+
+def test_explicit_platforms_still_require_every_signature(tmp_path: Path) -> None:
+    with pytest.raises(SystemExit, match="linux-x86_64"):
+        _script().manifest(_release(tmp_path, signed={"darwin-aarch64"}), "v0.4.9",
+                           platforms=["darwin-aarch64", "linux-x86_64"])

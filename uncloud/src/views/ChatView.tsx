@@ -18,7 +18,7 @@ import { MAX_ROUNDS, describe, findLookups, resultsTurn, stripLookups } from '..
 import { printerSound } from '../lib/printer-sound';
 import { getLibrary, startEngine, engineStatus, streamChat, transcribeAudio, speakReply, IMAGE_MARKER, chatSystemPrompt, parseReplyImages, generateReplyImage,
   listConversations, readConversation, writeConversation, deleteConversation,
-  webSearch, webRead, webImages, MANNERS,
+  webSearch, webRead, webImages, MANNERS, getPermissions, setPermission,
   outputBlobUrl, revealOutput, uploadChatAttachment, saveNote as saveReplyNote,
   listNotes, deleteNote } from '../lib/sidecar';
 import type { LocalModel, ChatMessage, ChatAttachment, ConversationList, SavedNote, WebImage } from '../lib/sidecar';
@@ -34,6 +34,8 @@ function newConversationId(): string {
 }
 
 export default function ChatView() {
+  const [networkDenied, setNetworkDenied] = useState(false);
+  const [networkError, setNetworkError] = useState('');
   const [models, setModels] = useState<LocalModel[]>([]);
   const [activeModel, setActiveModel] = useState<LocalModel | null>(null);
   const [loadingModel, setLoadingModel] = useState(false);
@@ -809,6 +811,23 @@ export default function ChatView() {
             </button>
           )}
 
+          <details className="relative" onToggle={(e) => {
+            if (e.currentTarget.open) getPermissions().then((p) => setNetworkDenied(p.policy.network === 'deny')).catch(() => undefined);
+          }}>
+            <summary className="pill pill-icon list-none cursor-pointer" aria-label="Chat settings" title="Chat settings">
+              <Settings2 size={15} />
+            </summary>
+            <div className="absolute bottom-full mb-2 left-0 z-40 card p-3 flex flex-col gap-2 min-w-64"
+                 onKeyDown={(e) => { if (e.key === 'Escape') { e.currentTarget.closest('details')?.removeAttribute('open'); } }}>
+              <span className="text-xs text-[var(--text-dim)]">Chat settings</span>
+              {networkDenied && <div className="text-xs max-w-64">
+                <p>Internet access is set to Never, even when Web is on.</p>
+                <button className="pill mt-2" onClick={async () => {
+                  try { const p = await setPermission('network', 'ask_category'); setNetworkDenied(p.policy.network === 'deny'); }
+                  catch { setNetworkError('Could not change permission. Try again in Settings.'); }
+                }}>Enable internet — ask once per session</button>
+              </div>}
+              {networkError && <p role="alert" className="text-xs">{networkError}</p>}
           {/* Attaching a picture. Offered whatever the model, and refused with
               a reason when it cannot see — hiding the button would leave
               somebody hunting for a feature that is present. */}
@@ -841,8 +860,7 @@ export default function ChatView() {
           <button
             onClick={() => setWeb((v) => !v)}
             title={web
-              ? 'Web lookups: on — search queries are sent to DuckDuckGo when '
-                + 'the model asks to look something up. Nothing else leaves this Mac.'
+              ? 'Web lookups requested — internet permission must also be enabled in Settings.'
               : 'Web lookups: off — nothing leaves this Mac'}
             className={web ? 'pill pill-on' : 'pill'}
           >
@@ -875,6 +893,24 @@ export default function ChatView() {
               : autoSpeak ? <Volume2 size={15} /> : <VolumeX size={15} />}
             <span>Speak</span>
           </button>
+
+          {/* Hand the conversation to Chisel. Only once there is something to
+              hand over, and never while the model is still writing — the last
+              message is what becomes the goal, and half of it is not a goal. */}
+          {messages.some((m) => m.role === 'user') && (
+            <button
+              onClick={() => sendToChisel(fromConversation(messages, activeModel))}
+              disabled={generating}
+              title="Continue this in Chisel, carrying the conversation"
+              className="pill"
+            >
+              <Hammer size={15} />
+              <span>Chisel</span>
+            </button>
+          )}
+
+            </div>
+          </details>
 
           {/* Hands-free. The state is written out rather than left to a colour,
               because "is it listening to me right now" is the one question a
@@ -935,21 +971,6 @@ export default function ChatView() {
               </p>
             </div>
           </details>
-
-          {/* Hand the conversation to Chisel. Only once there is something to
-              hand over, and never while the model is still writing — the last
-              message is what becomes the goal, and half of it is not a goal. */}
-          {messages.some((m) => m.role === 'user') && (
-            <button
-              onClick={() => sendToChisel(fromConversation(messages, activeModel))}
-              disabled={generating}
-              title="Continue this in Chisel, carrying the conversation"
-              className="pill"
-            >
-              <Hammer size={15} />
-              <span>Chisel</span>
-            </button>
-          )}
 
           <div className="composer-spacer" />
 
@@ -1192,7 +1213,7 @@ export default function ChatView() {
                   <div className="mt-2 flex items-center gap-1.5 text-[11px]
                                   text-[var(--text-faint)] px-1 flex-wrap">
                     <Globe size={11} />
-                    <span>Looked up: {consulted.join(' · ')}</span>
+                    <span>Web lookup attempted: {consulted.join(' · ')}</span>
                   </div>
                 )}
 

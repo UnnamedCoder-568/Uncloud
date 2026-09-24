@@ -416,16 +416,15 @@ pub fn spawn_sidecar(app: &AppHandle) -> Result<(Child, SidecarInfo), String> {
             .to_string()
     })?;
 
-    let mut command = Command::new(&uv);
+    // Startup must never install or compile dependencies behind the splash.
+    // The visible setup/repair flows own dependency installation.
+    let python = venv_python(&dir);
+    if !python.is_file() {
+        return Err("The engine needs setup. Install it from the setup screen.".into());
+    }
+    let mut command = Command::new(&python);
     command
-        .args([
-            "run",
-            "--locked",
-            "--no-dev",
-            "python",
-            "-m",
-            "uncloud_engine.main",
-        ])
+        .args(["-m", "uncloud_engine.main"])
         .current_dir(&dir)
         .env("PATH", child_path_env())
         // Optional runtimes are installed after first launch. They must be
@@ -464,9 +463,12 @@ pub fn spawn_sidecar(app: &AppHandle) -> Result<(Child, SidecarInfo), String> {
     }
     hide_console(&mut command);
 
-    let mut child = command
-        .spawn()
-        .map_err(|e| format!("Failed to launch the engine via `{}`: {e}", uv.display()))?;
+    let mut child = command.spawn().map_err(|e| {
+        format!(
+            "Failed to launch the engine via `{}`: {e}",
+            python.display()
+        )
+    })?;
 
     let stdout = child.stdout.take().ok_or("Engine produced no stdout")?;
     let mut reader = BufReader::new(stdout);

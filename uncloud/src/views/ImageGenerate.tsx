@@ -53,7 +53,8 @@ export default function ImageGenerate({ onEdit }: { onEdit?: () => void }) {
   const [steps, setSteps] = useState(8);
   const [guidance, setGuidance] = useState(1.0);
   const [width, setWidth] = useState(1024);
-  const [height, setHeight] = useState(1024);
+  const [height, setHeight] = useState(768);
+  const [aspect, setAspect] = useState('4:3');
   const [seed, setSeed] = useState('');
   //: How many images one press makes. Remembered: people who want four
   //  options want four every time.
@@ -589,6 +590,27 @@ export default function ImageGenerate({ onEdit }: { onEdit?: () => void }) {
             />
           </label>
 
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs text-[var(--text-dim)]">Image format</span>
+            <select value={aspect} onChange={(e) => {
+              setAspect(e.target.value);
+              const sizes: Record<string, [number, number]> = {
+                '4:3': [1024, 768], '3:4': [768, 1024], '1:1': [1024, 1024],
+                '16:9': [1024, 576], '9:16': [576, 1024],
+              };
+              const size = sizes[e.target.value];
+              if (size) { setWidth(size[0]); setHeight(size[1]); }
+            }} className="card px-2.5 py-1.5 text-sm">
+              <option value="4:3">4:3 — Landscape (default)</option>
+              <option value="3:4">3:4 — Portrait</option>
+              <option value="1:1">1:1 — Square</option>
+              <option value="16:9">16:9 — Wide</option>
+              <option value="9:16">9:16 — Tall</option>
+              <option value="custom">Custom dimensions</option>
+            </select>
+          </label>
+          {aspect !== 'custom' && <p className="text-xs">{width} × {height} pixels</p>}
+          {aspect === 'custom' && (
           <div className="grid grid-cols-2 gap-2">
             <label className="flex flex-col gap-1.5">
               <span className="text-xs text-[var(--text-dim)]">Width</span>
@@ -607,6 +629,7 @@ export default function ImageGenerate({ onEdit }: { onEdit?: () => void }) {
               />
             </label>
           </div>
+          )}
 
           <label className="flex flex-col gap-1.5">
             <span className="text-xs text-[var(--text-dim)]">Seed</span>
@@ -628,7 +651,7 @@ export default function ImageGenerate({ onEdit }: { onEdit?: () => void }) {
 
           {model && (
             <button
-              onClick={() => { const d = defaultsFor(model); setSteps(d.steps); setGuidance(d.guidance); setWidth(1024); setHeight(1024); setSeed(''); }}
+              onClick={() => { const d = defaultsFor(model); setSteps(d.steps); setGuidance(d.guidance); setWidth(1024); setHeight(768); setAspect('4:3'); setSeed(''); }}
               className="text-xs text-[var(--text-faint)] hover:text-[var(--text-dim)] transition text-left"
             >
               Reset to defaults
