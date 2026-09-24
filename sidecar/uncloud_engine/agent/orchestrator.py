@@ -46,7 +46,8 @@ Guidance:
   into the step that needs it. Shell is for running programs, not for editing strings.
 - When the goal creates a file, include a final check that it exists and is readable.
   Report completion only from a successful tool result, never from planned steps alone.
-- On macOS, a simple text PDF can be made with `cupsfilter -m application/pdf input.txt > output.pdf`.
+- On macOS, a simple text PDF can be made with
+  `cupsfilter -m application/pdf input.txt > output.pdf`.
 - Progress is recorded automatically, so you do not need planning steps just to track state.
 - Use note_save for a fact a later step depends on (a path, an ID, a finding),
   and note_recall to read it back rather than re-deriving it.
@@ -85,7 +86,7 @@ def _extract_json(text: str) -> dict:
     decoder = json.JSONDecoder()
     for match in re.finditer(r"\{", text):
         try:
-            value, _ = decoder.raw_decode(text[match.start():])
+            value, _ = decoder.raw_decode(text[match.start() :])
         except json.JSONDecodeError:
             continue
         if isinstance(value, dict) and "tasks" in value:
@@ -111,15 +112,26 @@ def _graph_from_plan(parsed: dict, goal: str, specs: list[dict]) -> ExecutionGra
             raise ValueError(f"Unknown or disabled tool: {tool!r}.")
         if not isinstance(args, dict):
             raise ValueError(f"Task {task_id} needs an args object.")
-        if not isinstance(deps, list) or any(not isinstance(d, str) or d not in tasks
-                                             for d in deps):
+        if not isinstance(deps, list) or any(
+            not isinstance(d, str) or d not in tasks for d in deps
+        ):
             raise ValueError(f"Task {task_id} has an unknown dependency.")
-        graph.add_task(Task(id=task_id, description=str(raw.get("description", "")),
-                            tool_id=tool, args=args, dependencies=deps))
+        graph.add_task(
+            Task(
+                id=task_id,
+                description=str(raw.get("description", "")),
+                tool_id=tool,
+                args=args,
+                dependencies=deps,
+            )
+        )
     resolved: set[str] = set()
     while len(resolved) < len(tasks):
-        ready = {t.id for t in graph.tasks.values() if t.id not in resolved
-                 and set(t.dependencies) <= resolved}
+        ready = {
+            t.id
+            for t in graph.tasks.values()
+            if t.id not in resolved and set(t.dependencies) <= resolved
+        }
         if not ready:
             raise ValueError("Task dependencies contain a cycle.")
         resolved.update(ready)
@@ -139,9 +151,11 @@ def _resolve_refs(args: dict[str, Any], graph: ExecutionGraph) -> dict[str, Any]
 
     def sub(value: Any) -> Any:
         if isinstance(value, str):
+
             def replace(m: re.Match) -> str:
                 ref = graph.tasks.get(m.group(1))
                 return (ref.output or "") if ref else m.group(0)
+
             return _REF.sub(replace, value)
         if isinstance(value, list):
             return [sub(v) for v in value]
@@ -154,8 +168,12 @@ def _resolve_refs(args: dict[str, Any], graph: ExecutionGraph) -> dict[str, Any]
 
 def _rename_refs(value: Any, names: dict[str, str]) -> Any:
     if isinstance(value, str):
-        return _REF.sub(lambda match: match.group(0).replace(
-            match.group(1), names.get(match.group(1), match.group(1)), 1), value)
+        return _REF.sub(
+            lambda match: match.group(0).replace(
+                match.group(1), names.get(match.group(1), match.group(1)), 1
+            ),
+            value,
+        )
     if isinstance(value, list):
         return [_rename_refs(item, names) for item in value]
     if isinstance(value, dict):
@@ -214,8 +232,13 @@ Respond with ONLY the same JSON object shape as before."""
 
 
 class Orchestrator:
-    async def plan(self, goal: str, context: list[dict] | None = None, *,
-                   effort: Effort | str = Effort.BALANCED) -> ExecutionGraph:
+    async def plan(
+        self,
+        goal: str,
+        context: list[dict] | None = None,
+        *,
+        effort: Effort | str = Effort.BALANCED,
+    ) -> ExecutionGraph:
         if not engine_manager.active:
             raise RuntimeError("No text model is loaded. Start one from the Chat tab first.")
 
@@ -234,14 +257,20 @@ class Orchestrator:
             parameters.update(
                 response_format={"type": "json_object"},
                 chat_template_kwargs={"enable_thinking": False},
-                thinking_budget_tokens=0, reasoning_effort="none")
+                thinking_budget_tokens=0,
+                reasoning_effort="none",
+            )
         try:
             async with httpx.AsyncClient(timeout=900) as client:
                 for attempt in range(2):
                     resp = await client.post(
                         f"{active.base_url}/v1/chat/completions",
-                        json={"messages": messages, "temperature": 0.2,
-                              "stream": False, **parameters},
+                        json={
+                            "messages": messages,
+                            "temperature": 0.2,
+                            "stream": False,
+                            **parameters,
+                        },
                     )
                     resp.raise_for_status()
                     choice = resp.json()["choices"][0]
@@ -260,10 +289,13 @@ class Orchestrator:
                         # any side effect, without treating private reasoning as a plan.
                         messages += [
                             {"role": "assistant", "content": content[:4000] or "No plan returned."},
-                            {"role": "user", "content":
-                             f"Fix the plan: {exc} Return only the required JSON object, "
-                             "with real tool IDs, args and acyclic dependencies. "
-                             "Do not explain or summarise the goal."},
+                            {
+                                "role": "user",
+                                "content": f"Fix the plan: {exc} Return only the required "
+                                "JSON object, "
+                                "with real tool IDs, args and acyclic dependencies. "
+                                "Do not explain or summarise the goal.",
+                            },
                         ]
                         parameters["chat_template_kwargs"] = {"enable_thinking": False}
         except httpx.TimeoutException as exc:
@@ -276,9 +308,11 @@ class Orchestrator:
         raise RuntimeError("No usable plan was returned.")
 
     async def run(
-        self, graph: ExecutionGraph,
+        self,
+        graph: ExecutionGraph,
         on_update: Callable[[ExecutionGraph], Coroutine[Any, Any, None]],
-        *, effort: Effort | str = Effort.BALANCED,
+        *,
+        effort: Effort | str = Effort.BALANCED,
     ) -> ExecutionGraph:
         """Execute a plan, and — above Fast — re-plan when part of it fails.
 
@@ -305,9 +339,11 @@ class Orchestrator:
         return graph
 
     async def _execute(
-        self, graph: ExecutionGraph,
+        self,
+        graph: ExecutionGraph,
         on_update: Callable[[ExecutionGraph], Coroutine[Any, Any, None]],
-        *, into: ExecutionGraph | None = None,
+        *,
+        into: ExecutionGraph | None = None,
     ) -> ExecutionGraph:
         # Mirror the graph into durable memory as it executes. The in-flight graph
         # only lives for this run; the plan file survives, so a later session (or a
@@ -348,8 +384,9 @@ class Orchestrator:
             await on_update(into)
         return graph
 
-    async def _replan(self, graph: ExecutionGraph, failed: list[Task],
-                      attempt: int) -> ExecutionGraph | None:
+    async def _replan(
+        self, graph: ExecutionGraph, failed: list[Task], attempt: int
+    ) -> ExecutionGraph | None:
         """Ask for a new plan for what is left. Never raises.
 
         A recovery attempt that fails is not worse than not attempting one, so
@@ -359,14 +396,17 @@ class Orchestrator:
         report = "\n".join(
             f"- {t.id} ({t.tool_id}): {t.description or 'no description'} — "
             f"FAILED: {(t.error or 'no reason given')[:300]}"
-            for t in failed)
+            for t in failed
+        )
         done = [t for t in graph.tasks.values() if t.status == "completed"]
         if done:
             report += "\n\nAlready finished, available as references:\n" + "\n".join(
-                f"- {{{t.id}}}: {t.description or t.tool_id}" for t in done)
+                f"- {{{t.id}}}: {t.description or t.tool_id}" for t in done
+            )
         try:
             recovered = await self.plan(
-                RECOVERY_PROMPT.format(report=report) + f"\n\nORIGINAL GOAL: {graph.goal}")
+                RECOVERY_PROMPT.format(report=report) + f"\n\nORIGINAL GOAL: {graph.goal}"
+            )
             # A new plan normally starts at t1 again. Keep its identity distinct
             # from the first attempt so completed recovery work is visible and
             # cannot be mistaken for an earlier successful task.
@@ -376,8 +416,9 @@ class Orchestrator:
                 task.dependencies = [names.get(dep, dep) for dep in task.dependencies]
                 task.args = _rename_refs(task.args, names)
             recovered.tasks = {task.id: task for task in recovered.tasks.values()}
-            recovered.start_node_ids = [names.get(task_id, task_id)
-                                        for task_id in recovered.start_node_ids]
+            recovered.start_node_ids = [
+                names.get(task_id, task_id) for task_id in recovered.start_node_ids
+            ]
             for task in graph.tasks.values():
                 if task.status == "completed":
                     recovered.tasks[task.id] = task
@@ -390,8 +431,10 @@ class Orchestrator:
         from . import memory
 
         status_map = {
-            "pending": "todo", "in_progress": "doing",
-            "completed": "done", "failed": "blocked",
+            "pending": "todo",
+            "in_progress": "doing",
+            "completed": "done",
+            "failed": "blocked",
         }
         try:
             ordered = list(graph.tasks.values())
@@ -415,8 +458,7 @@ def _planning_parameters(plan: Plan) -> dict:
     """
     out: dict = {"max_tokens": plan.max_output_tokens}
     if "enable_thinking" in plan.parameters:
-        out["chat_template_kwargs"] = {
-            "enable_thinking": plan.parameters["enable_thinking"]}
+        out["chat_template_kwargs"] = {"enable_thinking": plan.parameters["enable_thinking"]}
     for name in ("reasoning_max_tokens", "reasoning_effort"):
         if name in plan.parameters:
             out[name] = plan.parameters[name]
