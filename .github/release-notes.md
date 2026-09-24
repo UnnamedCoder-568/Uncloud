@@ -32,6 +32,11 @@ feed instead of an old dot-matrix clatter.
 The public interface no longer shows an “Uncensored only” catalogue filter or
 an image-generation control for replacing a model's text encoder.
 
+Chat and Chisel now use the MIT-licensed Thinking Orbs animations for live
+activity. The model-thinking state is shown before a response, and loading,
+web work, writing and image creation have distinct accessible states. Reduced
+Motion is honoured automatically.
+
 Links can leave the desktop app correctly, model cards are easier to read, and
 the Models page links to publisher pages and alternative model hubs.
 

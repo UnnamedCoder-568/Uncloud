@@ -5,6 +5,7 @@ import { ChevronDown, ArrowUp, Square, Mic, Volume2, VolumeX, Loader2, Hammer, I
 import { TitleBarPortal } from '../components/TitleBar';
 import { Mark } from '../components/Wordmark';
 import Markdown from '../components/Markdown';
+import ActivityOrb from '../components/ActivityOrb';
 import { fromConversation, sendToChisel } from '../lib/handoff';
 import Conversations from '../components/Conversations';
 import ReplyVoice from '../components/ReplyVoice';
@@ -976,7 +977,7 @@ export default function ChatView() {
           <button className="tb-context" onClick={() => setPickerOpen((v) => !v)}
                   aria-haspopup="listbox" aria-expanded={pickerOpen}>
             {loadingModel ? (
-              <><span className="spinner" /><span>Loading model…</span></>
+              <><ActivityOrb state="connecting" label="Loading model…" /><span>Loading model…</span></>
             ) : activeModel ? (
               <>
                 <span style={{
@@ -1069,6 +1070,9 @@ export default function ChatView() {
                 {m.role === 'assistant' && m.reasoning && (
                   <details className="mb-1.5 px-1 group">
                     <summary className="text-[11px] text-[var(--text-faint)] cursor-pointer select-none hover:text-[var(--text-dim)] transition">
+                      {!m.content && generating && i === messages.length - 1 && (
+                        <ActivityOrb state="solving" label="Thinking…" className="mr-1.5" />
+                      )}
                       {m.content ? 'Thought before answering' : 'Thinking…'}
                       <span className="ml-1.5 opacity-60 group-open:hidden">
                         {m.reasoning.trim().split(/\s+/).length} words
@@ -1118,7 +1122,7 @@ export default function ChatView() {
                       if (shown) return <Markdown>{shown}</Markdown>;
                       // Still arriving.
                       if (i === messages.length - 1 && generating && !m.reasoning) {
-                        return <span className="spinner" />;
+                        return <ActivityOrb state="solving" label="Thinking…" />;
                       }
                       // Nothing left after the markers were taken out: the
                       // model replied with an instruction and no words. The
@@ -1246,7 +1250,7 @@ export default function ChatView() {
                       </details>
                     ) : (
                       <div className="h-[140px] rounded-lg bg-[var(--bg-inset)] flex items-center justify-center">
-                        <span className="spinner" />
+                        <ActivityOrb state="shaping" size={32} label="Making the picture…" />
                       </div>
                     )}
                     {/* Only under an actual picture. It was captioning a
