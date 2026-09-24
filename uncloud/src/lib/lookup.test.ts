@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { findLookups, resultsTurn, stripLookups } from './lookup';
+import { findLookups, initialWebQuery, resultsTurn, stripLookups } from './lookup';
 
 describe('finding lookups', () => {
   it('finds the plain form', () => {
@@ -90,5 +90,24 @@ describe('picture lookups', () => {
     // [[image: …]] is the local generator and is handled elsewhere; picking it
     // up here would send every generated illustration to a search engine.
     expect(findLookups('[[image: an invented illustration]]')).toEqual([]);
+  });
+});
+
+
+describe('search before generation', () => {
+  it('searches a current question without waiting for a model marker', () => {
+    expect(initialWebQuery('Check the latest iPhone specifications')).toContain('iPhone');
+  });
+  it('keeps the original topic across repeated corrections', () => {
+    expect(initialWebQuery('Try again please', [
+      'Check the latest iPhone specifications', "It’s already released. Check online",
+    ])).toBe('Check the latest iPhone specifications');
+  });
+  it('does not search ordinary conversation or a context-free retry', () => {
+    expect(initialWebQuery('Hello, how are you?')).toBeNull();
+    expect(initialWebQuery('Try again please')).toBeNull();
+  });
+  it('does not treat lookup failure as proof of nonexistence', () => {
+    expect(resultsTurn([])).toContain('not evidence that a product does not exist');
   });
 });

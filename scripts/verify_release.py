@@ -102,6 +102,7 @@ def main() -> None:
 
     workflow = (ROOT / ".github" / "workflows" / "build.yml").read_text(encoding="utf-8")
     for artifact in (
+        "Uncloud-Windows-x64.exe",
         "Uncloud-Linux-x64.AppImage",
         "Uncloud-macOS-Apple-Silicon.dmg",
     ):
