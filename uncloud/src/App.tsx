@@ -1,3 +1,4 @@
+import ActivityOrb from './components/ActivityOrb';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Sidebar from './components/Sidebar';
 import type { View } from './components/Sidebar';
@@ -150,11 +151,11 @@ export default function App() {
 
   const splash = (
     <div className="h-screen w-screen flex items-center justify-center dot-ground">
-      {/* The one hero moment the application has: a glow behind the mark
-          while the engine comes up, and nothing else. */}
-      <span className="glow">
-        <Wordmark size={40} spinning />
-      </span>
+      <div className="glow flex flex-col items-center gap-4">
+        <ActivityOrb state="connecting" size={64} label="Starting Uncloud…" />
+        <Wordmark size={32} />
+        <span className="text-xs text-[var(--text-faint)]">Starting Uncloud…</span>
+      </div>
     </div>
   );
 

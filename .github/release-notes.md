@@ -1,6 +1,19 @@
 Uncloud 0.4.8 repairs web search provider fallback, the Models page on a new
 Mac, and makes local model work more dependable.
 
+First launch now requires an explicit Models Folder choice before setup can be
+completed. Downloads invalidate the model scan and every model picker refreshes
+in place, so a newly downloaded model appears without closing Uncloud.
+
+GGUF chat now includes its own llama.cpp-compatible server and works on a clean
+Mac without Homebrew. Music shows an Install button for ACE-Step and streams the
+setup progress inside the app; narration and speech keep their matching repair
+flows instead of sending users to terminal commands.
+
+The Thinking Orbs sphere now appears anywhere Uncloud asks the user to wait:
+application and engine startup, model work, image/video/music/voice generation,
+transcription, uploads, downloads, updates, imports, and other background jobs.
+
 Web search now falls back to a second public provider when DuckDuckGo serves an
 automated-request challenge page. Those challenge pages can return HTTP 200
 without any results, which previously made Chat incorrectly describe a network

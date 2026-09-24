@@ -1,5 +1,6 @@
+import ActivityOrb from '../components/ActivityOrb';
 import { useEffect, useState } from 'react';
-import { Loader2, Mic2, Download, ChevronDown } from 'lucide-react';
+import { Mic2, Download, ChevronDown } from 'lucide-react';
 import {
   getNarrationOptions, generateNarration, getNarrationJob, narrationAudioUrl, getLibrary,
   installNarrationEngine, uploadVoiceSample, saveNarrationVoice, deleteNarrationVoice,
@@ -372,7 +373,7 @@ export default function NarrationView() {
           disabled={!model || !text.trim() || busy}
           className="h-10 rounded-xl btn-accent text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-30 transition"
         >
-          {busy ? <Loader2 size={14} className="animate-spin" /> : <Mic2 size={14} />}
+          {busy ? <ActivityOrb state="working" size={20} label="Working…" /> : <Mic2 size={14} />}
           {busy ? (job?.stage || 'Narrating…') : 'Narrate'}
         </button>
       </div>
@@ -425,7 +426,7 @@ export default function NarrationView() {
               <div className="text-sm text-rose-400 whitespace-pre-wrap">{job.error}</div>
             ) : (
               <div className="flex items-center gap-2 text-sm text-[var(--text-dim)]">
-                <Loader2 size={14} className="animate-spin" /> {job?.stage || 'Narrating…'}
+                <ActivityOrb state="working" size={20} label="Working…" /> {job?.stage || 'Narrating…'}
               </div>
             )}
           </div>

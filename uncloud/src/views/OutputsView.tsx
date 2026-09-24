@@ -1,6 +1,7 @@
+import ActivityOrb from '../components/ActivityOrb';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
-import { FolderOpen, Trash2, Loader2, RefreshCw, FolderCog } from 'lucide-react';
+import { FolderOpen, Trash2, RefreshCw, FolderCog } from 'lucide-react';
 import { listOutputs, outputBlobUrl, revealOutput, deleteOutput, setOutputDir } from '../lib/sidecar';
 import type { OutputFile } from '../lib/sidecar';
 import { formatBytes } from '../lib/format';
@@ -169,7 +170,7 @@ export default function OutputsView() {
 
         {loading && files.length === 0 ? (
           <div className="flex items-center gap-2 text-sm text-[var(--text-dim)] py-10 justify-center">
-            <Loader2 size={14} className="animate-spin" /> Loading
+            <ActivityOrb state="working" size={20} label="Working…" /> Loading
           </div>
         ) : files.length === 0 ? (
           <p className="text-sm text-[var(--text-faint)] py-10 text-center">

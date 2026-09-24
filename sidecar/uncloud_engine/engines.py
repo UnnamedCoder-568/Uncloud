@@ -65,12 +65,22 @@ class EngineManager:
             return active
 
     def _spawn_llama_cpp(self, model_path: str, port: int) -> subprocess.Popen:
-        if not LLAMA_SERVER_BIN:
-            raise RuntimeError("llama-server not found on PATH. Install with `brew install "
-                               "llama.cpp`.")
+        if LLAMA_SERVER_BIN:
+            command = [LLAMA_SERVER_BIN, "-m", model_path, "--port", str(port),
+                       "--host", "127.0.0.1", "-ngl", "999", "-c", "8192"]
+        else:
+            try:
+                import llama_cpp  # noqa: F401
+            except ImportError as exc:
+                raise RuntimeError(
+                    "The local text runtime is missing. Open Settings and repair the "
+                    "Uncloud engine."
+                ) from exc
+            command = [sys.executable, "-m", "llama_cpp.server", "--model", model_path,
+                       "--port", str(port), "--host", "127.0.0.1",
+                       "--n_gpu_layers", "999", "--n_ctx", "8192"]
         return subprocess.Popen(
-            [LLAMA_SERVER_BIN, "-m", model_path, "--port", str(port), "--host", "127.0.0.1",
-             "-ngl", "999", "-c", "8192"],
+            command,
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         )
 

@@ -1,5 +1,6 @@
+import ActivityOrb from '../components/ActivityOrb';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { CheckCircle2, XCircle, Loader2, Circle, Send, ShieldAlert, Cpu, Square, MessagesSquare, AudioLines, Copy, NotebookPen, Check } from 'lucide-react';
+import { CheckCircle2, XCircle, Circle, Send, ShieldAlert, Cpu, Square, MessagesSquare, AudioLines, Copy, NotebookPen, Check } from 'lucide-react';
 import { agentSocket, cancelAgentRun, getLibrary, startEngine, engineStatus, saveNote } from '../lib/sidecar';
 import type { LocalModel } from '../lib/sidecar';
 import Dictate from '../components/Dictate';
@@ -11,7 +12,6 @@ import { useSettings } from '../lib/useSettings';
 import { onHandoffSignal, takeHandoff } from '../lib/handoff';
 import { printerSound } from '../lib/printer-sound';
 import Markdown from '../components/Markdown';
-import ActivityOrb from '../components/ActivityOrb';
 
 interface AgentTask {
   id: string;
@@ -370,7 +370,7 @@ export default function ChiselView() {
         )}
         {phase === 'planning' && (
           <div className="flex items-center gap-2 text-sm text-[var(--text-dim)]">
-            <Loader2 size={14} className="animate-spin" /> Planning task graph…
+            <ActivityOrb state="working" size={20} label="Working…" /> Planning task graph…
           </div>
         )}
         {error && (

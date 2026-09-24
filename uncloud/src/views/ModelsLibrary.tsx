@@ -1,7 +1,8 @@
+import ActivityOrb from '../components/ActivityOrb';
 import { useEffect, useState } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
 import {
-  ArrowUpRight, Check, Download, FolderCog, HardDrive, Loader2, CheckCircle2, XCircle,
+  ArrowUpRight, Check, Download, FolderCog, HardDrive, CheckCircle2, XCircle,
 } from 'lucide-react';
 import { forgetModel, getCatalog, getLibrary, startDownload, listDownloads, getSettings, setModelsDir as saveModelsDir,
          acknowledgeModelLicence, getModelLicence, type ModelLicence } from '../lib/sidecar';
@@ -322,7 +323,7 @@ export default function ModelsLibrary() {
                       </span>
                     ) : active ? (
                       <div className="flex items-center gap-2 text-[11px] text-[var(--text-dim)]">
-                        <Loader2 size={13} className="animate-spin" />
+                        <ActivityOrb state="working" size={20} label="Working…" />
                         {active.percent.toFixed(0)}%{active.speed_bytes_s > 0 ? ` · ${formatSpeed(active.speed_bytes_s)}` : ''}
                       </div>
                     ) : (

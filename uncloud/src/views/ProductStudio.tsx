@@ -1,5 +1,6 @@
+import ActivityOrb from '../components/ActivityOrb';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, ImagePlus, Loader2, Sparkles, X, Check, FolderDown } from 'lucide-react';
+import { ChevronDown, ImagePlus, Sparkles, X, Check, FolderDown } from 'lucide-react';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import {
   exportImages,
@@ -277,7 +278,7 @@ export default function ProductStudio() {
               disabled={uploading}
               className="mt-1.5 w-full h-28 rounded-lg border border-dashed border-[var(--border)] flex flex-col items-center justify-center gap-1.5 text-[var(--text-faint)] hover:border-[#3a3a42] hover:text-[var(--text-dim)] transition"
             >
-              {uploading ? <Loader2 size={16} className="animate-spin" /> : <ImagePlus size={18} />}
+              {uploading ? <ActivityOrb state="working" size={20} label="Working…" /> : <ImagePlus size={18} />}
               <span className="text-[11px]">{uploading ? 'Uploading…' : 'Add product photo'}</span>
             </button>
           )}
@@ -392,7 +393,7 @@ export default function ProductStudio() {
           disabled={!canRun}
           className="h-10 rounded-xl btn-accent text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-30 transition shrink-0"
         >
-          {running ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+          {running ? <ActivityOrb state="working" size={20} label="Working…" /> : <Sparkles size={14} />}
           {running ? 'Generating…' : `Generate ${selectedShots.length || ''} shot${selectedShots.length === 1 ? '' : 's'}`}
         </button>
         {/* A set of shots is a queue: Stop clears the ones not started as well
@@ -441,7 +442,7 @@ export default function ProductStudio() {
                     <div className="text-[11px] text-rose-400 px-4 text-center">{job.error}</div>
                   ) : (
                     <div className="flex flex-col items-center gap-2 text-[var(--text-faint)]">
-                      <Loader2 size={18} className="animate-spin" />
+                      <ActivityOrb state="working" size={20} label="Working…" />
                       <span className="text-[11px]">
                         {job.total_steps ? `${job.step}/${job.total_steps}` : 'Queued'}
                       </span>

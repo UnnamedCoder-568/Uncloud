@@ -1,5 +1,6 @@
+import ActivityOrb from '../components/ActivityOrb';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ChevronDown, LayoutGrid, Loader2, Shuffle, SlidersHorizontal, Sparkles, UserRound, UserRoundPlus } from 'lucide-react';
+import { ChevronDown, LayoutGrid, Shuffle, SlidersHorizontal, Sparkles, UserRound, UserRoundPlus } from 'lucide-react';
 import { getLibrary, generateImage, editImage, getImageJob, fetchImageBlobUrl,
          listCharacters, saveCharacter, stopImage } from '../lib/sidecar';
 import Dictate from '../components/Dictate';
@@ -365,7 +366,7 @@ export default function ImageGenerate({ onEdit }: { onEdit?: () => void }) {
                       <span className="text-[11px] text-rose-400 px-3 text-center">{j.error}</span>
                     ) : (
                       <span className="flex flex-col items-center gap-2 text-[11px] text-[var(--text-faint)]">
-                        {j.status === 'running' && <Loader2 size={16} className="animate-spin" />}
+                        {j.status === 'running' && <ActivityOrb state="working" size={20} label="Working…" />}
                         {j.status === 'running'
                           ? (j.total_steps ? `Step ${j.step}/${j.total_steps}` : 'Starting…')
                           : 'Waiting its turn'}
@@ -423,7 +424,7 @@ export default function ImageGenerate({ onEdit }: { onEdit?: () => void }) {
             </div>
           ) : running && current ? (
             <div className="flex flex-col items-center gap-3 text-[var(--text-dim)]">
-              <Loader2 size={22} className="animate-spin" />
+              <ActivityOrb state="working" size={20} label="Working…" />
               <span className="text-sm">
                 {current.total_steps ? `Generating — step ${current.step}/${current.total_steps}` : 'Generating…'}
               </span>
@@ -493,7 +494,7 @@ export default function ImageGenerate({ onEdit }: { onEdit?: () => void }) {
                 disabled={!model || !prompt.trim() || !!running}
                 className="w-8 h-8 max-md:w-11 max-md:h-11 rounded-full btn-accent flex items-center justify-center disabled:opacity-30 transition shrink-0"
               >
-                {running ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                {running ? <ActivityOrb state="working" size={20} label="Working…" /> : <Sparkles size={14} />}
               </button>
             </div>
             {/* Who this is of. Sits with the prompt because it is part of

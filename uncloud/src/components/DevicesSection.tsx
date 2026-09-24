@@ -1,3 +1,4 @@
+import ActivityOrb from './ActivityOrb';
 /**
  * Devices on this network: turning it on, pairing, and taking it away again.
  *
@@ -10,7 +11,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { Check, Loader2, MonitorSmartphone, X } from 'lucide-react';
+import { Check, MonitorSmartphone, X } from 'lucide-react';
 import QrCode from './QrCode';
 import { inDesktop } from '../lib/platform';
 import {
@@ -105,7 +106,7 @@ export default function DevicesSection() {
 
       {busy === 'toggle' && (
         <p className="mt-3 text-[11px] text-[var(--text-faint)] flex items-center gap-1.5">
-          <Loader2 size={11} className="animate-spin" /> Restarting the engine…
+          <ActivityOrb state="working" size={20} label="Working…" /> Restarting the engine…
         </p>
       )}
 
@@ -129,7 +130,7 @@ export default function DevicesSection() {
                   disabled={busy === 'offer'}
                   className="self-start btn-accent text-xs px-3 py-1.5 rounded-lg flex items-center gap-1.5 disabled:opacity-50"
                 >
-                  {busy === 'offer' && <Loader2 size={12} className="animate-spin" />}
+                  {busy === 'offer' && <ActivityOrb state="working" size={20} label="Working…" />}
                   {offer ? 'Code expired — show a new one' : 'Pair a device'}
                 </button>
               ) : (

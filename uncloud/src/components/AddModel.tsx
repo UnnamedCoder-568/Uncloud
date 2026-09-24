@@ -1,3 +1,4 @@
+import ActivityOrb from './ActivityOrb';
 /**
  * Adding a model from anywhere on disk.
  *
@@ -12,7 +13,7 @@ import { useState } from 'react';
 import { libraryChanged } from '../lib/library-changed';
 import { open } from '@tauri-apps/plugin-dialog';
 import {
-  AlertTriangle, Check, CheckCircle2, ChevronRight, File, Folder, Loader2, X, XCircle,
+  AlertTriangle, Check, CheckCircle2, ChevronRight, File, Folder, X, XCircle,
 } from 'lucide-react';
 import { importModel, inspectModel } from '../lib/sidecar';
 import type { MetadataStep, ModelImportResult, ModelInspection } from '../lib/sidecar';
@@ -182,7 +183,7 @@ export default function AddModel({ onClose, onAdded }: {
 
           {busy && !done && (
             <p className="text-[12px] text-[var(--text-faint)] flex items-center gap-2">
-              <Loader2 size={13} className="animate-spin" /> Reading the files…
+              <ActivityOrb state="working" size={20} label="Working…" /> Reading the files…
             </p>
           )}
 
@@ -356,7 +357,7 @@ export default function AddModel({ onClose, onAdded }: {
           {inspection && !done && !isContainer && (
             <button onClick={add} disabled={busy || needsChoice}
                     className="btn-accent text-xs px-3 py-1.5 rounded-lg disabled:opacity-40 flex items-center gap-1.5 max-md:min-h-11">
-              {busy && <Loader2 size={12} className="animate-spin" />} Add to library
+              {busy && <ActivityOrb state="working" size={20} label="Working…" />} Add to library
             </button>
           )}
         </div>

@@ -1,3 +1,4 @@
+import ActivityOrb from '../components/ActivityOrb';
 /** Fine-tuning a language model on your own examples, locally.
  *
  *  The screen is arranged around one fact: a training run that fails does not
@@ -17,8 +18,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
-import { AlertTriangle, Ban, Check, FileJson, GraduationCap, Loader2,
-         Trash2 } from 'lucide-react';
+import { AlertTriangle, Ban, Check, FileJson, GraduationCap, Trash2 } from 'lucide-react';
 
 import { cancelTraining, forgetAdapter, getAdapters, getLibrary,
          getTrainingJobs, getTrainingPresets, prepareTraining, startTraining,
@@ -26,8 +26,10 @@ import { cancelTraining, forgetAdapter, getAdapters, getLibrary,
          type TrainingPlan, type TrainingPreset } from '../lib/sidecar';
 import OnTheComputer from '../components/OnTheComputer';
 import { inDesktop } from '../lib/platform';
+import { useLibraryVersion } from '../lib/library-changed';
 
 export default function TrainingView() {
+  const libraryVersion = useLibraryVersion();
   const [models, setModels] = useState<LocalModel[]>([]);
   const [presets, setPresets] = useState<TrainingPreset[]>([]);
   const [modelPath, setModelPath] = useState('');
@@ -50,7 +52,7 @@ export default function TrainingView() {
       .catch(() => undefined);
     getTrainingPresets().then(setPresets).catch(() => undefined);
     refresh();
-  }, [refresh]);
+  }, [refresh, libraryVersion]);
 
   // Only while something is running. A timer that keeps firing on an idle
   // screen is a fan that never stops on a laptop.
@@ -167,7 +169,7 @@ export default function TrainingView() {
         {/* ------------------------------------------- what would happen */}
         {planning && (
           <p className="text-[11px] text-[var(--text-faint)] flex items-center gap-2">
-            <Loader2 size={12} className="animate-spin" /> Reading the examples…
+            <ActivityOrb state="working" size={20} label="Working…" /> Reading the examples…
           </p>
         )}
 

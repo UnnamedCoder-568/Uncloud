@@ -1,5 +1,6 @@
+import ActivityOrb from '../components/ActivityOrb';
 import { useEffect, useRef, useState } from 'react';
-import { Loader2, Mic, MicOff, Repeat, Upload } from 'lucide-react';
+import { Mic, MicOff, Repeat, Upload } from 'lucide-react';
 import {
   chatSystemPrompt, engineStatus, getLibrary, speechClipUrl, speechEngines, speechJob,
   startConversion, startEngine, streamChat, uploadRecording,
@@ -156,7 +157,7 @@ function Talk() {
           {turns.map((t, i) => (
             <div key={i} className={`max-w-[80%] text-sm leading-relaxed px-3.5 py-2.5 rounded-2xl ${
               t.role === 'user' ? 'self-end bg-[var(--bg-raised)]' : 'self-start bg-[var(--bg-inset)] text-[var(--text-dim)]'}`}>
-              {t.content || <Loader2 size={13} className="animate-spin" />}
+              {t.content || <ActivityOrb state="working" size={20} label="Working…" />}
             </div>
           ))}
         </div>
@@ -295,7 +296,7 @@ function Convert() {
           <div className="flex items-center gap-2 flex-wrap">
             <RecordButton onRecorded={(b) => void keep('source', b)} maxSeconds={120} disabled={busy !== null} />
             <button onClick={() => choose('source')} disabled={busy !== null} className="pill"><Upload size={13} /><span>Choose file</span></button>
-            {busy === 'source' && <Loader2 size={13} className="animate-spin text-[var(--text-faint)]" />}
+            {busy === 'source' && <ActivityOrb state="working" size={20} label="Working…" />}
             {source && <span className="text-[11px] text-[var(--text-dim)]">A {source.seconds}s recording</span>}
           </div>
         </section>
@@ -325,7 +326,7 @@ function Convert() {
           disabled={!installed || !modelPath || !source || working || (target === 'recording' && !targetRecording)}
           className="h-10 rounded-xl btn-accent text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-30 transition"
         >
-          {working ? <Loader2 size={14} className="animate-spin" /> : <Repeat size={14} />}
+          {working ? <ActivityOrb state="working" size={20} label="Working…" /> : <Repeat size={14} />}
           {working ? `${job?.stage || 'Converting'}…` : 'Convert'}
         </button>
         {(error || job?.error) && <p className="text-[11px] text-rose-400 whitespace-pre-wrap">{error || job?.error}</p>}
