@@ -14,7 +14,7 @@ import { useLibraryVersion } from '../lib/library-changed';
 import { splitThinking } from '../lib/thinking';
 import { Sentences, useTalk } from '../lib/useTalk';
 import { cleanReply } from '../lib/reply';
-import { MAX_ROUNDS, describe, findLookups, resultsTurn, stripLookups } from '../lib/lookup';
+import { MAX_ROUNDS, describe, findLookups, initialWebQuery, resultsTurn, stripLookups } from '../lib/lookup';
 import { printerSound } from '../lib/printer-sound';
 import { getLibrary, startEngine, engineStatus, streamChat, transcribeAudio, speakReply, IMAGE_MARKER, chatSystemPrompt, parseReplyImages, generateReplyImage,
   listConversations, readConversation, writeConversation, deleteConversation,
@@ -471,6 +471,25 @@ export default function ChatView() {
       //: Hands-free only: the reply is cut into sentences as it is written so
       //  each can be spoken while the rest is still coming.
       const sentences = say ? new Sentences() : null;
+      const query = web ? initialWebQuery(text, messages.filter((m) => m.role === 'user').map((m) => m.content)) : null;
+      if (query) {
+        const lookup = { kind: 'search' as const, argument: query };
+        setLooking([describe(lookup)]);
+        let evidence: string;
+        try { evidence = (await webSearch(query)).results; }
+        catch (e) {
+          throw new Error(`Web lookup failed, so I could not verify this answer. ${e instanceof Error ? e.message : String(e)}`);
+        } finally { setLooking([]); }
+        if (epoch !== generationEpoch.current || controller.signal.aborted) return;
+        setLooking([]);
+        setConsulted([query]);
+        // Keep the evidence beside the latest user request to suit local models
+        // that require alternating user/assistant turns.
+        sent = sent.map((message, index) => index === sent.length - 1
+          ? { ...message, content: `${message.content}\n\n${resultsTurn([{ lookup, text: evidence }])}` }
+          : message);
+      }
+
 
       for (let round = 0; ; round++) {
         full = '';
@@ -571,6 +590,9 @@ export default function ChatView() {
         }));
         setLooking([]);
         if (epoch !== generationEpoch.current) return;
+        if (fetched.every((part) => part.text.startsWith('This lookup failed:'))) {
+          throw new Error(`Web lookup failed, so I could not verify this answer. ${fetched[0].text}`);
+        }
         setConsulted((c) => [...c, ...wanted.map((l) => l.argument)]);
         if (shown.length) {
           setMessages((m) => {

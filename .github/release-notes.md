@@ -1,10 +1,8 @@
-Uncloud 0.4.9 — macOS Apple silicon and Linux x64
+Uncloud 0.4.10 — macOS Apple silicon, Linux x64 and Windows x64
 
-- Startup launches the installed engine directly, avoiding hidden dependency compilation behind the splash screen. Setup and repair retain their visible installation flow.
-- Startup and readiness checks share one centered logo and animation, with Continue beneath them when ready.
-- Web permission denials now explain the exact setting blocking access. Chat settings offer an explicit button to enable session-based internet approval; existing permission choices are preserved.
-- Chat attachments, Web, Pictures, Speak and Chisel are grouped under a small settings icon. Dictation, conversation and voice controls remain accessible.
-- Image generation defaults to 4:3 (1024 × 768), with portrait, square, wide and tall presets and a Custom dimensions option.
-- Web lookup labels no longer imply that an attempted search succeeded.
+- Chat searches before answering explicit web requests and current-information questions, without relying on the model to emit a tool marker. Follow-up requests retain the original topic.
+- Search rejects clearly unrelated results and retries with the topic words. Lookup failures are shown directly instead of letting the model invent an answer from outdated memory.
+- Windows includes a checksum-verified native CPU chat runtime. Installation no longer needs a C/C++ compiler, and the packaged runtime is checked before publication.
+- Includes v0.4.9 improvements: clearer internet permission recovery, a compact Chat settings menu, 4:3 image presets with custom dimensions, and a unified startup screen with Continue below the logo and animation.
 
-Windows remains on v0.4.7 while installer verification is investigated separately.
+Existing internet permission choices are preserved. If access is set to Never, use Chat settings to enable session-based internet approval.
