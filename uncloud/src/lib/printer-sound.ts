@@ -69,12 +69,12 @@ export function setPrinterSoundEnabled(enabled: boolean): void {
 
 type AudioContextConstructor = new () => AudioContext;
 
-/** A small, procedural dot-matrix printer.
+/** A small, procedural modern inkjet printer.
  *
- * No recording is shipped with the app. A filtered noise bed makes the paper
- * feed, short square-wave taps make the print head, and an occasional sweep
- * suggests a carriage return. Keeping it procedural makes the feature tiny,
- * offline, and safe to loop for replies of any length.
+ * No recording is shipped with the app. A soft roller bed, a low stepper hum
+ * and short print-head passes make the familiar restrained desk-printer sound.
+ * Keeping it procedural makes the feature tiny, offline, and safe to loop for
+ * replies of any length.
  */
 class PrinterSound {
   private context: AudioContext | null = null;
@@ -117,12 +117,12 @@ class PrinterSound {
     master.connect(context.destination);
     this.master = master;
 
-    // The low mechanical hum beneath the print head.
+    // The smooth stepper motor beneath the paper feed.
     const motor = context.createOscillator();
     const motorGain = context.createGain();
-    motor.type = 'sawtooth';
-    motor.frequency.setValueAtTime(58, now);
-    motorGain.gain.setValueAtTime(0.025, now);
+    motor.type = 'triangle';
+    motor.frequency.setValueAtTime(92, now);
+    motorGain.gain.setValueAtTime(0.032, now);
     motor.connect(motorGain).connect(master);
     motor.start(now);
     this.motor = motor;
@@ -136,18 +136,18 @@ class PrinterSound {
     const paperGain = context.createGain();
     paper.buffer = buffer;
     paper.loop = true;
-    paperFilter.type = 'bandpass';
-    paperFilter.frequency.setValueAtTime(760, now);
-    paperFilter.Q.setValueAtTime(0.7, now);
-    paperGain.gain.setValueAtTime(0.018, now);
+    paperFilter.type = 'lowpass';
+    paperFilter.frequency.setValueAtTime(520, now);
+    paperFilter.Q.setValueAtTime(0.55, now);
+    paperGain.gain.setValueAtTime(0.028, now);
     paper.connect(paperFilter).connect(paperGain).connect(master);
     paper.start(now);
     this.paper = paper;
 
-    // A slightly imperfect rhythm sounds mechanical; perfect metronomic taps
-    // sound like a broken smoke alarm, which is a different Settings feature.
-    this.needleTimer = setInterval(() => this.strikeNeedles(), 54);
-    this.carriageTimer = setInterval(() => this.carriageReturn(), 1850);
+    // Inkjet heads move in soft passes rather than the high, sharp strikes of
+    // a dot-matrix printer.
+    this.needleTimer = setInterval(() => this.strikeNeedles(), 240);
+    this.carriageTimer = setInterval(() => this.carriageReturn(), 1450);
     this.strikeNeedles();
   }
 
@@ -213,19 +213,19 @@ class PrinterSound {
     const master = this.master;
     if (!this.running || !context || !master) return;
     const now = context.currentTime;
-    const count = Math.random() > 0.72 ? 3 : 2;
+    const count = 2;
     for (let i = 0; i < count; i++) {
       const at = now + i * 0.006;
       const needle = context.createOscillator();
       const gain = context.createGain();
-      needle.type = 'square';
-      needle.frequency.setValueAtTime(1650 + Math.random() * 1050, at);
+      needle.type = 'triangle';
+      needle.frequency.setValueAtTime(430 + Math.random() * 170, at);
       gain.gain.setValueAtTime(0.0001, at);
-      gain.gain.exponentialRampToValueAtTime(0.11, at + 0.0015);
-      gain.gain.exponentialRampToValueAtTime(0.0001, at + 0.012);
+      gain.gain.exponentialRampToValueAtTime(0.055, at + 0.006);
+      gain.gain.exponentialRampToValueAtTime(0.0001, at + 0.055);
       needle.connect(gain).connect(master);
       needle.start(at);
-      needle.stop(at + 0.014);
+      needle.stop(at + 0.06);
     }
   }
 
@@ -236,15 +236,15 @@ class PrinterSound {
     const now = context.currentTime;
     const carriage = context.createOscillator();
     const gain = context.createGain();
-    carriage.type = 'sawtooth';
-    carriage.frequency.setValueAtTime(380, now);
-    carriage.frequency.exponentialRampToValueAtTime(95, now + 0.18);
+    carriage.type = 'triangle';
+    carriage.frequency.setValueAtTime(155, now);
+    carriage.frequency.exponentialRampToValueAtTime(72, now + 0.28);
     gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(0.055, now + 0.012);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.2);
+    gain.gain.exponentialRampToValueAtTime(0.07, now + 0.025);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.3);
     carriage.connect(gain).connect(master);
     carriage.start(now);
-    carriage.stop(now + 0.21);
+    carriage.stop(now + 0.31);
   }
 }
 

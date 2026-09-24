@@ -13,7 +13,7 @@ function fakeStorage(initial?: string) {
 
 afterEach(() => vi.unstubAllGlobals());
 
-describe('old printer sound preference', () => {
+describe('printer sound preference', () => {
   it('is opt-in', () => {
     vi.stubGlobal('localStorage', fakeStorage());
     expect(printerSoundEnabled()).toBe(false);
