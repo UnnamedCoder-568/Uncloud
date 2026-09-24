@@ -21,6 +21,10 @@ minutes, including after a web lookup, instead of spinning forever. The pending
 reply indicator also keeps its proper circular shape and generation errors no
 longer leave an empty visual artifact in the conversation.
 
+Web lookups use DuckDuckGo's supported no-JavaScript GET page, avoiding the
+denials returned by its older automated POST endpoint. Chisel tool selections
+now have a visible border and checkmark in Settings.
+
 Links can leave the desktop app correctly, model cards are easier to read, and
 the Models page links to publisher pages and alternative model hubs.
 
