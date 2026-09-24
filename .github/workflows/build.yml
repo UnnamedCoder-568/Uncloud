@@ -141,7 +141,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Windows release is deferred pending installer verification.
+          - label: Windows x64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+            bundle: nsis
+            artifact: Uncloud-Windows-x64.exe
+            kind: windows
           - label: Linux x64
             os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
@@ -217,6 +222,13 @@ jobs:
       # Either both are present or neither is — one without the other ships an
       # app that checks for updates it cannot verify, or signs updates no
       # installed app will accept.
+      - name: Stage verified compiler-free Windows chat runtime
+        if: matrix.kind == 'windows'
+        shell: pwsh
+        env:
+          PYTHONPATH: sidecar
+        run: python -c "from pathlib import Path; from uncloud_engine.native_chat import install_windows_runtime; install_windows_runtime(Path('uncloud/src-tauri/binaries/llama'))"
+
       - name: Check the update signing key is complete
         shell: bash
         env:
@@ -332,12 +344,12 @@ jobs:
       - name: Check every installer is present
         working-directory: release
         run: |
-          for f in Uncloud-Linux-x64.AppImage Uncloud-macOS-Apple-Silicon.dmg; do
+          for f in Uncloud-Windows-x64.exe Uncloud-Linux-x64.AppImage Uncloud-macOS-Apple-Silicon.dmg; do
             test -f "$f" || { echo "::error::$f is missing"; exit 1; }
           done
 
       - name: Write the updater manifest
-        run: python3 scripts/write_updater_manifest.py release "${GITHUB_REF_NAME}" .github/release-notes.md darwin-aarch64 linux-x86_64
+        run: python3 scripts/write_updater_manifest.py release "${GITHUB_REF_NAME}" .github/release-notes.md darwin-aarch64 linux-x86_64 windows-x86_64
 
       - name: Create checksums
         working-directory: release

@@ -760,23 +760,55 @@ async def _web_search(query: str) -> str:
         ),
         "Accept-Language": "en-US,en;q=0.9",
     }
-    async with httpx.AsyncClient(follow_redirects=True, timeout=25,
+    async with httpx.AsyncClient(follow_redirects=True, timeout=15,
                                  headers=headers) as client:
-        try:
-            resp = await client.get("https://lite.duckduckgo.com/lite/",
-                                    params={"q": query})
-            resp.raise_for_status()
-            return _parse_web_search(resp.text)
-        except (httpx.HTTPError, RuntimeError):
-            # DuckDuckGo sometimes answers with a successful HTTP status but
-            # serves its automated-request challenge instead of results. A
-            # second independent endpoint keeps ordinary web access working
-            # through that provider-side refusal; it is not a permission
-            # prompt and retrying the same page cannot repair it.
-            resp = await client.get("https://www.bing.com/search",
-                                    params={"format": "rss", "q": query})
-            resp.raise_for_status()
-            return _parse_bing_rss(resp.text)
+        attempts = [
+            ("https://lite.duckduckgo.com/lite/", {"q": query}, _parse_web_search),
+            ("https://www.bing.com/search", {"format": "rss", "q": query}, _parse_bing_rss),
+        ]
+        # Some providers return generic, unrelated pages for natural-language
+        # queries. Retry topic words, never give those pages to the model as evidence.
+        topic = _search_terms(query)
+        compact = " ".join(topic)
+        if compact and compact.casefold() != query.strip().casefold():
+            attempts.append(("https://www.bing.com/search",
+                             {"format": "rss", "q": compact}, _parse_bing_rss))
+        failures = []
+        for url, params, parse in attempts:
+            try:
+                resp = await client.get(url, params=params)
+                resp.raise_for_status()
+                return _relevant_search_results(query, parse(resp.text))
+            except (httpx.HTTPError, RuntimeError) as exc:
+                failures.append(str(exc))
+        raise RuntimeError(
+            "Search could not return relevant sources. This does not mean the topic or "
+            "product does not exist. Try a more specific query or an official page URL. "
+            + failures[-1]
+        )
+
+
+def _search_terms(query: str) -> list[str]:
+    ignored = {
+        'the', 'a', 'an', 'is', 'are', 'was', 'were', 'of', 'for', 'to', 'in', 'on', 'and',
+        'or', 'with', 'what', 'which', 'when', 'where', 'how', 'please', 'can', 'you', 'me',
+        'check', 'search', 'online', 'internet', 'web', 'look', 'up', 'latest', 'current',
+        'recent', 'today', 'new', 'specs', 'specifications', 'details', 'information',
+    }
+    return [word for word in re.findall(r"[\w-]+", query.casefold()) if word not in ignored]
+
+
+def _relevant_search_results(query: str, results: str) -> str:
+    anchors = [word for word in _search_terms(query) if len(word) >= 4]
+    if not anchors:
+        return results
+    # Keep only hits that mention a topic word in their title, URL or snippet.
+    hits = [hit for hit in results.split("\n\n")
+            if any(re.search(r"(?<!\w)" + re.escape(word) + r"(?!\w)", hit.casefold())
+                   for word in anchors)]
+    if not hits:
+        raise RuntimeError("The search provider returned unrelated results.")
+    return "\n\n".join(hits)
 
 
 def _parse_web_search(html: str) -> str:

@@ -13,7 +13,7 @@ Created by Aswin Ajith.
 
 | Platform | Download | Run |
 | --- | --- | --- |
-| Windows 10/11 x64 | [Uncloud-Windows-x64.exe](https://github.com/UnnamedCoder-568/Uncloud/releases/download/v0.4.7/Uncloud-Windows-x64.exe) | Open the installer, then launch Uncloud from the Start menu. |
+| Windows 10/11 x64 | [Uncloud-Windows-x64.exe](https://github.com/UnnamedCoder-568/Uncloud/releases/latest/download/Uncloud-Windows-x64.exe) | Open the installer, then launch Uncloud from the Start menu. |
 | Linux x64 | [Uncloud-Linux-x64.AppImage](https://github.com/UnnamedCoder-568/Uncloud/releases/latest/download/Uncloud-Linux-x64.AppImage) | Make it executable and run it. |
 | macOS Apple Silicon | [Uncloud-macOS-Apple-Silicon.dmg](https://github.com/UnnamedCoder-568/Uncloud/releases/latest/download/Uncloud-macOS-Apple-Silicon.dmg) | Open the DMG, then drag Uncloud to Applications. |
 
