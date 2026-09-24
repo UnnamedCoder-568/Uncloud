@@ -1,6 +1,5 @@
 import json
 import struct
-from pathlib import Path
 
 from uncloud_engine.core.models import identify
 
@@ -8,9 +7,19 @@ from uncloud_engine.core.models import identify
 def test_legacy_kontext_is_identified_without_an_index(tmp_path):
     (tmp_path / "vae").mkdir()
     (tmp_path / "transformer").mkdir()
-    (tmp_path / "README.md").write_text("---\nbase_model: black-forest-labs/FLUX.1-Kontext-dev\n---\n")
-    header = json.dumps({"__metadata__": {"mflux_version": "0.9.6", "quantization_level": "4"},
-                         "transformer_blocks.0.attn.to_q.weight": {"dtype": "U32", "shape": [3072,384], "data_offsets": [0,0]}}).encode()
+    (tmp_path / "README.md").write_text(
+        "---\nbase_model: black-forest-labs/FLUX.1-Kontext-dev\n---\n"
+    )
+    header = json.dumps(
+        {
+            "__metadata__": {"mflux_version": "0.9.6", "quantization_level": "4"},
+            "transformer_blocks.0.attn.to_q.weight": {
+                "dtype": "U32",
+                "shape": [3072, 384],
+                "data_offsets": [0, 0],
+            },
+        }
+    ).encode()
     (tmp_path / "transformer/0.safetensors").write_bytes(struct.pack("<Q", len(header)) + header)
     result = identify(tmp_path, sizes=False)
     assert result.layout == "mflux-checkpoint"
