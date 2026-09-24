@@ -1,5 +1,10 @@
-Uncloud 0.4.7 repairs the Models page on a new Mac and makes local model work
-more dependable.
+Uncloud 0.4.8 repairs web search provider fallback, the Models page on a new
+Mac, and makes local model work more dependable.
+
+Web search now falls back to a second public provider when DuckDuckGo serves an
+automated-request challenge page. Those challenge pages can return HTTP 200
+without any results, which previously made Chat incorrectly describe a network
+restriction even though the Mac had working internet access.
 
 If macOS refuses access to the selected models folder, the bundled download
 catalogue now remains available and the installed-model list explains how to
