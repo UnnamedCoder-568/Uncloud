@@ -325,6 +325,15 @@ interface ChatRunState {
   error: string;
 }
 
+/** A local model may take a while to load or think, but it must eventually
+ * produce a frame.  Without a ceiling a dead inference process leaves Chat in
+ * the generating state forever. */
+export const CHAT_STALL_MS = 120_000;
+
+export function chatRunStalled(lastProgressAt: number, now = Date.now()): boolean {
+  return now - lastProgressAt >= CHAT_STALL_MS;
+}
+
 function abortError(): DOMException {
   return new DOMException('The reply was stopped', 'AbortError');
 }
@@ -378,10 +387,12 @@ export async function* streamChat(
   // of the model talking to itself — in which it may contradict the answer
   // that follows — before reaching the answer.
   const splitter = new ThinkingSplitter();
+  let lastProgressAt = Date.now();
   try {
     while (true) {
       if (signal?.aborted) throw abortError();
       const state = await api<ChatRunState>(`/api/chat/runs/${run.id}?cursor=${cursor}`);
+      if (state.frames.length) lastProgressAt = Date.now();
       cursor = state.cursor;
       for (const data of state.frames) {
       // Anything the splitter was holding back — a reply that ended on a
@@ -403,6 +414,12 @@ export async function* streamChat(
       if (state.status === 'done') { yield* splitter.flush(); return; }
       if (state.status === 'cancelled') throw abortError();
       if (state.status === 'error') throw new Error(state.error || 'Chat generation failed');
+      if (chatRunStalled(lastProgressAt)) {
+        await api(`/api/chat/runs/${run.id}`, { method: 'DELETE' }).catch(() => {});
+        throw new Error(
+          'The model stopped responding for two minutes. Its reply was stopped; try again.',
+        );
+      }
       await pause(180, signal);
     }
   } catch (error) {
@@ -410,6 +427,7 @@ export async function* streamChat(
       await api(`/api/chat/runs/${run.id}`, { method: 'DELETE' }).catch(() => {});
       throw abortError();
     }
+    await api(`/api/chat/runs/${run.id}`, { method: 'DELETE' }).catch(() => {});
     throw error;
   }
 }
