@@ -830,28 +830,35 @@
     },
     {
       "name": "@tauri-apps/plugin-dialog",
-      "version": "2.7.2",
+      "version": "2.7.3",
       "licence": "MIT OR Apache-2.0",
       "url": "https://github.com/tauri-apps/plugins-workspace",
       "kind": "node"
     },
     {
       "name": "@tauri-apps/plugin-fs",
-      "version": "2.5.1",
+      "version": "2.5.2",
       "licence": "MIT OR Apache-2.0",
       "url": "https://github.com/tauri-apps/plugins-workspace",
       "kind": "node"
     },
     {
       "name": "@tauri-apps/plugin-http",
-      "version": "2.5.9",
+      "version": "2.6.0",
+      "licence": "MIT OR Apache-2.0",
+      "url": "https://github.com/tauri-apps/plugins-workspace",
+      "kind": "node"
+    },
+    {
+      "name": "@tauri-apps/plugin-opener",
+      "version": "2.5.5",
       "licence": "MIT OR Apache-2.0",
       "url": "https://github.com/tauri-apps/plugins-workspace",
       "kind": "node"
     },
     {
       "name": "@tauri-apps/plugin-shell",
-      "version": "2.3.5",
+      "version": "2.3.6",
       "licence": "MIT OR Apache-2.0",
       "url": "https://github.com/tauri-apps/plugins-workspace",
       "kind": "node"
@@ -872,30 +879,37 @@
     },
     {
       "name": "lucide-react",
-      "version": "1.32.0",
+      "version": "1.45.0",
       "licence": "ISC",
       "url": "https://github.com/lucide-icons/lucide",
       "kind": "node"
     },
     {
       "name": "react",
-      "version": "19.2.8",
+      "version": "19.3.0",
       "licence": "MIT",
       "url": "https://github.com/react/react",
       "kind": "node"
     },
     {
       "name": "react-dom",
-      "version": "19.2.8",
+      "version": "19.3.0",
       "licence": "MIT",
       "url": "https://github.com/react/react",
       "kind": "node"
     },
     {
       "name": "scheduler",
-      "version": "0.27.0",
+      "version": "0.28.0",
       "licence": "MIT",
-      "url": "https://github.com/facebook/react",
+      "url": "https://github.com/react/react",
+      "kind": "node"
+    },
+    {
+      "name": "thinking-orbs",
+      "version": "0.3.2",
+      "licence": "MIT",
+      "url": "https://github.com/Jakubantalik/Libraries.dev",
       "kind": "node"
     }
   ]

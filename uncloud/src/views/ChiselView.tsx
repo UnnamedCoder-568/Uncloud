@@ -11,6 +11,7 @@ import { useSettings } from '../lib/useSettings';
 import { onHandoffSignal, takeHandoff } from '../lib/handoff';
 import { printerSound } from '../lib/printer-sound';
 import Markdown from '../components/Markdown';
+import ActivityOrb from '../components/ActivityOrb';
 
 interface AgentTask {
   id: string;
@@ -26,6 +27,13 @@ interface AgentGraph {
   goal: string;
   tasks: Record<string, AgentTask>;
   start_node_ids: string[];
+}
+
+function taskOrbState(toolId: string) {
+  if (toolId.startsWith('web_') || toolId.includes('search')) return 'searching' as const;
+  if (toolId.includes('image') || toolId.includes('write') || toolId.includes('create')) return 'shaping' as const;
+  if (toolId.includes('browser') || toolId.includes('connect')) return 'connecting' as const;
+  return 'solving' as const;
 }
 
 function TaskOutput({ task }: { task: AgentTask }) {
@@ -400,7 +408,9 @@ export default function ChiselView() {
                 <div className="pt-0.5">
                   {task.status === 'completed' && <CheckCircle2 size={16} className="text-emerald-400" />}
                   {task.status === 'failed' && <XCircle size={16} className="text-rose-400" />}
-                  {task.status === 'in_progress' && <Loader2 size={16} className="animate-spin text-[var(--text-dim)]" />}
+                  {task.status === 'in_progress' && (
+                    <ActivityOrb state={taskOrbState(task.tool_id)} label={`Working on ${task.description}`} />
+                  )}
                   {task.status === 'pending' && <Circle size={16} className="text-[var(--text-faint)]" />}
                 </div>
                 <div className="min-w-0 flex-1">
