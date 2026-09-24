@@ -185,8 +185,13 @@ def test_shell_may_still_be_refused_outright(gate) -> None:
 
 
 # ------------------------------------------------------- session behaviour
-def test_a_category_grant_covers_the_rest_of_the_category(gate) -> None:
+def test_a_category_grant_covers_the_rest_of_the_category(gate, monkeypatch) -> None:
     asked = []
+
+    async def search(_query):
+        return "result"
+
+    monkeypatch.setattr(tools, "_web_search", search)
 
     async def ask(request):
         asked.append(request.action)
@@ -198,8 +203,13 @@ def test_a_category_grant_covers_the_rest_of_the_category(gate) -> None:
     assert asked == ["web_search"], "a category grant did not cover the second call"
 
 
-def test_forgetting_the_session_asks_again(gate) -> None:
+def test_forgetting_the_session_asks_again(gate, monkeypatch) -> None:
     asked = []
+
+    async def search(_query):
+        return "result"
+
+    monkeypatch.setattr(tools, "_web_search", search)
 
     async def ask(request):
         asked.append(request.action)
