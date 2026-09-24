@@ -443,6 +443,7 @@ def get_settings() -> dict:
     return {
         "models_dir": str(settings.models_dir),
         "onboarded": settings.onboarded,
+        "runtime_setup_complete": bool(settings._data.get("runtime_setup_complete", False)),
         "agent_device_access": settings.agent_device_access,
         "keep_awake": settings.keep_awake,
         "output_dir": str(settings.output_dir),
@@ -3157,6 +3158,53 @@ def main() -> None:
                   "Build it with `npm run build` in uncloud/.", file=sys.stderr, flush=True)
 
     lan_run.serve(app, port=port, lan=_lan)
+
+
+
+
+@app.post('/api/readiness/complete', dependencies=[Depends(require_token)])
+def readiness_complete() -> dict:
+    settings._data['runtime_setup_complete'] = True
+    settings._save()
+    return {'ok': True}
+
+
+@app.get('/api/readiness', dependencies=[Depends(require_token)])
+def readiness_status(names: str = '') -> list[dict]:
+    from .readiness import SPECS, inventory
+    selected = names.split(',') if names else None
+    if selected and any(name not in SPECS for name in selected):
+        raise HTTPException(status_code=400, detail='Unknown capability')
+    return inventory(selected)
+
+
+@app.post('/api/readiness/{name}/install', dependencies=[Depends(require_token)])
+async def readiness_install(name: str) -> StreamingResponse:
+    from .readiness import SPECS, install
+    if name not in SPECS:
+        raise HTTPException(status_code=404, detail='Unknown capability')
+    queue: asyncio.Queue = asyncio.Queue()
+    loop = asyncio.get_running_loop()
+
+    def emit(event):
+        loop.call_soon_threadsafe(queue.put_nowait, event)
+
+    def run():
+        try:
+            install(name, lambda line: emit({'line': line}))
+            emit({'done': True})
+        except Exception as exc:  # noqa: BLE001
+            emit({'error': str(exc)})
+
+    async def stream():
+        task = loop.run_in_executor(None, run)
+        while True:
+            event = await queue.get()
+            yield f'data: {json.dumps(event)}\n\n'
+            if event.get('done') or event.get('error'):
+                break
+        await task
+    return StreamingResponse(stream(), media_type='text/event-stream')
 
 
 if __name__ == "__main__":

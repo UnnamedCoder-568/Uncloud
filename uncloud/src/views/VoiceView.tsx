@@ -1,3 +1,4 @@
+import CapabilityGate from '../components/CapabilityGate';
 import { useState } from 'react';
 import Panes from '../components/Panes';
 import VoiceTools from './VoiceTools';
@@ -68,10 +69,10 @@ export default function VoiceView() {
           active={tab === 'text' ? (engine === 'vibevoice' ? 'narrate' : 'speech') : tab}
           className="h-full"
           panes={[
-            { id: 'speech', render: () => <SpeechStudio engineId={engine === 'vibevoice' ? 'kokoro' : engine} /> },
-            { id: 'narrate', render: () => <NarrationView /> },
-            { id: 'voice', render: () => <VoiceToVoice /> },
-            { id: 'transcribe', render: () => <VoiceTools /> },
+            { id: 'speech', render: () => <CapabilityGate names={engine === 'vibevoice' ? 'kokoro' : engine}><SpeechStudio engineId={engine === 'vibevoice' ? 'kokoro' : engine} /></CapabilityGate> },
+            { id: 'narrate', render: () => <CapabilityGate names="realtime,quality"><NarrationView /></CapabilityGate> },
+            { id: 'voice', render: () => <CapabilityGate names="chat,transcribe,kokoro,chatterbox"><VoiceToVoice /></CapabilityGate> },
+            { id: 'transcribe', render: () => <CapabilityGate names="transcribe"><VoiceTools /></CapabilityGate> },
             { id: 'clips', render: () => <ClipsView /> },
           ]}
         />
