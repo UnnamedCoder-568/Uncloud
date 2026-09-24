@@ -478,7 +478,7 @@ export default function ChatView() {
           if (epoch !== generationEpoch.current) return;
           if (chunk.kind === 'text') {
             full += chunk.text;
-            if (cleanReply(stripLookups(full), true).trim()) printerSound.start();
+            if (cleanReply(stripLookups(full), true).trim()) printerSound.writing();
           }
           // Hands-free: each finished sentence is spoken while the rest is
           // still being written, which is most of the wait removed.
@@ -499,9 +499,9 @@ export default function ChatView() {
             return copy;
           });
         }
-        // Lookups can leave a long gap between model streams. The printer is
-        // tied to tokens being written, not to network work happening nearby.
-        printerSound.stop();
+        // writing() stops itself after a short quiet period. That matters when
+        // a fast local server delivers the whole answer in one frame: stopping
+        // here muted the fade-in before a single audible sample was played.
 
         // With pictures off, a model that asks for one anyway is simply not
         // given one — the switch has to hold whatever the model does with the
@@ -646,6 +646,7 @@ export default function ChatView() {
         }
       }
     } catch (e) {
+      printerSound.stop();
       if (epoch !== generationEpoch.current) return;
       if (e instanceof DOMException && e.name === 'AbortError') {
         setMessages((m) => {
@@ -672,7 +673,6 @@ export default function ChatView() {
         });
       }
     } finally {
-      printerSound.stop();
       if (epoch === generationEpoch.current) {
         chatAbort.current = null;
         setGenerating(false);
