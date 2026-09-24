@@ -106,7 +106,7 @@ def install_engine(name: str, on_line=None) -> None:
             "and try again."
         )
     steps = [
-        [uv, "venv", str(venv), "--python", "3.12"],
+        [uv, "venv", str(venv), "--python", "3.12", "--allow-existing"],
         [uv, "pip", "install", "--python", str(venv), requirement],
     ]
 

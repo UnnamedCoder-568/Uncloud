@@ -423,8 +423,8 @@ export default function ImageGenerate({ onEdit }: { onEdit?: () => void }) {
               />
             </div>
           ) : running && current ? (
-            <div className="flex flex-col items-center gap-3 text-[var(--text-dim)]">
-              <ActivityOrb state="working" size={20} label="Working…" />
+            <div className="relative w-full max-w-2xl min-h-80 rounded-2xl overflow-hidden flex flex-col items-center justify-center gap-3 bg-black/40 text-[var(--text-dim)] p-8">
+              <ActivityOrb state="shaping" size={64} label="Generating image…" />
               <span className="text-sm">
                 {current.total_steps ? `Generating — step ${current.step}/${current.total_steps}` : 'Generating…'}
               </span>

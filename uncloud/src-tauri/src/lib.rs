@@ -115,28 +115,7 @@ pub fn run() {
             // Starting the engine must never prevent the window from opening:
             // when it is missing the front end shows a setup screen, and it
             // cannot do that if this closure returns Err.
-            let state = SidecarState::new();
-            match sidecar::spawn_sidecar(app.handle()) {
-                Ok((mut child, info)) => {
-                    let port = info.port;
-                    match tauri::async_runtime::block_on(sidecar::wait_healthy(port, 90)) {
-                        Ok(()) => {
-                            *state.info.lock().unwrap() = Some(info);
-                            *state.child.lock().unwrap() = Some(child);
-                        }
-                        Err(e) => {
-                            sidecar::terminate(&mut child);
-                            log::warn!("Engine did not become healthy: {e}");
-                            *state.error.lock().unwrap() = Some(e);
-                        }
-                    }
-                }
-                Err(e) => {
-                    log::warn!("Engine not started: {e}");
-                    *state.error.lock().unwrap() = Some(e);
-                }
-            }
-            app.manage(state);
+            app.manage(SidecarState::new());
 
             Ok(())
         })
