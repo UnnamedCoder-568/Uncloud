@@ -750,22 +750,36 @@ async def _web_read(url: str) -> str:
 async def _web_search(query: str) -> str:
     if not query:
         raise ValueError("web_search tool requires a 'query' argument")
-    from html import unescape
-
-    # DuckDuckGo's no-JS endpoint: no API key, no account.
-    async with httpx.AsyncClient(follow_redirects=True, timeout=25) as client:
-        resp = await client.post(
-            "https://html.duckduckgo.com/html/",
-            data={"q": query},
-            headers={"User-Agent": "Mozilla/5.0 (compatible; Uncloud/0.1)"},
-        )
+    # The HTML endpoint increasingly refuses automated POST requests. The lite
+    # GET endpoint is intended for browsers without JavaScript and carries the
+    # same results without an account or API key.
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15"
+        ),
+        "Accept-Language": "en-US,en;q=0.9",
+    }
+    async with httpx.AsyncClient(follow_redirects=True, timeout=25,
+                                 headers=headers) as client:
+        resp = await client.get("https://lite.duckduckgo.com/lite/",
+                                params={"q": query})
         resp.raise_for_status()
         html = resp.text
 
+    return _parse_web_search(html)
+
+
+def _parse_web_search(html: str) -> str:
+    """Read either current DuckDuckGo HTML layout without leaking markup."""
+    from html import unescape
+
     pattern = re.compile(
-        r'<a[^>]*class="result__a"[^>]*href="(?P<url>[^"]+)"[^>]*>(?P<title>.*?)</a>'
-        r'.*?class="result__snippet"[^>]*>(?P<snippet>.*?)</a>',
-        re.DOTALL,
+        r'<a[^>]*class=["\'](?:result__a|result-link)["\'][^>]*href=["\']'
+        r'(?P<url>[^"\']+)["\'][^>]*>(?P<title>.*?)</a>'
+        r'.*?class=["\'](?:result__snippet|result-snippet)["\'][^>]*>'
+        r'(?P<snippet>.*?)(?:</a>|</td>)',
+        re.DOTALL | re.IGNORECASE,
     )
     tag = re.compile(r"<[^>]+>")
 
@@ -784,7 +798,7 @@ async def _web_search(query: str) -> str:
             break
 
     if not results:
-        return "No results found."
+        raise RuntimeError("The search provider returned no readable results.")
     return "\n\n".join(results)
 
 
