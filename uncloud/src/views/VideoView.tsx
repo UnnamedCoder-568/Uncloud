@@ -1,3 +1,4 @@
+import { useDismiss } from '../lib/useDismiss';
 import ActivityOrb from '../components/ActivityOrb';
 import { useEffect, useRef, useState } from 'react';
 import { Film, Download, ChevronDown, AlertCircle } from 'lucide-react';
@@ -47,6 +48,7 @@ export default function VideoView() {
   const [model, setModel] = useState<LocalModel | null>(null);
   const [libraryLoading, setLibraryLoading] = useState(true);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const pickerRef = useDismiss(pickerOpen, () => setPickerOpen(false));
 
   const [prompt, setPrompt] = useState('');
   const [negative, setNegative] = useState(QUALITY_NEGATIVE);
@@ -208,7 +210,7 @@ export default function VideoView() {
     <div className="h-full flex split">
       <SplitTabs split={split} labels={['Settings', 'Video']} />
       <div className={`w-[320px] shrink-0 border-r border-[var(--border-soft)] overflow-y-auto p-4 flex flex-col gap-5 split-pane${split.on(0)}`}>
-        <div className="relative">
+        <div ref={pickerRef} className="relative">
           <label className="text-[10px] uppercase tracking-[0.18em] text-[var(--text-faint)]">Model</label>
           <button
             onClick={() => setPickerOpen((v) => !v)}

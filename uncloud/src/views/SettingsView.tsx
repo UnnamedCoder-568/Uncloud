@@ -1,3 +1,5 @@
+import { getVersion } from '@tauri-apps/api/app';
+import packageInfo from '../../package.json';
 import { useEffect, useState } from 'react';
 import DevicesSection from '../components/DevicesSection';
 import UpdatesSection from '../components/UpdatesSection';
@@ -15,6 +17,8 @@ import PrinterSoundSection from '../components/PrinterSoundSection';
 import { Check } from 'lucide-react';
 
 export default function SettingsView() {
+  const [version, setVersion] = useState(packageInfo.version);
+  useEffect(() => { if (inDesktop()) void getVersion().then(setVersion).catch(() => undefined); }, []);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [tokenInput, setTokenInput] = useState('');
   const [tokenSaved, setTokenSaved] = useState(false);
@@ -375,7 +379,7 @@ export default function SettingsView() {
 
         <section className="card p-4">
           <h2 className="text-sm mb-1">About</h2>
-          <p className="text-[11px] text-[var(--text-faint)]">Uncloud 0.1.0 — local-first AI studio.</p>
+          <p className="text-[11px] text-[var(--text-faint)]">Uncloud {version} — local-first AI studio.</p>
         </section>
       </div>
     </div>

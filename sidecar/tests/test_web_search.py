@@ -73,6 +73,40 @@ def test_search_retries_topic_when_providers_return_unrelated_results(monkeypatc
     client = httpx.AsyncClient
     monkeypatch.setattr(tools.httpx, 'AsyncClient',
         lambda **kwargs: client(transport=httpx.MockTransport(respond), **kwargs))
-    result = asyncio.run(tools._web_search('latest iPhone 18 Pro specs'))
+    result = asyncio.run(tools._search_snippets('latest iPhone 18 Pro specs'))
     assert 'apple.com/iphone' in result
     assert len(calls) == 3
+
+
+def test_search_reads_pages_and_reports_blocked_sources(monkeypatch):
+    import asyncio
+
+    from uncloud_engine.agent import tools
+    async def snippets(query):
+        return ("1. Gardening\nhttps://example.org/soil\nSoil guide\n\n"
+                "2. Plants\nhttps://example.org/plants\nPlant guide")
+    async def read(url):
+        if url.endswith('plants'):
+            raise RuntimeError('blocked')
+        return 'Water deeply. Loamy soil drains well.'
+    monkeypatch.setattr(tools, '_search_snippets', snippets)
+    monkeypatch.setattr(tools, '_web_read', read)
+    result = asyncio.run(tools._web_search('gardening soil'))
+    assert 'Loamy soil' in result
+    assert 'Search snippet only; could not read page' in result
+    assert 'https://example.org/soil' in result
+
+
+def test_excerpts_include_relevant_content_beyond_header():
+    from uncloud_engine.agent.tools import _page_excerpts
+    page = 'Navigation ' * 900 + '\nBattery capacity is 5000 mAh. Charging takes 40 minutes.'
+    assert '5000 mAh' in _page_excerpts('battery capacity charging', page)
+
+
+def test_shared_name_alone_does_not_make_a_source_relevant():
+    import pytest
+
+    from uncloud_engine.agent.tools import _relevant_search_results
+    with pytest.raises(RuntimeError, match='unrelated'):
+        _relevant_search_results('James Webb telescope instruments',
+                                '1. James Bible\nhttps://example.org/james\nJames chapter one')

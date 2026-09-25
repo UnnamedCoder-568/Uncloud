@@ -205,6 +205,18 @@ class Settings:
         self._save()
 
     @property
+    def hidden_models(self) -> list[str]:
+        return self._data.get("hidden_models", [])
+
+    def hide_model(self, path: str) -> None:
+        self._data["hidden_models"] = list(set(self.hidden_models + [path]))
+        self._save()
+
+    def show_model(self, path: str) -> None:
+        self._data["hidden_models"] = [p for p in self.hidden_models if p != path]
+        self._save()
+
+    @property
     def imported_models(self) -> list[str]:
         """Models added from outside the models folder, by path.
 
@@ -215,6 +227,7 @@ class Settings:
         return [str(p) for p in self._data.get("imported_models") or []]
 
     def remember_imported(self, path: str) -> None:
+        self.show_model(path)
         known = self.imported_models
         if path not in known:
             self._data["imported_models"] = [*known, path]

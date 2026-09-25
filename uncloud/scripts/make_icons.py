@@ -8,7 +8,6 @@ sheet specifies.
 """
 from __future__ import annotations
 
-import subprocess
 import sys
 from pathlib import Path
 
@@ -26,8 +25,8 @@ INNER = dict(w=58.87, h=34.04, r1=15.60, cy1=15.60, rl=9.93, yl=24.11,
 INNER_AT = (20.57, 21.28)
 
 GROUND = (23, 45, 58)          # the sheet's dark tile
-TOP = (254, 196, 77)           # the cloud's gradient, sampled top and bottom
-BOTTOM = (254, 123, 5)
+TOP = (255, 255, 255)
+BOTTOM = (255, 255, 255)
 
 SS = 4                          # supersample; the shapes are drawn, then downed
 
@@ -109,8 +108,7 @@ def main() -> None:
             iconset / f"icon_{size}x{size}.png")
         master.resize((size * 2, size * 2), Image.LANCZOS).save(
             iconset / f"icon_{size}x{size}@2x.png")
-    subprocess.run(["iconutil", "-c", "icns", str(iconset),
-                    "-o", str(OUT / "icon.icns")], check=True)
+    master.save(OUT / "icon.icns", format="ICNS")
     for leftover in iconset.iterdir():
         leftover.unlink()
     iconset.rmdir()

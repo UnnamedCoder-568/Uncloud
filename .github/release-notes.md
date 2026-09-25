@@ -1,8 +1,9 @@
-Uncloud 0.4.10 — macOS Apple silicon, Linux x64 and Windows x64
+Uncloud 0.4.11 — macOS Apple silicon, Linux x64 and Windows x64
 
-- Chat searches before answering explicit web requests and current-information questions, without relying on the model to emit a tool marker. Follow-up requests retain the original topic.
-- Search rejects clearly unrelated results and retries with the topic words. Lookup failures are shown directly instead of letting the model invent an answer from outdated memory.
-- Windows includes a checksum-verified native CPU chat runtime. Installation no longer needs a C/C++ compiler, and the packaged runtime is checked before publication.
-- Includes v0.4.9 improvements: clearer internet permission recovery, a compact Chat settings menu, 4:3 image presets with custom dimensions, and a unified startup screen with Continue below the logo and animation.
+- Web search now reads up to four source pages, selects passages relevant to the question, and supplies a larger evidence budget to Chat. Unrelated results are rejected and more focused queries are retried. Blocked pages are explicitly labeled as snippet-only sources.
+- Model downloads can be paused and resumed, including after restarting Uncloud. Partial transfers are retained and servers that ignore resume requests are handled safely.
+- Installed models have a removal menu: keep files while removing a model from the library, or permanently delete it from the device after confirmation. Loaded models must be unloaded before deletion.
+- Model pickers and expanding menus close when clicking elsewhere or pressing Escape.
+- Settings displays the actual app version. The app icon now has a white cloud mark.
 
-Existing internet permission choices are preserved. If access is set to Never, use Chat settings to enable session-based internet approval.
+Web coverage depends on the source and provider; inaccessible pages are not represented as fully verified. Existing internet permission choices are preserved.

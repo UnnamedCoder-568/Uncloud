@@ -1571,12 +1571,59 @@ def import_model_route(body: ImportModelBody) -> dict:
                           online=body.online, licence=(body.licence or "unknown")[:80],
                           token=os.environ.get("HF_TOKEN") if body.online else None)
     model_path = Path(result["identification"]["path"])
+    settings.show_model(str(model_path))
     try:
         model_path.resolve().relative_to(settings.models_dir.resolve())
     except ValueError:
         settings.remember_imported(str(model_path))
     invalidate_library_cache()
     return result
+
+
+class RemoveModelBody(ModelPathBody):
+    delete_files: bool = False
+
+
+@app.post("/api/models/remove", dependencies=[Depends(require_desktop)])
+def remove_model(body: RemoveModelBody) -> dict:
+    import shutil
+
+    models = scan_library_cached(settings.models_dir, refresh=True)
+    model = next((m for m in models if m.path == body.path), None)
+    if model is None:
+        raise HTTPException(status_code=404, detail="Model is not in the library.")
+    path = Path(model.path)
+    if body.delete_files:
+        from .lifecycle import resident
+        if any(resident().values()):
+            raise HTTPException(status_code=409,
+                                detail="Unload models in Settings before deleting model files.")
+        root = path.resolve()
+        if root in {Path.home().resolve(), settings.models_dir.resolve(), Path('/').resolve()}:
+            raise HTTPException(status_code=400, detail="Cannot delete a shared models folder.")
+        from .library import _scan_library
+        if path.is_dir() and any(Path(m.path).resolve().is_relative_to(root)
+                                for m in _scan_library(settings.models_dir)
+                                if m.path != model.path):
+            raise HTTPException(status_code=409,
+                                detail="This folder contains other models. Remove them separately.")
+        if any(d.status in {"pending", "downloading", "paused"} and d.dest
+               and (Path(d.dest).resolve() == root or root.is_relative_to(Path(d.dest).resolve()))
+               for d in download_manager.downloads.values()):
+            raise HTTPException(status_code=409,
+                                detail="A download uses these files. Complete it before deleting.")
+        gated("delete_model", Risk.DELETE, f"Permanently delete {model.name} from this device",
+              preview={"path": str(path),
+                       "warning": "This cannot be undone; all files in this folder are deleted."},
+              origin="models")
+        if path.is_symlink() or path.is_file():
+            path.unlink()
+        elif path.is_dir():
+            shutil.rmtree(path)
+    settings.hide_model(model.path)
+    settings.forget_imported(model.path)
+    invalidate_library_cache()
+    return {"removed": True, "files_deleted": body.delete_files}
 
 
 @app.post("/api/models/forget", dependencies=[Depends(require_desktop)])
@@ -1714,9 +1761,19 @@ def list_downloads() -> list[dict]:
 
 
 @app.post("/api/downloads/{download_id}/cancel", dependencies=[Depends(require_token)])
-def cancel_download(download_id: str) -> dict:
-    download_manager.cancel(download_id)
+async def cancel_download(download_id: str) -> dict:
+    if download_id not in download_manager.downloads:
+        raise HTTPException(status_code=404, detail="Download not found")
+    await download_manager.cancel(download_id)
     return {"ok": True}
+
+
+@app.post("/api/downloads/{download_id}/resume", dependencies=[Depends(require_token)])
+async def resume_download(download_id: str) -> dict:
+    try:
+        return download_manager.resume(download_id).to_dict()
+    except (KeyError, ValueError) as exc:
+        raise HTTPException(status_code=404, detail="Download not found or unavailable") from exc
 
 
 # ------------------------------------------------------------------ engine

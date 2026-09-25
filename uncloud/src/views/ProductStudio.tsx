@@ -1,3 +1,4 @@
+import { useDismiss } from '../lib/useDismiss';
 import ActivityOrb from '../components/ActivityOrb';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, ImagePlus, Sparkles, X, Check, FolderDown } from 'lucide-react';
@@ -35,6 +36,7 @@ export default function ProductStudio() {
   const [models, setModels] = useState<LocalModel[]>([]);
   const [model, setModel] = useState<LocalModel | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const pickerRef = useDismiss(pickerOpen, () => setPickerOpen(false));
 
   const [categories, setCategories] = useState<ProductCategory[]>([]);
   const [categoryId, setCategoryId] = useState('apparel');
@@ -218,7 +220,7 @@ export default function ProductStudio() {
       {/* ---------------------------------------------------------- controls */}
       <div className={`w-[320px] shrink-0 border-r border-[var(--border-soft)] overflow-y-auto p-4 flex flex-col gap-5 split-pane${split.on(0)}`}>
         {/* model */}
-        <div className="relative">
+        <div ref={pickerRef} className="relative">
           <label className="text-[10px] uppercase tracking-[0.18em] text-[var(--text-faint)]">Model</label>
           <button
             onClick={() => setPickerOpen((v) => !v)}
