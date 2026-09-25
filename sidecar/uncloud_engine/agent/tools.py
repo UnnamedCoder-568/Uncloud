@@ -750,6 +750,7 @@ async def _web_read(url: str) -> str:
 async def _search_snippets(query: str) -> str:
     if not query:
         raise ValueError("web_search tool requires a 'query' argument")
+    query = _search_query(query)
     # The HTML endpoint increasingly refuses automated POST requests. The lite
     # GET endpoint is intended for browsers without JavaScript and carries the
     # same results without an account or API key.
@@ -833,12 +834,27 @@ def _page_excerpts(query: str, page: str, budget: int = 3200) -> str:
     return "\n[…]\n".join(chunks[i] for i in selected)[:budget]
 
 
+def _search_query(query: str) -> str:
+    """Strip conversation scaffolding while retaining the subject and requested attributes."""
+    text = query.replace("’", "'")
+    text = re.sub(r"\b(what|where|when|how|it|let)'s\b", r"\1", text, flags=re.I)
+    text = re.sub(r"^.*?\b(?:check|search for|look up|find out)\s+", "", text, flags=re.I)
+    noise = {'alrighty', 'alright', 'okay', 'ok', 'let', 'lets', 'try', 'one', 'more',
+             'time', 'again', 'please', 'for', 'me', 'what', 'is', 'the', 'and', 'its',
+             'it', 'can', 'you', 'tell', 'about'}
+    words = re.findall(r"[\w.-]+", text)
+    return ' '.join(word for word in words if word.casefold() not in noise)[:500] or query[:500]
+
+
 def _search_terms(query: str) -> list[str]:
     ignored = {
         'the', 'a', 'an', 'is', 'are', 'was', 'were', 'of', 'for', 'to', 'in', 'on', 'and',
         'or', 'with', 'what', 'which', 'when', 'where', 'how', 'please', 'can', 'you', 'me',
         'check', 'search', 'online', 'internet', 'web', 'look', 'up', 'latest', 'current',
         'recent', 'today', 'new', 'specs', 'specifications', 'details', 'information',
+        'release', 'released', 'alrighty', 'alright', 'okay', 'ok', 'let', 'lets',
+        'try', 'one', 'more', 'time', 'again', 'tell', 'about', 's', 'it', 'its',
+        'i', 'want', 'need', 'would', 'could', 'do', 'does', 'give', 'find',
     }
     return [word for word in re.findall(r"[\w-]+", query.casefold()) if word not in ignored]
 

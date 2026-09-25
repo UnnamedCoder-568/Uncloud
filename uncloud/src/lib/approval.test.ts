@@ -20,7 +20,7 @@ function approvalResponse() {
   return new Response(JSON.stringify({
     detail: {
       approval: {
-        action: 'fs_write', category: 'write', summary: 'Write notes.md',
+        request_id: 'single-use-id', action: 'fs_write', category: 'write', summary: 'Write notes.md',
         preview: { path: '/tmp/notes.md' }, origin: 'agent', mode: 'ask',
       },
     },
@@ -32,9 +32,11 @@ function ok(body: unknown = { done: true }) {
 }
 
 let calls: string[];
+let bodies: unknown[];
 
 beforeEach(() => {
   calls = [];
+  bodies = [];
 });
 
 afterEach(() => {
@@ -44,9 +46,10 @@ afterEach(() => {
 
 function stubFetch(responses: Response[]) {
   let n = 0;
-  vi.stubGlobal('fetch', async (url: string) => {
+  vi.stubGlobal('fetch', async (url: string, opts?: RequestInit) => {
     calls.push(String(url));
-    return responses[Math.min(n++, responses.length - 1)];
+    bodies.push(opts?.body ? JSON.parse(String(opts.body)) : null);
+    return responses[Math.min(n++, responses.length - 1)].clone();
   });
 }
 
@@ -61,6 +64,7 @@ describe('the approval handshake', () => {
 
     await expect(api('/api/thing', { method: 'POST' })).resolves.toEqual({ done: true });
     expect(asked).toEqual(['Write notes.md']);
+    expect(bodies[1]).toMatchObject({ request_id: 'single-use-id' });
     // The original call, the answer, then the original call again.
     expect(calls.map((c) => c.replace('http://127.0.0.1:1234', ''))).toEqual([
       '/api/thing', '/api/approvals/answer', '/api/thing',
@@ -75,7 +79,7 @@ describe('the approval handshake', () => {
     let asks = 0;
     setApprovalAsker(async () => { asks += 1; return 'yes'; });
 
-    await expect(api('/api/thing')).rejects.toThrow(/428/);
+    await expect(api('/api/thing')).rejects.toThrow(/Confirmation could not be completed/);
     expect(asks).toBe(1);
   });
 
@@ -83,21 +87,22 @@ describe('the approval handshake', () => {
     // During startup there is no prompt mounted. A promise that never settles
     // would look like the application had frozen.
     stubFetch([approvalResponse()]);
-    await expect(api('/api/thing')).rejects.toThrow(/428/);
+    await expect(api('/api/thing')).rejects.toThrow(/Confirmation could not be completed/);
   });
 
   it('passes a refusal through without repeating the call', async () => {
     stubFetch([approvalResponse(), ok(), new Response('{"detail":"denied"}',
                                                       { status: 403 })]);
     setApprovalAsker(async () => 'no' as ApprovalAnswer);
-    await expect(api('/api/thing')).rejects.toThrow(/403/);
+    await expect(api('/api/thing')).rejects.toThrow(/Action cancelled/);
+    expect(calls).toHaveLength(2);
   });
 
   it('leaves an ordinary failure alone', async () => {
     stubFetch([new Response('nope', { status: 500 })]);
     let asked = false;
     setApprovalAsker(async () => { asked = true; return 'yes'; });
-    await expect(api('/api/thing')).rejects.toThrow(/500/);
+    await expect(api('/api/thing')).rejects.toThrow(/nope/);
     expect(asked).toBe(false);
   });
 
@@ -105,7 +110,7 @@ describe('the approval handshake', () => {
     stubFetch([new Response('gateway said no', { status: 428 })]);
     let asked = false;
     setApprovalAsker(async () => { asked = true; return 'yes'; });
-    await expect(api('/api/thing')).rejects.toThrow(/428/);
+    await expect(api('/api/thing')).rejects.toThrow(/gateway said no/);
     expect(asked).toBe(false);
   });
 });

@@ -1,9 +1,9 @@
-Uncloud 0.4.11 — macOS Apple silicon, Linux x64 and Windows x64
+Uncloud 0.4.12 — macOS Apple silicon, Linux x64 and Windows x64
 
-- Web search now reads up to four source pages, selects passages relevant to the question, and supplies a larger evidence budget to Chat. Unrelated results are rejected and more focused queries are retried. Blocked pages are explicitly labeled as snippet-only sources.
-- Model downloads can be paused and resumed, including after restarting Uncloud. Partial transfers are retained and servers that ignore resume requests are handled safely.
-- Installed models have a removal menu: keep files while removing a model from the library, or permanently delete it from the device after confirmation. Loaded models must be unloaded before deletion.
-- Model pickers and expanding menus close when clicking elsewhere or pressing Escape.
-- Settings displays the actual app version. The app icon now has a white cloud mark.
+- Web search removes conversational scaffolding before querying providers and checking relevance. Natural questions and short follow-ups no longer fail because polite wording is mistaken for the subject.
+- Model deletion now carries an exact, expiring, single-use confirmation across the HTTP retry. Approving one model never approves deleting another, and each deletion still requires confirmation.
+- Errors show readable messages instead of raw HTTP/JSON approval data.
+- Image defaults come from installed runtime declarations, model configuration and saved per-model preferences. Engine-wide frontend guesses have been removed. The source of the defaults is shown; users can save their settings or restore model recommendations.
+- Includes v0.4.11 page-reading search, persistent download pause/resume, model removal menus, outside-click dismissal, accurate version display and white app icon.
 
-Web coverage depends on the source and provider; inaccessible pages are not represented as fully verified. Existing internet permission choices are preserved.
+Source availability still varies. Uncloud labels unavailable web pages instead of treating snippets as fully verified content. Models without recommendations use explicitly labeled general starting settings.

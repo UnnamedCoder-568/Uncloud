@@ -110,3 +110,12 @@ def test_shared_name_alone_does_not_make_a_source_relevant():
     with pytest.raises(RuntimeError, match='unrelated'):
         _relevant_search_results('James Webb telescope instruments',
                                 '1. James Bible\nhttps://example.org/james\nJames chapter one')
+
+
+def test_conversation_scaffolding_does_not_become_search_subject():
+    from uncloud_engine.agent.tools import _search_query, _search_terms
+    query = _search_query("Alrighty. Let's try this one more time. Check the latest iPhone "
+                          "released, and it's specifications for me please")
+    assert query == 'latest iPhone released specifications'
+    assert _search_terms(query) == ['iphone']
+    assert _search_query("What's the latest iPhone released?") == 'latest iPhone released'

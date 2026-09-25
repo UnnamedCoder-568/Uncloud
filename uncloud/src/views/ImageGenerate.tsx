@@ -3,11 +3,11 @@ import ActivityOrb from '../components/ActivityOrb';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ChevronDown, LayoutGrid, Shuffle, SlidersHorizontal, Sparkles, UserRound, UserRoundPlus } from 'lucide-react';
 import { getLibrary, generateImage, editImage, getImageJob, fetchImageBlobUrl,
-         listCharacters, saveCharacter, stopImage } from '../lib/sidecar';
+         listCharacters, saveCharacter, stopImage, saveImageDefaults } from '../lib/sidecar';
 import Dictate from '../components/Dictate';
 import SaveActions from '../components/SaveActions';
 import AddFromDisk from '../components/AddFromDisk';
-import { useLibraryVersion } from '../lib/library-changed';
+import { libraryChanged, useLibraryVersion } from '../lib/library-changed';
 import { onWake, remember, remembered } from '../lib/awake';
 import type { LocalModel, ImageJob, Character } from '../lib/sidecar';
 import { onCharacterListChange } from '../lib/characters-changed';
@@ -16,13 +16,11 @@ import { isNarrow } from '../lib/platform';
 // Models that carry their own settings win: a distilled checkpoint run at the
 // 25-step default is a minute of work for a picture it makes in four.
 function defaultsFor(model: LocalModel | null | undefined) {
-  const base =
-    model?.engine === 'mflux' ? { steps: 8, guidance: 1.0 }
-    : model?.engine === 'flux2-profile' ? { steps: 4, guidance: 1.0 }
-    : { steps: 25, guidance: 7.0 };
   return {
-    steps: model?.defaults?.steps ?? base.steps,
-    guidance: model?.defaults?.guidance ?? base.guidance,
+    steps: model?.defaults?.steps ?? 25,
+    guidance: model?.defaults?.guidance ?? 3.5,
+    width: model?.defaults?.width ?? 1024,
+    height: model?.defaults?.height ?? 768,
   };
 }
 
@@ -50,6 +48,7 @@ export default function ImageGenerate({ onEdit }: { onEdit?: () => void }) {
   // Open beside the canvas on a desktop. On a phone it would take two thirds
   // of the width, so there it starts closed and opens over the canvas instead.
   const [optionsOpen, setOptionsOpen] = useState(() => !isNarrow());
+  const [defaultsError, setDefaultsError] = useState('');
   const [prompt, setPrompt] = useState('');
   const [negativePrompt, setNegativePrompt] = useState('');
   const [steps, setSteps] = useState(8);
@@ -97,10 +96,11 @@ export default function ImageGenerate({ onEdit }: { onEdit?: () => void }) {
         .sort((a, b) => Number(b.ready) - Number(a.ready));
       setModels(images);
       setModel((prev) => {
-        const next = prev ?? images.find((m) => m.ready && USABLE.has(m.engine)) ?? null;
+        const next = images.find((m) => m.path === prev?.path) ?? images.find((m) => m.ready && USABLE.has(m.engine)) ?? null;
         const d = defaultsFor(next);
         setSteps(d.steps);
         setGuidance(d.guidance);
+        setWidth(d.width); setHeight(d.height); setAspect(d.width === 1024 && d.height === 768 ? '4:3' : 'custom');
         return next;
       });
     });
@@ -185,6 +185,7 @@ export default function ImageGenerate({ onEdit }: { onEdit?: () => void }) {
     const d = defaultsFor(m);
     setSteps(d.steps);
     setGuidance(d.guidance);
+    setWidth(d.width); setHeight(d.height); setAspect(d.width === 1024 && d.height === 768 ? '4:3' : 'custom');
   }
 
   const loadCharacters = useCallback(
@@ -651,9 +652,19 @@ export default function ImageGenerate({ onEdit }: { onEdit?: () => void }) {
             </div>
           </label>
 
+          {defaultsError && <p role="alert" className="text-xs text-rose-400">{defaultsError}</p>}
+          {model && <p className="text-xs text-[var(--text-faint)]">{model.defaults_source}</p>}
+          {model && <button className="text-xs text-left underline" onClick={async () => {
+            try { setDefaultsError(''); await saveImageDefaults(model.path, { steps, guidance, width, height }); libraryChanged(); }
+            catch (e) { setDefaultsError(String(e)); }
+          }}>Save these settings as this model’s defaults</button>}
+          {model?.defaults_source?.startsWith('Your saved') && <button className="text-xs text-left underline" onClick={async () => {
+            try { setDefaultsError(''); await saveImageDefaults(model.path, {}); libraryChanged(); }
+            catch (e) { setDefaultsError(String(e)); }
+          }}>Restore model recommendations</button>}
           {model && (
             <button
-              onClick={() => { const d = defaultsFor(model); setSteps(d.steps); setGuidance(d.guidance); setWidth(1024); setHeight(768); setAspect('4:3'); setSeed(''); }}
+              onClick={() => { const d = defaultsFor(model); setSteps(d.steps); setGuidance(d.guidance); setWidth(d.width); setHeight(d.height); setAspect(d.width === 1024 && d.height === 768 ? '4:3' : 'custom'); setSeed(''); }}
               className="text-xs text-[var(--text-faint)] hover:text-[var(--text-dim)] transition text-left"
             >
               Reset to defaults
