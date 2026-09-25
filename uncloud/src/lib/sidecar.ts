@@ -163,7 +163,7 @@ export interface DownloadState {
   id: string;
   catalog_id: string;
   name: string;
-  status: 'pending' | 'downloading' | 'done' | 'error' | 'cancelled';
+  status: 'pending' | 'downloading' | 'done' | 'error' | 'cancelled' | 'paused';
   downloaded_bytes: number;
   total_bytes: number;
   percent: number;
@@ -2134,3 +2134,6 @@ export async function installCapability(name: string, onLine: (line: string) => 
     if (!completed) throw new Error('Installation was interrupted. Retry to finish setup.');
   } finally { reader.releaseLock(); }
 }
+
+export const resumeDownload = (id: string) => apiPost<DownloadState>(`/api/downloads/${id}/resume`);
+export const removeLibraryModel = (path: string, deleteFiles: boolean) => apiPost('/api/models/remove', { path, delete_files: deleteFiles });

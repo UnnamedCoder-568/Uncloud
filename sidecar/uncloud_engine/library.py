@@ -377,6 +377,12 @@ def _mlx_dir_engine(child: Path) -> tuple[str, str, str | None] | None:
 
 
 def scan_library(models_dir: Path) -> list[LocalModel]:
+    from .config import settings
+    hidden = set(settings.hidden_models)
+    return [model for model in _scan_library(models_dir) if model.path not in hidden]
+
+
+def _scan_library(models_dir: Path) -> list[LocalModel]:
     if not models_dir.exists():
         # Nothing to walk — but models imported from elsewhere are still
         # models. Returning early here hid every one of them on a machine whose

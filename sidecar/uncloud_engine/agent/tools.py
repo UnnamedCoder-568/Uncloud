@@ -747,7 +747,7 @@ async def _web_read(url: str) -> str:
     return text[:20000]
 
 
-async def _web_search(query: str) -> str:
+async def _search_snippets(query: str) -> str:
     if not query:
         raise ValueError("web_search tool requires a 'query' argument")
     # The HTML endpoint increasingly refuses automated POST requests. The lite
@@ -773,6 +773,14 @@ async def _web_search(query: str) -> str:
         if compact and compact.casefold() != query.strip().casefold():
             attempts.append(("https://www.bing.com/search",
                              {"format": "rss", "q": compact}, _parse_bing_rss))
+        if len(topic) >= 2:
+            attempts.append(("https://www.bing.com/search", {
+                "format": "rss", "q": ' '.join(f'"{word}"' for word in topic)
+            }, _parse_bing_rss))
+        if len(topic) >= 3:
+            attempts.append(("https://www.bing.com/search", {
+                "format": "rss", "q": f'"{topic[0]} {topic[1]}" {topic[2]}'
+            }, _parse_bing_rss))
         failures = []
         for url, params, parse in attempts:
             try:
@@ -786,6 +794,43 @@ async def _web_search(query: str) -> str:
             "product does not exist. Try a more specific query or an official page URL. "
             + failures[-1]
         )
+
+
+async def _web_search(query: str) -> str:
+    """Read search destinations automatically, independently of model tool support."""
+    snippets = await _search_snippets(query)
+    hits = snippets.split("\n\n")[:4]
+
+    async def read(hit: str) -> str:
+        urls = re.findall(r"https?://[^\s]+", hit)
+        if not urls:
+            return hit + "\nSearch snippet only; page unavailable."
+        try:
+            page = await asyncio.wait_for(_web_read(urls[0]), timeout=12)
+            return hit + "\nRetrieved page excerpts:\n" + _page_excerpts(query, page)
+        except (httpx.HTTPError, RuntimeError, ValueError, TimeoutError) as exc:
+            return hit + f"\nSearch snippet only; could not read page ({type(exc).__name__})."
+
+    pages = await asyncio.gather(*(read(hit) for hit in hits))
+    return ("Retrieved sources (excerpts, not exhaustive coverage). Cite their URLs. "
+            "If a requested detail is absent, read a linked page or refine the search; "
+            "do not invent it.\n\n" + "\n\n".join(pages)
+            + "\n\nAdditional search leads:\n" + "\n\n".join(snippets.split("\n\n")[4:]))
+
+
+def _page_excerpts(query: str, page: str, budget: int = 3200) -> str:
+    """Select passages across the page, rather than dropping everything past its header."""
+    if len(page) <= budget:
+        return page
+    terms = _search_terms(query)
+    chunks = [page[i:i + 600] for i in range(0, len(page), 600)]
+    weights = {term: 1 / max(1, sum(term in chunk.casefold() for chunk in chunks))
+               for term in terms}
+    ranked = sorted(range(len(chunks)), key=lambda i: (
+        sum(weight for term, weight in weights.items() if term in chunks[i].casefold()), -i),
+        reverse=True)
+    selected = sorted({0, *ranked[:4]})
+    return "\n[…]\n".join(chunks[i] for i in selected)[:budget]
 
 
 def _search_terms(query: str) -> list[str]:
@@ -803,9 +848,10 @@ def _relevant_search_results(query: str, results: str) -> str:
     if not anchors:
         return results
     # Keep only hits that mention a topic word in their title, URL or snippet.
+    minimum = min(3, max(1, (len(set(anchors)) + 1) // 2))
     hits = [hit for hit in results.split("\n\n")
-            if any(re.search(r"(?<!\w)" + re.escape(word) + r"(?!\w)", hit.casefold())
-                   for word in anchors)]
+            if sum(bool(re.search(r"(?<!\w)" + re.escape(word) + r"(?!\w)", hit.casefold()))
+                   for word in set(anchors)) >= minimum]
     if not hits:
         raise RuntimeError("The search provider returned unrelated results.")
     return "\n\n".join(hits)

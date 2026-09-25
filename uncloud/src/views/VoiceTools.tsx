@@ -1,3 +1,4 @@
+import { useDismiss } from '../lib/useDismiss';
 import ActivityOrb from '../components/ActivityOrb';
 import { useEffect, useRef, useState } from 'react';
 import { Mic, Square, ChevronDown } from 'lucide-react';
@@ -11,6 +12,7 @@ export default function VoiceTools() {
   const [sttModels, setSttModels] = useState<LocalModel[]>([]);
   const [sttModel, setSttModel] = useState<LocalModel | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const pickerRef = useDismiss(pickerOpen, () => setPickerOpen(false));
   const [recording, setRecording] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
   const [transcript, setTranscript] = useState('');
@@ -62,7 +64,7 @@ export default function VoiceTools() {
         <section className="card p-5 flex flex-col gap-4">
           <h2 className="text-sm font-medium">Transcribe</h2>
 
-          <div className="relative">
+          <div ref={pickerRef} className="relative">
             <button
               onClick={() => setPickerOpen((v) => !v)}
               className="w-full flex items-center justify-between text-xs px-3 py-2 rounded-lg bg-[var(--bg-inset)] hover:bg-[var(--bg-inset)]/70 transition"

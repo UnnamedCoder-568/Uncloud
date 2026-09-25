@@ -65,7 +65,7 @@ describe('results turn', () => {
       lookup: { kind: 'read', argument: 'http://x' },
       text: 'x'.repeat(20000),
     }]);
-    expect(turn.length).toBeLessThan(7000);
+    expect(turn.length).toBeLessThan(17000);
     expect(turn).toContain('truncated');
   });
 });

@@ -1,3 +1,4 @@
+import { useDismiss } from '../lib/useDismiss';
 import ActivityOrb from '../components/ActivityOrb';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ChevronDown, LayoutGrid, Shuffle, SlidersHorizontal, Sparkles, UserRound, UserRoundPlus } from 'lucide-react';
@@ -45,6 +46,7 @@ export default function ImageGenerate({ onEdit }: { onEdit?: () => void }) {
   const libraryVersion = useLibraryVersion();
   const [model, setModel] = useState<LocalModel | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const pickerRef = useDismiss(pickerOpen, () => setPickerOpen(false));
   // Open beside the canvas on a desktop. On a phone it would take two thirds
   // of the width, so there it starts closed and opens over the canvas instead.
   const [optionsOpen, setOptionsOpen] = useState(() => !isNarrow());
@@ -283,7 +285,7 @@ export default function ImageGenerate({ onEdit }: { onEdit?: () => void }) {
             <button className="underline" onClick={onEdit}>Open Edit to use it with a photo.</button>
           </div>
         )}
-        <header className="h-14 shrink-0 border-b border-[var(--border-soft)] flex items-center px-5 relative">
+        <header ref={pickerRef} className="h-14 shrink-0 border-b border-[var(--border-soft)] flex items-center px-5 relative">
           <button
             className="flex items-center gap-2 text-sm px-3 py-1.5 rounded-lg hover:bg-[var(--bg-raised)] transition"
             onClick={() => setPickerOpen((v) => !v)}

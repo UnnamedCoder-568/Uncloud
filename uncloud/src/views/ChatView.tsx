@@ -1,3 +1,4 @@
+import { useDismiss } from '../lib/useDismiss';
 import ActivityOrb from '../components/ActivityOrb';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ChevronDown, ArrowUp, Square, Mic, Volume2, VolumeX, Hammer, ImagePlus, PanelRight, Plus, X, Globe,
@@ -40,6 +41,7 @@ export default function ChatView() {
   const [activeModel, setActiveModel] = useState<LocalModel | null>(null);
   const [loadingModel, setLoadingModel] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const pickerRef = useDismiss(pickerOpen, () => setPickerOpen(false));
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   //: Which saved conversation this is. Made on the first send rather than on
   //  arrival, so opening Chat and changing your mind does not litter the list
@@ -1016,7 +1018,7 @@ export default function ChatView() {
       {/* The model in play is the window's context, so it lives in the title
           bar rather than in a header of this view's own. */}
       <TitleBarPortal>
-        <div style={{ position: 'relative' }}>
+        <div ref={pickerRef} style={{ position: 'relative' }}>
           <button className="tb-context" onClick={() => setPickerOpen((v) => !v)}
                   aria-haspopup="listbox" aria-expanded={pickerOpen}>
             {loadingModel ? (

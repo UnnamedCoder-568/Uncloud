@@ -91,7 +91,7 @@ export function resultsTurn(parts: { lookup: Lookup; text: string }[]): string {
         : `Contents of ${lookup.argument}`;
     // Bounded: a long page would otherwise crowd the question out of a small
     // model's context window, and the answer would drift off the point.
-    const clipped = text.length > 6000 ? `${text.slice(0, 6000)}\n…(truncated)` : text;
+    const clipped = text.length > 16000 ? `${text.slice(0, 16000)}\n…(truncated)` : text;
     return `### ${heading}\n${clipped}`;
   }).join('\n\n');
 
