@@ -2,9 +2,9 @@ import ActivityOrb from '../components/ActivityOrb';
 import { useEffect, useState } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
 import {
-  ArrowUpRight, Check, Download, FolderCog, HardDrive, CheckCircle2, XCircle,
+  ArrowUpRight, Check, Download, Trash2, FolderCog, HardDrive, CheckCircle2, XCircle,
 } from 'lucide-react';
-import { forgetModel, getCatalog, getLibrary, startDownload, listDownloads, getSettings, setModelsDir as saveModelsDir,
+import { removeLibraryModel, cancelDownload, resumeDownload, getCatalog, getLibrary, startDownload, listDownloads, getSettings, setModelsDir as saveModelsDir,
          acknowledgeModelLicence, getModelLicence, type ModelLicence } from '../lib/sidecar';
 import type { CatalogEntry, LocalModel, DownloadState } from '../lib/sidecar';
 import { formatBytes, formatSpeed } from '../lib/format';
@@ -101,7 +101,17 @@ export default function ModelsLibrary() {
   }, []);
 
   const activeDownloadFor = (catalogId: string) =>
-    downloads.find((d) => d.catalog_id === catalogId && (d.status === 'downloading' || d.status === 'pending'));
+    downloads.find((d) => d.catalog_id === catalogId && (d.status === 'downloading' || d.status === 'pending' || d.status === 'paused' || d.status === 'error'));
+
+  async function remove(model: LocalModel, deleteFiles: boolean) {
+    try { await removeLibraryModel(model.path, deleteFiles); libraryChanged(); }
+    catch (e) { setError(String(e)); }
+  }
+
+  async function controlDownload(id: string, resume: boolean) {
+    try { if (resume) await resumeDownload(id); else await cancelDownload(id); await refresh(); }
+    catch (e) { setError(String(e)); }
+  }
 
   async function download(entry: CatalogEntry) {
     // Terms first, and only where there is something worth saying. Asked at
@@ -215,15 +225,13 @@ export default function ModelsLibrary() {
                       {m.engine.toUpperCase()} · {formatBytes(m.size_gb * 1024 ** 3)}
                     </div>
                     {m.note && <div className={`text-[11px] mt-1 ${m.ready ? 'text-[var(--text-faint)]' : 'text-amber-400/80'}`}>{m.note}</div>}
-                    {m.tags?.includes('imported') && inDesktop() && (
-                      <button
-                        onClick={async () => { await forgetModel(m.path); refresh(); }}
-                        className="text-[11px] text-[var(--text-faint)] hover:text-[var(--text-dim)] mt-1.5 max-md:min-h-11"
-                        title="Stop listing it. Its files stay where they are."
-                      >
-                        Remove from library
-                      </button>
-                    )}
+                    {inDesktop() && <details className="relative mt-2">
+                      <summary className="cursor-pointer list-none w-fit p-1" aria-label={`Remove ${m.name}`}><Trash2 size={14} /></summary>
+                      <div className="absolute z-30 w-56 p-2 rounded-xl bg-[var(--bg-inset)] shadow-xl border border-white/15">
+                        <button className="block text-xs p-2 text-left w-full" onClick={() => void remove(m, false)}>Remove from library · keep files</button>
+                        <button className="block text-xs p-2 text-left w-full text-rose-400" onClick={() => void remove(m, true)}>Delete from device…</button>
+                      </div>
+                    </details>}
                   </div>
                 </div>
               ))}
@@ -272,7 +280,6 @@ export default function ModelsLibrary() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {filteredCatalog.map((entry) => {
               const active = activeDownloadFor(entry.id);
-              const done = downloads.find((d) => d.catalog_id === entry.id && d.status === 'done');
               return (
                 <div key={entry.id} className="card p-4 flex flex-col">
                   {/* Name, then labels, then the description — each on its own
@@ -317,13 +324,14 @@ export default function ModelsLibrary() {
                       )}
                     </span>
 
-                    {entry.installed || done ? (
+                    {entry.installed && !active ? (
                       <span className="flex items-center gap-1 text-[11px] text-emerald-400">
                         <CheckCircle2 size={13} /> Installed
                       </span>
                     ) : active ? (
                       <div className="flex items-center gap-2 text-[11px] text-[var(--text-dim)]">
-                        <ActivityOrb state="working" size={20} label="Working…" />
+                        {active.status === 'downloading' && <ActivityOrb state="working" size={20} label="Downloading…" />}
+                        <button className="underline" onClick={() => void controlDownload(active.id, ['paused', 'error'].includes(active.status))}>{['paused', 'error'].includes(active.status) ? 'Resume' : 'Pause'}</button>
                         {active.percent.toFixed(0)}%{active.speed_bytes_s > 0 ? ` · ${formatSpeed(active.speed_bytes_s)}` : ''}
                       </div>
                     ) : (
