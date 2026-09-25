@@ -51,3 +51,28 @@ def test_loaded_models_prevent_deletion(model, monkeypatch):
         main.remove_model(main.RemoveModelBody(path=model.path, delete_files=True))
     assert error.value.status_code == 409
     assert Path(model.path).exists()
+
+
+def test_delete_http_confirmation_retry_removes_only_selected_model(tmp_path, monkeypatch):
+    from test_permissions import _Client
+
+    from uncloud_engine import lifecycle
+    from uncloud_engine.core.permission import Mode, Risk
+    target = tmp_path / 'selected.gguf'
+    other = tmp_path / 'keep.gguf'
+    target.write_bytes(b'selected')
+    other.write_bytes(b'keep')
+    item = library.LocalModel('selected', 'Selected', 'text', 'gguf', str(target), 1)
+    monkeypatch.setattr(main, 'scan_library_cached', lambda *args, **kwargs: [item])
+    monkeypatch.setattr(lifecycle, 'resident', lambda: {})
+    with _Client() as client:
+        client.main.gate.set_mode(Risk.DELETE, Mode.ASK)
+        body = {'path': str(target), 'delete_files': True}
+        response = client.client.post('/api/models/remove', json=body)
+        assert response.status_code == 428 and target.exists()
+        request = response.json()['detail']['approval']
+        answer = {key: request[key] for key in ['request_id', 'action', 'category', 'summary']}
+        answer['answer'] = 'yes'
+        assert client.client.post('/api/approvals/answer', json=answer).status_code == 200
+        assert client.client.post('/api/models/remove', json=body).status_code == 200
+        assert not target.exists() and other.read_bytes() == b'keep'
