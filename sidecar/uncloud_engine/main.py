@@ -210,6 +210,16 @@ integration_registry.install_approver(_approve_integration_action)
 integration_credentials.configure(CONFIG_DIR)
 
 
+# HTTP actions that always ask need a one-use receipt across the approval/retry round trip.
+_http_pending: dict[str, tuple[float, PermissionRequest]] = {}
+_http_once: dict[str, float] = {}
+
+
+def _approval_key(request: PermissionRequest) -> str:
+    return json.dumps([request.action, request.category.value, request.summary,
+                       request.preview, request.origin], sort_keys=True)
+
+
 class NeedsApproval(HTTPException):
     """A person has to decide, and this is an HTTP request rather than a socket.
 
@@ -220,8 +230,15 @@ class NeedsApproval(HTTPException):
     """
 
     def __init__(self, request: PermissionRequest) -> None:
+        now = time.monotonic()
+        for key, (created, _) in list(_http_pending.items()):
+            if now - created > 300:
+                _http_pending.pop(key, None)
+        request_id = secrets.token_urlsafe(24)
+        _http_pending[request_id] = (now, request)
         super().__init__(status_code=428, detail={
             "approval": {
+                "request_id": request_id,
                 "action": request.action,
                 "category": request.category.value,
                 "summary": request.summary,
@@ -243,6 +260,11 @@ def gated(action: str, category: Risk, summary: str, *, preview: dict | None = N
     request = PermissionRequest(action=action, category=category, summary=summary,
                                 preview=preview or {}, origin=origin)
     settled = gate.check(request)
+    expiry = _http_once.pop(_approval_key(request), 0)
+    if settled is None and expiry > time.monotonic():
+        # Keep auditing and the gate's always-ask policy; consume only this exact action.
+        gate.settle(request, gate.answer(request, "yes"))
+        return
     if settled is None:
         raise NeedsApproval(request)
     try:
@@ -642,6 +664,7 @@ class McpServerBody(BaseModel):
 
 
 class AnswerBody(BaseModel):
+    request_id: str | None = None
     action: str
     category: str
     summary: str = ""
@@ -878,9 +901,19 @@ def answer_approval(body: AnswerBody) -> dict:
         category = Risk(body.category)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    request = PermissionRequest(action=body.action, category=category,
-                                summary=body.summary, origin="chat")
+    if body.request_id:
+        pending = _http_pending.pop(body.request_id, None)
+        if not pending or time.monotonic() - pending[0] > 300:
+            raise HTTPException(status_code=409, detail="Confirmation expired. Please try again.")
+        request = pending[1]
+        if request.action != body.action or request.category != category:
+            raise HTTPException(status_code=400, detail="Confirmation does not match the action.")
+    else:
+        request = PermissionRequest(action=body.action, category=category,
+                                    summary=body.summary, origin="chat")
     decision = gate.answer(request, body.answer)
+    if body.request_id and decision.allowed and gate.check(request) is None:
+        _http_once[_approval_key(request)] = time.monotonic() + 30
     _audit.write(request, decision)
     return {"decision": decision.to_dict(), "permissions": gate.describe()}
 
@@ -1578,6 +1611,25 @@ def import_model_route(body: ImportModelBody) -> dict:
         settings.remember_imported(str(model_path))
     invalidate_library_cache()
     return result
+
+
+class ImageDefaultsBody(ModelPathBody):
+    values: dict
+
+
+@app.post("/api/models/image-defaults", dependencies=[Depends(require_desktop)])
+def save_image_defaults(body: ImageDefaultsBody) -> dict:
+    from .image_defaults import validated
+    if not any(m.path == body.path and m.category == "image"
+               for m in scan_library_cached(settings.models_dir)):
+        raise HTTPException(status_code=404, detail="Image model not found")
+    values = validated(body.values)
+    if len(values) != len(body.values):
+        raise HTTPException(status_code=400, detail="Invalid image settings")
+    settings._data.setdefault("image_defaults", {})[body.path] = values
+    settings._save()
+    invalidate_library_cache()
+    return {"saved": True}
 
 
 class RemoveModelBody(ModelPathBody):

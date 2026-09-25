@@ -41,12 +41,16 @@ class LocalModel:
     lora_scales: list[float] | None = None
 
     def to_dict(self) -> dict:
+        defaults, defaults_source = self.defaults or {}, ''
+        if self.category == 'image':
+            from .image_defaults import resolve
+            defaults, defaults_source = resolve(self)
         return {
             "id": self.id, "name": self.name, "category": self.category,
             "engine": self.engine, "path": self.path, "size_gb": round(self.size_gb, 2),
             "catalog_id": self.catalog_id, "tags": self.tags or [], "ready": self.ready,
             "note": self.note, "capabilities": self.capabilities or ["text2img"],
-            "defaults": self.defaults or {},
+            "defaults": defaults, "defaults_source": defaults_source,
             "mflux_cli": self.mflux_cli, "mflux_base": self.mflux_base,
             "lora_paths": self.lora_paths or [], "lora_scales": self.lora_scales or [],
         }

@@ -45,6 +45,7 @@ async function authHeaders(): Promise<Record<string, string>> {
  *  remembering, and the one that forgets is the one that matters.
  */
 export interface ApprovalRequest {
+  request_id?: string;
   action: string;
   category: string;
   summary: string;
@@ -90,16 +91,24 @@ export async function api<T>(path: string, opts: RequestInit = {},
       const request = approvalFrom(text);
       if (request) {
         const answer = await asker(request);
-        await apiPost('/api/approvals/answer', {
+        await api('/api/approvals/answer', { method: 'POST', body: JSON.stringify({
           action: request.action, category: request.category,
-          summary: request.summary, answer,
-        });
+          summary: request.summary, answer, request_id: request.request_id,
+        }) }, true);
+        if (answer === 'no' || answer === 'never') throw new Error('Action cancelled. Nothing was changed.');
         // Once. A second 428 after an answer means the answer did not settle
         // it, and repeating would be an unbreakable loop of prompts.
         return api<T>(path, opts, true);
       }
     }
-    throw new Error(`${resp.status}: ${text}`);
+    let message = 'The request could not be completed. Please try again.';
+    try {
+      const detail = JSON.parse(text)?.detail;
+      if (typeof detail === 'string') message = detail;
+      else if (detail?.denied?.reason) message = detail.denied.reason;
+      else if (detail?.approval) message = 'Confirmation could not be completed. Please try again.';
+    } catch { if (text && !text.trimStart().startsWith('<')) message = text.slice(0, 500); }
+    throw new Error(message);
   }
   return resp.json();
 }
@@ -149,7 +158,8 @@ export interface LocalModel {
   capabilities: string[];
   /** Settings the model asks for — a distilled checkpoint wants very few steps.
    *  Optional: views also build LocalModel values of their own. */
-  defaults?: { steps?: number; guidance?: number };
+  defaults?: { steps?: number; guidance?: number; width?: number; height?: number };
+  defaults_source?: string;
   /** For MLX models found on disk rather than in the catalog: which mflux
    *  entry point runs it, and which base model to configure it as. */
   mflux_cli?: string | null;
@@ -2137,3 +2147,5 @@ export async function installCapability(name: string, onLine: (line: string) => 
 
 export const resumeDownload = (id: string) => apiPost<DownloadState>(`/api/downloads/${id}/resume`);
 export const removeLibraryModel = (path: string, deleteFiles: boolean) => apiPost('/api/models/remove', { path, delete_files: deleteFiles });
+
+export const saveImageDefaults = (path: string, values: Record<string, number>) => apiPost('/api/models/image-defaults', { path, values });

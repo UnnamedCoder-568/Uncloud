@@ -525,3 +525,25 @@ def test_network_denial_explains_how_to_enable_access(gate) -> None:
     assert decision is not None and not decision.allowed
     assert "Reach the internet" in decision.reason
     assert "Ask once a session" in decision.reason
+
+
+def test_http_always_ask_receipt_is_exact_and_consumed_once():
+    with _Client() as c:
+        c.main.gate.set_mode(Risk.DELETE, Mode.ASK)
+        args = ('delete_model', Risk.DELETE, 'Delete test model')
+        preview = {'path': '/temporary/model'}
+        with pytest.raises(c.main.NeedsApproval) as pending:
+            c.main.gated(*args, preview=preview, origin='models')
+        request = pending.value.detail['approval']
+        response = c.client.post('/api/approvals/answer', json={
+            'action': request['action'], 'category': request['category'],
+            'summary': request['summary'], 'request_id': request['request_id'], 'answer': 'yes'})
+        assert response.status_code == 200
+        with pytest.raises(c.main.NeedsApproval):
+            c.main.gated(*args, preview={'path': '/different/model'}, origin='models')
+        c.main.gated(*args, preview=preview, origin='models')
+        with pytest.raises(c.main.NeedsApproval):
+            c.main.gated(*args, preview=preview, origin='models')
+        assert c.client.post('/api/approvals/answer', json={
+            'action': request['action'], 'category': request['category'],
+            'request_id': request['request_id'], 'answer': 'yes'}).status_code == 409
