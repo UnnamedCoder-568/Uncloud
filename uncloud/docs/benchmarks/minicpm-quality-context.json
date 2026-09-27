@@ -1,0 +1,1935 @@
+{
+  "model": "minicpm5-2b-mlx-8bit",
+  "sampling": {
+    "temperature": 0,
+    "seed": 42
+  },
+  "records": [
+    {
+      "mode": "direct",
+      "ttft_ms": 176.31908299517818,
+      "total_ms": 5475.199416992837,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 56,
+        "completion_tokens": 249,
+        "total_tokens": 305,
+        "prompt_tokens_details": {
+          "cached_tokens": 4
+        }
+      },
+      "answer": "\n\n{\"profit\": 60}",
+      "case": "multi_step",
+      "expected": {
+        "profit": 60
+      },
+      "passed": true,
+      "factual": {
+        "passed": true,
+        "fields": {
+          "profit": true
+        }
+      }
+    },
+    {
+      "mode": "legacy",
+      "ttft_ms": 307.25962499855086,
+      "total_ms": 5740.128499994171,
+      "library_scan_ms": 126.8681670044316,
+      "usage": {
+        "prompt_tokens": 56,
+        "completion_tokens": 249,
+        "total_tokens": 305,
+        "prompt_tokens_details": {
+          "cached_tokens": 55
+        }
+      },
+      "answer": "\n\n{\"profit\": 60}",
+      "case": "multi_step",
+      "expected": {
+        "profit": 60
+      },
+      "passed": true,
+      "factual": {
+        "passed": true,
+        "fields": {
+          "profit": true
+        }
+      }
+    },
+    {
+      "mode": "optimized",
+      "ttft_ms": 110.11954199057072,
+      "total_ms": 5493.753374990774,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 56,
+        "completion_tokens": 249,
+        "total_tokens": 305,
+        "prompt_tokens_details": {
+          "cached_tokens": 55
+        }
+      },
+      "answer": "\n\n{\"profit\": 60}",
+      "case": "multi_step",
+      "expected": {
+        "profit": 60
+      },
+      "passed": true,
+      "factual": {
+        "passed": true,
+        "fields": {
+          "profit": true
+        }
+      }
+    },
+    {
+      "mode": "direct",
+      "ttft_ms": 415.8221250108909,
+      "total_ms": 36891.080375004094,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 62,
+        "completion_tokens": 1689,
+        "total_tokens": 1751,
+        "prompt_tokens_details": {
+          "cached_tokens": 61
+        }
+      },
+      "answer": "\n\n{\"true\":\"B\"}",
+      "finish_reason": "stop",
+      "case": "logic",
+      "expected": {
+        "true": "B"
+      },
+      "passed": true,
+      "factual": {
+        "passed": true,
+        "fields": {
+          "true": true
+        }
+      }
+    },
+    {
+      "mode": "legacy",
+      "ttft_ms": 345.95666598761454,
+      "total_ms": 37066.45974999992,
+      "library_scan_ms": 164.8453329980839,
+      "usage": {
+        "prompt_tokens": 62,
+        "completion_tokens": 1689,
+        "total_tokens": 1751,
+        "prompt_tokens_details": {
+          "cached_tokens": 61
+        }
+      },
+      "answer": "\n\n{\"true\":\"B\"}",
+      "finish_reason": "stop",
+      "case": "logic",
+      "expected": {
+        "true": "B"
+      },
+      "passed": true,
+      "factual": {
+        "passed": true,
+        "fields": {
+          "true": true
+        }
+      }
+    },
+    {
+      "mode": "optimized",
+      "ttft_ms": 106.47499997867271,
+      "total_ms": 36760.95266698394,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 62,
+        "completion_tokens": 1689,
+        "total_tokens": 1751,
+        "prompt_tokens_details": {
+          "cached_tokens": 61
+        }
+      },
+      "answer": "\n\n{\"true\":\"B\"}",
+      "finish_reason": "stop",
+      "case": "logic",
+      "expected": {
+        "true": "B"
+      },
+      "passed": true,
+      "factual": {
+        "passed": true,
+        "fields": {
+          "true": true
+        }
+      }
+    },
+    {
+      "mode": "direct",
+      "ttft_ms": 155.83962500386406,
+      "total_ms": 1276.2277080037165,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 42,
+        "completion_tokens": 55,
+        "total_tokens": 97,
+        "prompt_tokens_details": {
+          "cached_tokens": 4
+        }
+      },
+      "answer": "\n\n[\"Build\", \"Test\", \"Ship\"]",
+      "case": "constraints",
+      "expected": [
+        "Build",
+        "Test",
+        "Ship"
+      ],
+      "passed": true,
+      "factual": {
+        "passed": true
+      }
+    },
+    {
+      "mode": "legacy",
+      "ttft_ms": 301.80220799229573,
+      "total_ms": 1387.0024159987224,
+      "library_scan_ms": 120.96979199850466,
+      "usage": {
+        "prompt_tokens": 42,
+        "completion_tokens": 55,
+        "total_tokens": 97,
+        "prompt_tokens_details": {
+          "cached_tokens": 41
+        }
+      },
+      "answer": "\n\n[\"Build\", \"Test\", \"Ship\"]",
+      "case": "constraints",
+      "expected": [
+        "Build",
+        "Test",
+        "Ship"
+      ],
+      "passed": true,
+      "factual": {
+        "passed": true
+      }
+    },
+    {
+      "mode": "optimized",
+      "ttft_ms": 103.436542005511,
+      "total_ms": 1228.773042006651,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 42,
+        "completion_tokens": 55,
+        "total_tokens": 97,
+        "prompt_tokens_details": {
+          "cached_tokens": 41
+        }
+      },
+      "answer": "\n\n[\"Build\", \"Test\", \"Ship\"]",
+      "case": "constraints",
+      "expected": [
+        "Build",
+        "Test",
+        "Ship"
+      ],
+      "passed": true,
+      "factual": {
+        "passed": true
+      }
+    },
+    {
+      "mode": "direct",
+      "ttft_ms": 156.7522499972256,
+      "total_ms": 7964.754125001491,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 55,
+        "completion_tokens": 378,
+        "total_tokens": 433,
+        "prompt_tokens_details": {
+          "cached_tokens": 4
+        }
+      },
+      "answer": "\n\n```json\n{\n  \"a\": [1, 2, 3],\n  \"b\": [1, 2, 4]\n}\n```",
+      "case": "code_reasoning",
+      "expected": {
+        "a": [
+          1,
+          2,
+          3
+        ],
+        "b": [
+          1,
+          2,
+          4
+        ]
+      },
+      "passed": false,
+      "factual": {
+        "passed": true,
+        "fields": {
+          "a": true,
+          "b": true
+        }
+      }
+    },
+    {
+      "mode": "legacy",
+      "ttft_ms": 306.0268749977695,
+      "total_ms": 8450.156999999308,
+      "library_scan_ms": 125.4243330040481,
+      "usage": {
+        "prompt_tokens": 55,
+        "completion_tokens": 378,
+        "total_tokens": 433,
+        "prompt_tokens_details": {
+          "cached_tokens": 54
+        }
+      },
+      "answer": "\n\n```json\n{\n  \"a\": [1, 2, 3],\n  \"b\": [1, 2, 4]\n}\n```",
+      "case": "code_reasoning",
+      "expected": {
+        "a": [
+          1,
+          2,
+          3
+        ],
+        "b": [
+          1,
+          2,
+          4
+        ]
+      },
+      "passed": false,
+      "factual": {
+        "passed": true,
+        "fields": {
+          "a": true,
+          "b": true
+        }
+      }
+    },
+    {
+      "mode": "optimized",
+      "ttft_ms": 127.22070900781546,
+      "total_ms": 8058.153209000011,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 55,
+        "completion_tokens": 378,
+        "total_tokens": 433,
+        "prompt_tokens_details": {
+          "cached_tokens": 54
+        }
+      },
+      "answer": "\n\n```json\n{\n  \"a\": [1, 2, 3],\n  \"b\": [1, 2, 4]\n}\n```",
+      "case": "code_reasoning",
+      "expected": {
+        "a": [
+          1,
+          2,
+          3
+        ],
+        "b": [
+          1,
+          2,
+          4
+        ]
+      },
+      "passed": false,
+      "factual": {
+        "passed": true,
+        "fields": {
+          "a": true,
+          "b": true
+        }
+      }
+    },
+    {
+      "mode": "direct",
+      "ttft_ms": 151.03783299855422,
+      "total_ms": 2725.8762499986915,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 64,
+        "completion_tokens": 126,
+        "total_tokens": 190,
+        "prompt_tokens_details": {
+          "cached_tokens": 4
+        }
+      },
+      "answer": "\n\n{\"budget\": 63, \"release\": null}",
+      "case": "correction",
+      "expected": {
+        "budget": 63,
+        "release": null
+      },
+      "passed": true,
+      "factual": {
+        "passed": true,
+        "fields": {
+          "budget": true,
+          "release": true
+        }
+      }
+    },
+    {
+      "mode": "legacy",
+      "ttft_ms": 307.06008299603127,
+      "total_ms": 2841.8702079943614,
+      "library_scan_ms": 126.15066699800082,
+      "usage": {
+        "prompt_tokens": 64,
+        "completion_tokens": 126,
+        "total_tokens": 190,
+        "prompt_tokens_details": {
+          "cached_tokens": 63
+        }
+      },
+      "answer": "\n\n{\"budget\": 63, \"release\": null}",
+      "case": "correction",
+      "expected": {
+        "budget": 63,
+        "release": null
+      },
+      "passed": true,
+      "factual": {
+        "passed": true,
+        "fields": {
+          "budget": true,
+          "release": true
+        }
+      }
+    },
+    {
+      "mode": "optimized",
+      "ttft_ms": 103.90129098959733,
+      "total_ms": 2680.221790986252,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 64,
+        "completion_tokens": 126,
+        "total_tokens": 190,
+        "prompt_tokens_details": {
+          "cached_tokens": 63
+        }
+      },
+      "answer": "\n\n{\"budget\": 63, \"release\": null}",
+      "case": "correction",
+      "expected": {
+        "budget": 63,
+        "release": null
+      },
+      "passed": true,
+      "factual": {
+        "passed": true,
+        "fields": {
+          "budget": true,
+          "release": true
+        }
+      }
+    },
+    {
+      "mode": "direct",
+      "ttft_ms": 157.82454100553878,
+      "total_ms": 2851.1248330032686,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 51,
+        "completion_tokens": 132,
+        "total_tokens": 183,
+        "prompt_tokens_details": {
+          "cached_tokens": 4
+        }
+      },
+      "answer": "\n\n{\"age\":null}",
+      "case": "unanswerable",
+      "expected": {
+        "age": null
+      },
+      "passed": true,
+      "factual": {
+        "passed": true,
+        "fields": {
+          "age": true
+        }
+      }
+    },
+    {
+      "mode": "legacy",
+      "ttft_ms": 306.824624989531,
+      "total_ms": 3019.8822499951348,
+      "library_scan_ms": 125.79383300908376,
+      "usage": {
+        "prompt_tokens": 51,
+        "completion_tokens": 132,
+        "total_tokens": 183,
+        "prompt_tokens_details": {
+          "cached_tokens": 50
+        }
+      },
+      "answer": "\n\n{\"age\":null}",
+      "case": "unanswerable",
+      "expected": {
+        "age": null
+      },
+      "passed": true,
+      "factual": {
+        "passed": true,
+        "fields": {
+          "age": true
+        }
+      }
+    },
+    {
+      "mode": "optimized",
+      "ttft_ms": 103.34658400097396,
+      "total_ms": 2796.988334011985,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 51,
+        "completion_tokens": 132,
+        "total_tokens": 183,
+        "prompt_tokens_details": {
+          "cached_tokens": 50
+        }
+      },
+      "answer": "\n\n{\"age\":null}",
+      "case": "unanswerable",
+      "expected": {
+        "age": null
+      },
+      "passed": true,
+      "factual": {
+        "passed": true,
+        "fields": {
+          "age": true
+        }
+      }
+    },
+    {
+      "mode": "direct",
+      "ttft_ms": 106.36720800539479,
+      "total_ms": 17706.330374989193,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 2254,
+        "completion_tokens": 796,
+        "total_tokens": 3050,
+        "prompt_tokens_details": {
+          "cached_tokens": 2253
+        }
+      },
+      "answer": "\n\n{\n  \"project\": \"Juniper\",\n  \"owner\": \"Nila\",\n  \"budget\": 63,\n  \"release\": \"Tuesday\",\n  \"database\": \"SQLite\",\n  \"export\": \"CSV\",\n  \"workspace\": \"/projects/juniper\",\n  \"reference\": \"LIB-42\",\n  \"cloud_allowed\": false,\n  \"delete_original\": false,\n  \"pending\": [\n    \"test accented author names and get Nila to approve the migration.\",\n    \"The reference is issue LIB-42.\"\n  ]\n}",
+      "finish_reason": "stop",
+      "case": "full_context",
+      "expected": {
+        "project": "Juniper",
+        "owner": "Nila",
+        "budget": 63,
+        "release": "Tuesday",
+        "database": "SQLite",
+        "export": "CSV",
+        "workspace": "/projects/juniper",
+        "reference": "LIB-42",
+        "cloud_allowed": false,
+        "delete_original": false,
+        "pending": [
+          "test accented author names",
+          "get Nila to approve the migration"
+        ]
+      },
+      "passed": false,
+      "factual": {
+        "passed": false,
+        "fields": {
+          "project": true,
+          "owner": true,
+          "budget": true,
+          "release": true,
+          "database": true,
+          "export": true,
+          "workspace": true,
+          "reference": true,
+          "cloud_allowed": true,
+          "delete_original": true,
+          "pending": false
+        }
+      }
+    },
+    {
+      "mode": "legacy",
+      "ttft_ms": 319.5778329973109,
+      "total_ms": 18044.447833002778,
+      "library_scan_ms": 138.48795898957178,
+      "usage": {
+        "prompt_tokens": 2254,
+        "completion_tokens": 796,
+        "total_tokens": 3050,
+        "prompt_tokens_details": {
+          "cached_tokens": 2253
+        }
+      },
+      "answer": "\n\n{\n  \"project\": \"Juniper\",\n  \"owner\": \"Nila\",\n  \"budget\": 63,\n  \"release\": \"Tuesday\",\n  \"database\": \"SQLite\",\n  \"export\": \"CSV\",\n  \"workspace\": \"/projects/juniper\",\n  \"reference\": \"LIB-42\",\n  \"cloud_allowed\": false,\n  \"delete_original\": false,\n  \"pending\": [\n    \"test accented author names and get Nila to approve the migration.\",\n    \"The reference is issue LIB-42.\"\n  ]\n}",
+      "finish_reason": "stop",
+      "case": "full_context",
+      "expected": {
+        "project": "Juniper",
+        "owner": "Nila",
+        "budget": 63,
+        "release": "Tuesday",
+        "database": "SQLite",
+        "export": "CSV",
+        "workspace": "/projects/juniper",
+        "reference": "LIB-42",
+        "cloud_allowed": false,
+        "delete_original": false,
+        "pending": [
+          "test accented author names",
+          "get Nila to approve the migration"
+        ]
+      },
+      "passed": false,
+      "factual": {
+        "passed": false,
+        "fields": {
+          "project": true,
+          "owner": true,
+          "budget": true,
+          "release": true,
+          "database": true,
+          "export": true,
+          "workspace": true,
+          "reference": true,
+          "cloud_allowed": true,
+          "delete_original": true,
+          "pending": false
+        }
+      }
+    },
+    {
+      "mode": "optimized",
+      "ttft_ms": 106.61795802298002,
+      "total_ms": 18574.057542020455,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 2254,
+        "completion_tokens": 796,
+        "total_tokens": 3050,
+        "prompt_tokens_details": {
+          "cached_tokens": 2253
+        }
+      },
+      "answer": "\n\n{\n  \"project\": \"Juniper\",\n  \"owner\": \"Nila\",\n  \"budget\": 63,\n  \"release\": \"Tuesday\",\n  \"database\": \"SQLite\",\n  \"export\": \"CSV\",\n  \"workspace\": \"/projects/juniper\",\n  \"reference\": \"LIB-42\",\n  \"cloud_allowed\": false,\n  \"delete_original\": false,\n  \"pending\": [\n    \"test accented author names and get Nila to approve the migration.\",\n    \"The reference is issue LIB-42.\"\n  ]\n}",
+      "finish_reason": "stop",
+      "case": "full_context",
+      "expected": {
+        "project": "Juniper",
+        "owner": "Nila",
+        "budget": 63,
+        "release": "Tuesday",
+        "database": "SQLite",
+        "export": "CSV",
+        "workspace": "/projects/juniper",
+        "reference": "LIB-42",
+        "cloud_allowed": false,
+        "delete_original": false,
+        "pending": [
+          "test accented author names",
+          "get Nila to approve the migration"
+        ]
+      },
+      "passed": false,
+      "factual": {
+        "passed": false,
+        "fields": {
+          "project": true,
+          "owner": true,
+          "budget": true,
+          "release": true,
+          "database": true,
+          "export": true,
+          "workspace": true,
+          "reference": true,
+          "cloud_allowed": true,
+          "delete_original": true,
+          "pending": false
+        }
+      }
+    },
+    {
+      "mode": "direct",
+      "ttft_ms": 264.4053339899983,
+      "total_ms": 7611.827166983858,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 320,
+        "completion_tokens": 340,
+        "total_tokens": 660,
+        "prompt_tokens_details": {
+          "cached_tokens": 11
+        }
+      },
+      "answer": "\n\n{\n  \"project\": \"Juniper\",\n  \"owner\": \"Nila\",\n  \"budget\": 63,\n  \"release\": \"Tuesday\",\n  \"database\": \"SQLite\",\n  \"export\": \"CSV\",\n  \"workspace\": \"/projects/juniper\",\n  \"reference\": \"Issue LIB-42\",\n  \"cloud_allowed\": false,\n  \"delete_original\": false,\n  \"pending\": [\n    \"Test accented author names.\",\n    \"Get Nila to approve the migration.\"\n  ]\n}",
+      "finish_reason": "stop",
+      "case": "compacted_context",
+      "expected": {
+        "project": "Juniper",
+        "owner": "Nila",
+        "budget": 63,
+        "release": "Tuesday",
+        "database": "SQLite",
+        "export": "CSV",
+        "workspace": "/projects/juniper",
+        "reference": "LIB-42",
+        "cloud_allowed": false,
+        "delete_original": false,
+        "pending": [
+          "test accented author names",
+          "get Nila to approve the migration"
+        ]
+      },
+      "passed": false,
+      "factual": {
+        "passed": true,
+        "fields": {
+          "project": true,
+          "owner": true,
+          "budget": true,
+          "release": true,
+          "database": true,
+          "export": true,
+          "workspace": true,
+          "reference": true,
+          "cloud_allowed": true,
+          "delete_original": true,
+          "pending": true
+        }
+      }
+    },
+    {
+      "mode": "legacy",
+      "ttft_ms": 312.1374170004856,
+      "total_ms": 7548.765959014418,
+      "library_scan_ms": 131.00941700395197,
+      "usage": {
+        "prompt_tokens": 320,
+        "completion_tokens": 340,
+        "total_tokens": 660,
+        "prompt_tokens_details": {
+          "cached_tokens": 319
+        }
+      },
+      "answer": "\n\n{\n  \"project\": \"Juniper\",\n  \"owner\": \"Nila\",\n  \"budget\": 63,\n  \"release\": \"Tuesday\",\n  \"database\": \"SQLite\",\n  \"export\": \"CSV\",\n  \"workspace\": \"/projects/juniper\",\n  \"reference\": \"Issue LIB-42\",\n  \"cloud_allowed\": false,\n  \"delete_original\": false,\n  \"pending\": [\n    \"Test accented author names.\",\n    \"Get Nila to approve the migration.\"\n  ]\n}",
+      "finish_reason": "stop",
+      "case": "compacted_context",
+      "expected": {
+        "project": "Juniper",
+        "owner": "Nila",
+        "budget": 63,
+        "release": "Tuesday",
+        "database": "SQLite",
+        "export": "CSV",
+        "workspace": "/projects/juniper",
+        "reference": "LIB-42",
+        "cloud_allowed": false,
+        "delete_original": false,
+        "pending": [
+          "test accented author names",
+          "get Nila to approve the migration"
+        ]
+      },
+      "passed": false,
+      "factual": {
+        "passed": true,
+        "fields": {
+          "project": true,
+          "owner": true,
+          "budget": true,
+          "release": true,
+          "database": true,
+          "export": true,
+          "workspace": true,
+          "reference": true,
+          "cloud_allowed": true,
+          "delete_original": true,
+          "pending": true
+        }
+      }
+    },
+    {
+      "mode": "optimized",
+      "ttft_ms": 107.38366699661128,
+      "total_ms": 7439.856500015594,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 320,
+        "completion_tokens": 340,
+        "total_tokens": 660,
+        "prompt_tokens_details": {
+          "cached_tokens": 319
+        }
+      },
+      "answer": "\n\n{\n  \"project\": \"Juniper\",\n  \"owner\": \"Nila\",\n  \"budget\": 63,\n  \"release\": \"Tuesday\",\n  \"database\": \"SQLite\",\n  \"export\": \"CSV\",\n  \"workspace\": \"/projects/juniper\",\n  \"reference\": \"Issue LIB-42\",\n  \"cloud_allowed\": false,\n  \"delete_original\": false,\n  \"pending\": [\n    \"Test accented author names.\",\n    \"Get Nila to approve the migration.\"\n  ]\n}",
+      "finish_reason": "stop",
+      "case": "compacted_context",
+      "expected": {
+        "project": "Juniper",
+        "owner": "Nila",
+        "budget": 63,
+        "release": "Tuesday",
+        "database": "SQLite",
+        "export": "CSV",
+        "workspace": "/projects/juniper",
+        "reference": "LIB-42",
+        "cloud_allowed": false,
+        "delete_original": false,
+        "pending": [
+          "test accented author names",
+          "get Nila to approve the migration"
+        ]
+      },
+      "passed": false,
+      "factual": {
+        "passed": true,
+        "fields": {
+          "project": true,
+          "owner": true,
+          "budget": true,
+          "release": true,
+          "database": true,
+          "export": true,
+          "workspace": true,
+          "reference": true,
+          "cloud_allowed": true,
+          "delete_original": true,
+          "pending": true
+        }
+      }
+    },
+    {
+      "mode": "direct",
+      "ttft_ms": 195.4439589753747,
+      "total_ms": 14106.709374987986,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 229,
+        "completion_tokens": 644,
+        "total_tokens": 873,
+        "prompt_tokens_details": {
+          "cached_tokens": 46
+        }
+      },
+      "answer": "\n\n{\n  \"project\": \"Juniper\",\n  \"owner\": \"Nila\",\n  \"budget\": 63,\n  \"release\": \"Wednesday\",\n  \"database\": \"SQLite\",\n  \"export\": \"CSV\",\n  \"workspace\": \"/projects/juniper\",\n  \"reference\": \"Issue LIB-42\",\n  \"cloud_allowed\": false,\n  \"delete_original\": false,\n  \"pending\": [\n    \"Test accented author names.\"\n  ]\n}",
+      "finish_reason": "stop",
+      "case": "incremental_compaction",
+      "expected": {
+        "project": "Juniper",
+        "owner": "Nila",
+        "budget": 63,
+        "release": "Wednesday",
+        "database": "SQLite",
+        "export": "CSV",
+        "workspace": "/projects/juniper",
+        "reference": "LIB-42",
+        "cloud_allowed": false,
+        "delete_original": false,
+        "pending": [
+          "test accented author names"
+        ]
+      },
+      "passed": false,
+      "factual": {
+        "passed": true,
+        "fields": {
+          "project": true,
+          "owner": true,
+          "budget": true,
+          "release": true,
+          "database": true,
+          "export": true,
+          "workspace": true,
+          "reference": true,
+          "cloud_allowed": true,
+          "delete_original": true,
+          "pending": true
+        }
+      }
+    },
+    {
+      "mode": "legacy",
+      "ttft_ms": 310.54162498912774,
+      "total_ms": 14237.773082975764,
+      "library_scan_ms": 129.54587501008064,
+      "usage": {
+        "prompt_tokens": 229,
+        "completion_tokens": 644,
+        "total_tokens": 873,
+        "prompt_tokens_details": {
+          "cached_tokens": 228
+        }
+      },
+      "answer": "\n\n{\n  \"project\": \"Juniper\",\n  \"owner\": \"Nila\",\n  \"budget\": 63,\n  \"release\": \"Wednesday\",\n  \"database\": \"SQLite\",\n  \"export\": \"CSV\",\n  \"workspace\": \"/projects/juniper\",\n  \"reference\": \"Issue LIB-42\",\n  \"cloud_allowed\": false,\n  \"delete_original\": false,\n  \"pending\": [\n    \"Test accented author names.\"\n  ]\n}",
+      "finish_reason": "stop",
+      "case": "incremental_compaction",
+      "expected": {
+        "project": "Juniper",
+        "owner": "Nila",
+        "budget": 63,
+        "release": "Wednesday",
+        "database": "SQLite",
+        "export": "CSV",
+        "workspace": "/projects/juniper",
+        "reference": "LIB-42",
+        "cloud_allowed": false,
+        "delete_original": false,
+        "pending": [
+          "test accented author names"
+        ]
+      },
+      "passed": false,
+      "factual": {
+        "passed": true,
+        "fields": {
+          "project": true,
+          "owner": true,
+          "budget": true,
+          "release": true,
+          "database": true,
+          "export": true,
+          "workspace": true,
+          "reference": true,
+          "cloud_allowed": true,
+          "delete_original": true,
+          "pending": true
+        }
+      }
+    },
+    {
+      "mode": "optimized",
+      "ttft_ms": 106.47162498207763,
+      "total_ms": 14053.677041985793,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 229,
+        "completion_tokens": 644,
+        "total_tokens": 873,
+        "prompt_tokens_details": {
+          "cached_tokens": 228
+        }
+      },
+      "answer": "\n\n{\n  \"project\": \"Juniper\",\n  \"owner\": \"Nila\",\n  \"budget\": 63,\n  \"release\": \"Wednesday\",\n  \"database\": \"SQLite\",\n  \"export\": \"CSV\",\n  \"workspace\": \"/projects/juniper\",\n  \"reference\": \"Issue LIB-42\",\n  \"cloud_allowed\": false,\n  \"delete_original\": false,\n  \"pending\": [\n    \"Test accented author names.\"\n  ]\n}",
+      "finish_reason": "stop",
+      "case": "incremental_compaction",
+      "expected": {
+        "project": "Juniper",
+        "owner": "Nila",
+        "budget": 63,
+        "release": "Wednesday",
+        "database": "SQLite",
+        "export": "CSV",
+        "workspace": "/projects/juniper",
+        "reference": "LIB-42",
+        "cloud_allowed": false,
+        "delete_original": false,
+        "pending": [
+          "test accented author names"
+        ]
+      },
+      "passed": false,
+      "factual": {
+        "passed": true,
+        "fields": {
+          "project": true,
+          "owner": true,
+          "budget": true,
+          "release": true,
+          "database": true,
+          "export": true,
+          "workspace": true,
+          "reference": true,
+          "cloud_allowed": true,
+          "delete_original": true,
+          "pending": true
+        }
+      }
+    }
+  ],
+  "compaction": [
+    {
+      "round": 1,
+      "before_tokens": 2254,
+      "after_tokens": 320,
+      "reduced": true,
+      "summary": "Current facts and decisions:\n- Project: Juniper, workspace: /projects/juniper, owner: Nila.\n- Budget: 63 credits.\n- Release date: Tuesday.\n- Use SQLite, keep exports as CSV.\n- Do not send any data to cloud services.\n- Preserve existing books during migration.\n- Never delete the original catalogue.\n- Exploratory historical reviews (shelf labels, paper textures, desk placement, lighting) noted but do not change requirements.\n\nActive constraints:\n- No cloud services.\n- SQLite database.\n- CSV exports.\n- Preserve existing books during migration.\n- Never delete original catalogue.\n\nOpen tasks:\n- Test accented author names.\n- Get Nila to approve the migration.\n\nReferences:\n- Issue LIB-42."
+    },
+    {
+      "round": 2,
+      "summary": "Current facts and decisions:\n- Project: Juniper, workspace: /projects/juniper, owner: Nila.\n- Budget: 63 credits.\n- Release date: Wednesday.\n- Use SQLite, keep exports as CSV.\n- Do not send any data to cloud services.\n- Preserve existing books during migration.\n- Never delete the original catalogue.\n- Exploratory historical reviews (shelf labels, paper textures, desk placement, lighting) noted but do not change requirements.\n\nActive constraints:\n- No cloud services.\n- SQLite database.\n- CSV exports.\n- Preserve existing books during migration.\n- Never delete original catalogue.\n\nOpen tasks:\n- Test accented author names.\n\nReferences:\n- Issue LIB-42.",
+      "input_contains_only_previous_summary_and_new_turns": true
+    }
+  ],
+  "limitations": [
+    "One MLX model; reconstructed legacy transport, not historical binary",
+    "Synthetic controlled context, not a full native-window stress test",
+    "Deterministic evaluation overrides sampling; production retains native/user settings"
+  ],
+  "prior_budget_results": [
+    {
+      "mode": "direct",
+      "ttft_ms": 176.31908299517818,
+      "total_ms": 5475.199416992837,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 56,
+        "completion_tokens": 249,
+        "total_tokens": 305,
+        "prompt_tokens_details": {
+          "cached_tokens": 4
+        }
+      },
+      "answer": "\n\n{\"profit\": 60}",
+      "case": "multi_step",
+      "expected": {
+        "profit": 60
+      },
+      "passed": true,
+      "factual": {
+        "passed": true,
+        "fields": {
+          "profit": true
+        }
+      }
+    },
+    {
+      "mode": "legacy",
+      "ttft_ms": 307.25962499855086,
+      "total_ms": 5740.128499994171,
+      "library_scan_ms": 126.8681670044316,
+      "usage": {
+        "prompt_tokens": 56,
+        "completion_tokens": 249,
+        "total_tokens": 305,
+        "prompt_tokens_details": {
+          "cached_tokens": 55
+        }
+      },
+      "answer": "\n\n{\"profit\": 60}",
+      "case": "multi_step",
+      "expected": {
+        "profit": 60
+      },
+      "passed": true,
+      "factual": {
+        "passed": true,
+        "fields": {
+          "profit": true
+        }
+      }
+    },
+    {
+      "mode": "optimized",
+      "ttft_ms": 110.11954199057072,
+      "total_ms": 5493.753374990774,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 56,
+        "completion_tokens": 249,
+        "total_tokens": 305,
+        "prompt_tokens_details": {
+          "cached_tokens": 55
+        }
+      },
+      "answer": "\n\n{\"profit\": 60}",
+      "case": "multi_step",
+      "expected": {
+        "profit": 60
+      },
+      "passed": true,
+      "factual": {
+        "passed": true,
+        "fields": {
+          "profit": true
+        }
+      }
+    },
+    {
+      "mode": "direct",
+      "ttft_ms": 166.2839159980649,
+      "total_ms": 16715.837333002128,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 62,
+        "completion_tokens": 768,
+        "total_tokens": 830,
+        "prompt_tokens_details": {
+          "cached_tokens": 4
+        }
+      },
+      "answer": "",
+      "case": "logic",
+      "expected": {
+        "true": "B"
+      },
+      "passed": false,
+      "factual": {
+        "passed": false,
+        "fields": {
+          "true": false
+        }
+      }
+    },
+    {
+      "mode": "legacy",
+      "ttft_ms": 321.6844580019824,
+      "total_ms": 16779.810082996846,
+      "library_scan_ms": 140.5624170001829,
+      "usage": {
+        "prompt_tokens": 62,
+        "completion_tokens": 768,
+        "total_tokens": 830,
+        "prompt_tokens_details": {
+          "cached_tokens": 61
+        }
+      },
+      "answer": "",
+      "case": "logic",
+      "expected": {
+        "true": "B"
+      },
+      "passed": false,
+      "factual": {
+        "passed": false,
+        "fields": {
+          "true": false
+        }
+      }
+    },
+    {
+      "mode": "optimized",
+      "ttft_ms": 105.07900000084192,
+      "total_ms": 16025.130333000561,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 62,
+        "completion_tokens": 768,
+        "total_tokens": 830,
+        "prompt_tokens_details": {
+          "cached_tokens": 61
+        }
+      },
+      "answer": "",
+      "case": "logic",
+      "expected": {
+        "true": "B"
+      },
+      "passed": false,
+      "factual": {
+        "passed": false,
+        "fields": {
+          "true": false
+        }
+      }
+    },
+    {
+      "mode": "direct",
+      "ttft_ms": 155.83962500386406,
+      "total_ms": 1276.2277080037165,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 42,
+        "completion_tokens": 55,
+        "total_tokens": 97,
+        "prompt_tokens_details": {
+          "cached_tokens": 4
+        }
+      },
+      "answer": "\n\n[\"Build\", \"Test\", \"Ship\"]",
+      "case": "constraints",
+      "expected": [
+        "Build",
+        "Test",
+        "Ship"
+      ],
+      "passed": true,
+      "factual": {
+        "passed": true
+      }
+    },
+    {
+      "mode": "legacy",
+      "ttft_ms": 301.80220799229573,
+      "total_ms": 1387.0024159987224,
+      "library_scan_ms": 120.96979199850466,
+      "usage": {
+        "prompt_tokens": 42,
+        "completion_tokens": 55,
+        "total_tokens": 97,
+        "prompt_tokens_details": {
+          "cached_tokens": 41
+        }
+      },
+      "answer": "\n\n[\"Build\", \"Test\", \"Ship\"]",
+      "case": "constraints",
+      "expected": [
+        "Build",
+        "Test",
+        "Ship"
+      ],
+      "passed": true,
+      "factual": {
+        "passed": true
+      }
+    },
+    {
+      "mode": "optimized",
+      "ttft_ms": 103.436542005511,
+      "total_ms": 1228.773042006651,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 42,
+        "completion_tokens": 55,
+        "total_tokens": 97,
+        "prompt_tokens_details": {
+          "cached_tokens": 41
+        }
+      },
+      "answer": "\n\n[\"Build\", \"Test\", \"Ship\"]",
+      "case": "constraints",
+      "expected": [
+        "Build",
+        "Test",
+        "Ship"
+      ],
+      "passed": true,
+      "factual": {
+        "passed": true
+      }
+    },
+    {
+      "mode": "direct",
+      "ttft_ms": 156.7522499972256,
+      "total_ms": 7964.754125001491,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 55,
+        "completion_tokens": 378,
+        "total_tokens": 433,
+        "prompt_tokens_details": {
+          "cached_tokens": 4
+        }
+      },
+      "answer": "\n\n```json\n{\n  \"a\": [1, 2, 3],\n  \"b\": [1, 2, 4]\n}\n```",
+      "case": "code_reasoning",
+      "expected": {
+        "a": [
+          1,
+          2,
+          3
+        ],
+        "b": [
+          1,
+          2,
+          4
+        ]
+      },
+      "passed": false,
+      "factual": {
+        "passed": true,
+        "fields": {
+          "a": true,
+          "b": true
+        }
+      }
+    },
+    {
+      "mode": "legacy",
+      "ttft_ms": 306.0268749977695,
+      "total_ms": 8450.156999999308,
+      "library_scan_ms": 125.4243330040481,
+      "usage": {
+        "prompt_tokens": 55,
+        "completion_tokens": 378,
+        "total_tokens": 433,
+        "prompt_tokens_details": {
+          "cached_tokens": 54
+        }
+      },
+      "answer": "\n\n```json\n{\n  \"a\": [1, 2, 3],\n  \"b\": [1, 2, 4]\n}\n```",
+      "case": "code_reasoning",
+      "expected": {
+        "a": [
+          1,
+          2,
+          3
+        ],
+        "b": [
+          1,
+          2,
+          4
+        ]
+      },
+      "passed": false,
+      "factual": {
+        "passed": true,
+        "fields": {
+          "a": true,
+          "b": true
+        }
+      }
+    },
+    {
+      "mode": "optimized",
+      "ttft_ms": 127.22070900781546,
+      "total_ms": 8058.153209000011,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 55,
+        "completion_tokens": 378,
+        "total_tokens": 433,
+        "prompt_tokens_details": {
+          "cached_tokens": 54
+        }
+      },
+      "answer": "\n\n```json\n{\n  \"a\": [1, 2, 3],\n  \"b\": [1, 2, 4]\n}\n```",
+      "case": "code_reasoning",
+      "expected": {
+        "a": [
+          1,
+          2,
+          3
+        ],
+        "b": [
+          1,
+          2,
+          4
+        ]
+      },
+      "passed": false,
+      "factual": {
+        "passed": true,
+        "fields": {
+          "a": true,
+          "b": true
+        }
+      }
+    },
+    {
+      "mode": "direct",
+      "ttft_ms": 151.03783299855422,
+      "total_ms": 2725.8762499986915,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 64,
+        "completion_tokens": 126,
+        "total_tokens": 190,
+        "prompt_tokens_details": {
+          "cached_tokens": 4
+        }
+      },
+      "answer": "\n\n{\"budget\": 63, \"release\": null}",
+      "case": "correction",
+      "expected": {
+        "budget": 63,
+        "release": null
+      },
+      "passed": true,
+      "factual": {
+        "passed": true,
+        "fields": {
+          "budget": true,
+          "release": true
+        }
+      }
+    },
+    {
+      "mode": "legacy",
+      "ttft_ms": 307.06008299603127,
+      "total_ms": 2841.8702079943614,
+      "library_scan_ms": 126.15066699800082,
+      "usage": {
+        "prompt_tokens": 64,
+        "completion_tokens": 126,
+        "total_tokens": 190,
+        "prompt_tokens_details": {
+          "cached_tokens": 63
+        }
+      },
+      "answer": "\n\n{\"budget\": 63, \"release\": null}",
+      "case": "correction",
+      "expected": {
+        "budget": 63,
+        "release": null
+      },
+      "passed": true,
+      "factual": {
+        "passed": true,
+        "fields": {
+          "budget": true,
+          "release": true
+        }
+      }
+    },
+    {
+      "mode": "optimized",
+      "ttft_ms": 103.90129098959733,
+      "total_ms": 2680.221790986252,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 64,
+        "completion_tokens": 126,
+        "total_tokens": 190,
+        "prompt_tokens_details": {
+          "cached_tokens": 63
+        }
+      },
+      "answer": "\n\n{\"budget\": 63, \"release\": null}",
+      "case": "correction",
+      "expected": {
+        "budget": 63,
+        "release": null
+      },
+      "passed": true,
+      "factual": {
+        "passed": true,
+        "fields": {
+          "budget": true,
+          "release": true
+        }
+      }
+    },
+    {
+      "mode": "direct",
+      "ttft_ms": 157.82454100553878,
+      "total_ms": 2851.1248330032686,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 51,
+        "completion_tokens": 132,
+        "total_tokens": 183,
+        "prompt_tokens_details": {
+          "cached_tokens": 4
+        }
+      },
+      "answer": "\n\n{\"age\":null}",
+      "case": "unanswerable",
+      "expected": {
+        "age": null
+      },
+      "passed": true,
+      "factual": {
+        "passed": true,
+        "fields": {
+          "age": true
+        }
+      }
+    },
+    {
+      "mode": "legacy",
+      "ttft_ms": 306.824624989531,
+      "total_ms": 3019.8822499951348,
+      "library_scan_ms": 125.79383300908376,
+      "usage": {
+        "prompt_tokens": 51,
+        "completion_tokens": 132,
+        "total_tokens": 183,
+        "prompt_tokens_details": {
+          "cached_tokens": 50
+        }
+      },
+      "answer": "\n\n{\"age\":null}",
+      "case": "unanswerable",
+      "expected": {
+        "age": null
+      },
+      "passed": true,
+      "factual": {
+        "passed": true,
+        "fields": {
+          "age": true
+        }
+      }
+    },
+    {
+      "mode": "optimized",
+      "ttft_ms": 103.34658400097396,
+      "total_ms": 2796.988334011985,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 51,
+        "completion_tokens": 132,
+        "total_tokens": 183,
+        "prompt_tokens_details": {
+          "cached_tokens": 50
+        }
+      },
+      "answer": "\n\n{\"age\":null}",
+      "case": "unanswerable",
+      "expected": {
+        "age": null
+      },
+      "passed": true,
+      "factual": {
+        "passed": true,
+        "fields": {
+          "age": true
+        }
+      }
+    },
+    {
+      "mode": "direct",
+      "ttft_ms": 1177.70654099877,
+      "total_ms": 18240.20337499678,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 2254,
+        "completion_tokens": 768,
+        "total_tokens": 3022,
+        "prompt_tokens_details": {
+          "cached_tokens": 4
+        }
+      },
+      "answer": "\n\n{\n  \"project\": \"Juniper\",\n  \"owner\": \"Nila\",\n  \"budget\": 63,\n  \"release\": \"Tuesday\",\n  \"database\": \"SQLite\",\n  \"export\": \"CSV\",\n  \"workspace\": \"/projects/juniper\",\n  \"reference\": \"LIB-42\",\n  \"cloud_allowed\": false,\n  \"delete_original\": false,\n  \"pending\": [\n   ",
+      "case": "full_context",
+      "expected": {
+        "project": "Juniper",
+        "owner": "Nila",
+        "budget": 63,
+        "release": "Tuesday",
+        "database": "SQLite",
+        "export": "CSV",
+        "workspace": "/projects/juniper",
+        "reference": "LIB-42",
+        "cloud_allowed": false,
+        "delete_original": false,
+        "pending": [
+          "test accented author names",
+          "get Nila to approve the migration"
+        ]
+      },
+      "passed": false,
+      "factual": {
+        "passed": false,
+        "fields": {
+          "project": false,
+          "owner": false,
+          "budget": false,
+          "release": false,
+          "database": false,
+          "export": false,
+          "workspace": false,
+          "reference": false,
+          "cloud_allowed": false,
+          "delete_original": false,
+          "pending": false
+        }
+      }
+    },
+    {
+      "mode": "legacy",
+      "ttft_ms": 296.95524999988265,
+      "total_ms": 18018.11341699795,
+      "library_scan_ms": 115.90104199422058,
+      "usage": {
+        "prompt_tokens": 2254,
+        "completion_tokens": 768,
+        "total_tokens": 3022,
+        "prompt_tokens_details": {
+          "cached_tokens": 2253
+        }
+      },
+      "answer": "\n\n{\n  \"project\": \"Juniper\",\n  \"owner\": \"Nila\",\n  \"budget\": 63,\n  \"release\": \"Tuesday\",\n  \"database\": \"SQLite\",\n  \"export\": \"CSV\",\n  \"workspace\": \"/projects/juniper\",\n  \"reference\": \"LIB-42\",\n  \"cloud_allowed\": false,\n  \"delete_original\": false,\n  \"pending\": [\n   ",
+      "case": "full_context",
+      "expected": {
+        "project": "Juniper",
+        "owner": "Nila",
+        "budget": 63,
+        "release": "Tuesday",
+        "database": "SQLite",
+        "export": "CSV",
+        "workspace": "/projects/juniper",
+        "reference": "LIB-42",
+        "cloud_allowed": false,
+        "delete_original": false,
+        "pending": [
+          "test accented author names",
+          "get Nila to approve the migration"
+        ]
+      },
+      "passed": false,
+      "factual": {
+        "passed": false,
+        "fields": {
+          "project": false,
+          "owner": false,
+          "budget": false,
+          "release": false,
+          "database": false,
+          "export": false,
+          "workspace": false,
+          "reference": false,
+          "cloud_allowed": false,
+          "delete_original": false,
+          "pending": false
+        }
+      }
+    },
+    {
+      "mode": "optimized",
+      "ttft_ms": 114.60862499370705,
+      "total_ms": 18063.43325000489,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 2254,
+        "completion_tokens": 768,
+        "total_tokens": 3022,
+        "prompt_tokens_details": {
+          "cached_tokens": 2253
+        }
+      },
+      "answer": "\n\n{\n  \"project\": \"Juniper\",\n  \"owner\": \"Nila\",\n  \"budget\": 63,\n  \"release\": \"Tuesday\",\n  \"database\": \"SQLite\",\n  \"export\": \"CSV\",\n  \"workspace\": \"/projects/juniper\",\n  \"reference\": \"LIB-42\",\n  \"cloud_allowed\": false,\n  \"delete_original\": false,\n  \"pending\": [\n   ",
+      "case": "full_context",
+      "expected": {
+        "project": "Juniper",
+        "owner": "Nila",
+        "budget": 63,
+        "release": "Tuesday",
+        "database": "SQLite",
+        "export": "CSV",
+        "workspace": "/projects/juniper",
+        "reference": "LIB-42",
+        "cloud_allowed": false,
+        "delete_original": false,
+        "pending": [
+          "test accented author names",
+          "get Nila to approve the migration"
+        ]
+      },
+      "passed": false,
+      "factual": {
+        "passed": false,
+        "fields": {
+          "project": false,
+          "owner": false,
+          "budget": false,
+          "release": false,
+          "database": false,
+          "export": false,
+          "workspace": false,
+          "reference": false,
+          "cloud_allowed": false,
+          "delete_original": false,
+          "pending": false
+        }
+      }
+    },
+    {
+      "mode": "direct",
+      "ttft_ms": 229.7047079919139,
+      "total_ms": 12348.430832993472,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 300,
+        "completion_tokens": 554,
+        "total_tokens": 854,
+        "prompt_tokens_details": {
+          "cached_tokens": 4
+        }
+      },
+      "answer": "\n\n{\n  \"project\": \"Juniper \u2013 offline library catalogue.\",\n  \"owner\": \"Nila\",\n  \"budget\": \"90 credits \u2192 63 credits.\",\n  \"release\": \"Friday \u2192 Tuesday.\",\n  \"database\": \"SQLite\",\n  \"export\": \"CSV\",\n  \"workspace\": \"/projects/juniper\",\n  \"reference\": \"LIB-42\",\n  \"cloud_allowed\": false,\n  \"delete_original\": false,\n  \"pending\": [\n    \"Test accented author names.\",\n    \"Get Nila to approve the migration.\"\n  ]\n}",
+      "case": "compacted_context",
+      "expected": {
+        "project": "Juniper",
+        "owner": "Nila",
+        "budget": 63,
+        "release": "Tuesday",
+        "database": "SQLite",
+        "export": "CSV",
+        "workspace": "/projects/juniper",
+        "reference": "LIB-42",
+        "cloud_allowed": false,
+        "delete_original": false,
+        "pending": [
+          "test accented author names",
+          "get Nila to approve the migration"
+        ]
+      },
+      "passed": false,
+      "factual": {
+        "passed": false,
+        "fields": {
+          "project": false,
+          "owner": true,
+          "budget": false,
+          "release": false,
+          "database": true,
+          "export": true,
+          "workspace": true,
+          "reference": true,
+          "cloud_allowed": true,
+          "delete_original": true,
+          "pending": true
+        }
+      }
+    },
+    {
+      "mode": "legacy",
+      "ttft_ms": 385.8952080045128,
+      "total_ms": 13051.74066699692,
+      "library_scan_ms": 204.79691699438263,
+      "usage": {
+        "prompt_tokens": 300,
+        "completion_tokens": 554,
+        "total_tokens": 854,
+        "prompt_tokens_details": {
+          "cached_tokens": 299
+        }
+      },
+      "answer": "\n\n{\n  \"project\": \"Juniper \u2013 offline library catalogue.\",\n  \"owner\": \"Nila\",\n  \"budget\": \"90 credits \u2192 63 credits.\",\n  \"release\": \"Friday \u2192 Tuesday.\",\n  \"database\": \"SQLite\",\n  \"export\": \"CSV\",\n  \"workspace\": \"/projects/juniper\",\n  \"reference\": \"LIB-42\",\n  \"cloud_allowed\": false,\n  \"delete_original\": false,\n  \"pending\": [\n    \"Test accented author names.\",\n    \"Get Nila to approve the migration.\"\n  ]\n}",
+      "case": "compacted_context",
+      "expected": {
+        "project": "Juniper",
+        "owner": "Nila",
+        "budget": 63,
+        "release": "Tuesday",
+        "database": "SQLite",
+        "export": "CSV",
+        "workspace": "/projects/juniper",
+        "reference": "LIB-42",
+        "cloud_allowed": false,
+        "delete_original": false,
+        "pending": [
+          "test accented author names",
+          "get Nila to approve the migration"
+        ]
+      },
+      "passed": false,
+      "factual": {
+        "passed": false,
+        "fields": {
+          "project": false,
+          "owner": true,
+          "budget": false,
+          "release": false,
+          "database": true,
+          "export": true,
+          "workspace": true,
+          "reference": true,
+          "cloud_allowed": true,
+          "delete_original": true,
+          "pending": true
+        }
+      }
+    },
+    {
+      "mode": "optimized",
+      "ttft_ms": 107.09729199879803,
+      "total_ms": 13376.141542001278,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 300,
+        "completion_tokens": 554,
+        "total_tokens": 854,
+        "prompt_tokens_details": {
+          "cached_tokens": 299
+        }
+      },
+      "answer": "\n\n{\n  \"project\": \"Juniper \u2013 offline library catalogue.\",\n  \"owner\": \"Nila\",\n  \"budget\": \"90 credits \u2192 63 credits.\",\n  \"release\": \"Friday \u2192 Tuesday.\",\n  \"database\": \"SQLite\",\n  \"export\": \"CSV\",\n  \"workspace\": \"/projects/juniper\",\n  \"reference\": \"LIB-42\",\n  \"cloud_allowed\": false,\n  \"delete_original\": false,\n  \"pending\": [\n    \"Test accented author names.\",\n    \"Get Nila to approve the migration.\"\n  ]\n}",
+      "case": "compacted_context",
+      "expected": {
+        "project": "Juniper",
+        "owner": "Nila",
+        "budget": 63,
+        "release": "Tuesday",
+        "database": "SQLite",
+        "export": "CSV",
+        "workspace": "/projects/juniper",
+        "reference": "LIB-42",
+        "cloud_allowed": false,
+        "delete_original": false,
+        "pending": [
+          "test accented author names",
+          "get Nila to approve the migration"
+        ]
+      },
+      "passed": false,
+      "factual": {
+        "passed": false,
+        "fields": {
+          "project": false,
+          "owner": true,
+          "budget": false,
+          "release": false,
+          "database": true,
+          "export": true,
+          "workspace": true,
+          "reference": true,
+          "cloud_allowed": true,
+          "delete_original": true,
+          "pending": true
+        }
+      }
+    },
+    {
+      "mode": "direct",
+      "ttft_ms": 329.73787499940954,
+      "total_ms": 11475.191792007536,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 81,
+        "completion_tokens": 460,
+        "total_tokens": 541,
+        "prompt_tokens_details": {
+          "cached_tokens": 11
+        }
+      },
+      "answer": "\n\n```json\n{\n  \"project\": \"Project A\",\n  \"owner\": \"Alice\",\n  \"budget\": \"1000\",\n  \"release\": \"2023-10-01\",\n  \"database\": \"PostgreSQL\",\n  \"export\": \"CSV\",\n  \"workspace\": \"dev\",\n  \"reference\": \"Project A\",\n  \"cloud_allowed\": true,\n  \"delete_original\": true,\n  \"pending\": [\n    \"Task 1: Implement feature X\",\n    \"Task 2: Write unit tests for feature X\",\n    \"Task 3: Deploy feature X to production\"\n  ]\n}\n```",
+      "case": "incremental_compaction",
+      "expected": {
+        "project": "Juniper",
+        "owner": "Nila",
+        "budget": 63,
+        "release": "Wednesday",
+        "database": "SQLite",
+        "export": "CSV",
+        "workspace": "/projects/juniper",
+        "reference": "LIB-42",
+        "cloud_allowed": false,
+        "delete_original": false,
+        "pending": [
+          "test accented author names"
+        ]
+      },
+      "passed": false,
+      "factual": {
+        "passed": false,
+        "fields": {
+          "project": false,
+          "owner": false,
+          "budget": false,
+          "release": false,
+          "database": false,
+          "export": true,
+          "workspace": false,
+          "reference": false,
+          "cloud_allowed": false,
+          "delete_original": false,
+          "pending": false
+        }
+      }
+    },
+    {
+      "mode": "legacy",
+      "ttft_ms": 463.7314999999944,
+      "total_ms": 11680.14079099521,
+      "library_scan_ms": 282.81124999921303,
+      "usage": {
+        "prompt_tokens": 81,
+        "completion_tokens": 460,
+        "total_tokens": 541,
+        "prompt_tokens_details": {
+          "cached_tokens": 80
+        }
+      },
+      "answer": "\n\n```json\n{\n  \"project\": \"Project A\",\n  \"owner\": \"Alice\",\n  \"budget\": \"1000\",\n  \"release\": \"2023-10-01\",\n  \"database\": \"PostgreSQL\",\n  \"export\": \"CSV\",\n  \"workspace\": \"dev\",\n  \"reference\": \"Project A\",\n  \"cloud_allowed\": true,\n  \"delete_original\": true,\n  \"pending\": [\n    \"Task 1: Implement feature X\",\n    \"Task 2: Write unit tests for feature X\",\n    \"Task 3: Deploy feature X to production\"\n  ]\n}\n```",
+      "case": "incremental_compaction",
+      "expected": {
+        "project": "Juniper",
+        "owner": "Nila",
+        "budget": 63,
+        "release": "Wednesday",
+        "database": "SQLite",
+        "export": "CSV",
+        "workspace": "/projects/juniper",
+        "reference": "LIB-42",
+        "cloud_allowed": false,
+        "delete_original": false,
+        "pending": [
+          "test accented author names"
+        ]
+      },
+      "passed": false,
+      "factual": {
+        "passed": false,
+        "fields": {
+          "project": false,
+          "owner": false,
+          "budget": false,
+          "release": false,
+          "database": false,
+          "export": true,
+          "workspace": false,
+          "reference": false,
+          "cloud_allowed": false,
+          "delete_original": false,
+          "pending": false
+        }
+      }
+    },
+    {
+      "mode": "optimized",
+      "ttft_ms": 119.11875000805594,
+      "total_ms": 11358.032875010394,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 81,
+        "completion_tokens": 460,
+        "total_tokens": 541,
+        "prompt_tokens_details": {
+          "cached_tokens": 80
+        }
+      },
+      "answer": "\n\n```json\n{\n  \"project\": \"Project A\",\n  \"owner\": \"Alice\",\n  \"budget\": \"1000\",\n  \"release\": \"2023-10-01\",\n  \"database\": \"PostgreSQL\",\n  \"export\": \"CSV\",\n  \"workspace\": \"dev\",\n  \"reference\": \"Project A\",\n  \"cloud_allowed\": true,\n  \"delete_original\": true,\n  \"pending\": [\n    \"Task 1: Implement feature X\",\n    \"Task 2: Write unit tests for feature X\",\n    \"Task 3: Deploy feature X to production\"\n  ]\n}\n```",
+      "case": "incremental_compaction",
+      "expected": {
+        "project": "Juniper",
+        "owner": "Nila",
+        "budget": 63,
+        "release": "Wednesday",
+        "database": "SQLite",
+        "export": "CSV",
+        "workspace": "/projects/juniper",
+        "reference": "LIB-42",
+        "cloud_allowed": false,
+        "delete_original": false,
+        "pending": [
+          "test accented author names"
+        ]
+      },
+      "passed": false,
+      "factual": {
+        "passed": false,
+        "fields": {
+          "project": false,
+          "owner": false,
+          "budget": false,
+          "release": false,
+          "database": false,
+          "export": true,
+          "workspace": false,
+          "reference": false,
+          "cloud_allowed": false,
+          "delete_original": false,
+          "pending": false
+        }
+      }
+    }
+  ],
+  "prior_compaction": [
+    {
+      "round": 1,
+      "before_tokens": 2252,
+      "after_tokens": 298,
+      "reduced": true,
+      "summary": "Project: Juniper \u2013 offline library catalogue.  \nWorkspace: /projects/juniper. Owner: Nila.  \n\nDecisions:  \n- Budget: 90 credits \u2192 63 credits.  \n- Release: Friday \u2192 Tuesday.  \n- Constraints: No cloud data transfer; use SQLite; exports as CSV.  \n\nUnresolved tasks:  \n- Test accented author names.  \n- Get Nila to approve the migration.  \n- Reference: LIB-42.  \n- Never delete the original catalogue.  \n\nHistorical review notes (0\u20110 to 3\u20114) are exploratory observations only; they do not change software requirements or project decisions."
+    },
+    {
+      "round": 2,
+      "summary": "",
+      "input_contains_only_previous_summary_and_new_turns": true
+    }
+  ],
+  "grading_note": "Strict JSON scores are preserved. Factual grading allows only Markdown fences, case/trailing punctuation and the optional Issue prefix on reference IDs."
+}

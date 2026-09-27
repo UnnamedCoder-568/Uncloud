@@ -5,7 +5,7 @@ import os
 import secrets
 from pathlib import Path
 
-CONFIG_DIR = Path.home() / ".uncloud"
+CONFIG_DIR = Path(os.environ.get("UNCLOUD_CONFIG_DIR", str(Path.home() / ".uncloud")))
 CONFIG_FILE = CONFIG_DIR / "settings.json"
 
 # Only used until onboarding asks where models should live; must not assume

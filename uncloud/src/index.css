@@ -367,3 +367,64 @@ body {
   vertical-align: top;
 }
 .md-table th { background: var(--bg-inset); font-weight: 600; }
+
+/* Uncloud's page layouts all use the same gutters and form column. Media
+   workspaces retain their split panels; galleries get a wider content area. */
+.page-column { width: 100%; max-width: var(--column-w); margin: 0 auto; padding: var(--space-8) var(--space-6); }
+.page-wide { width: 100%; max-width: 1200px; margin: 0 auto; padding: var(--space-8) var(--space-6); }
+.page-title { font-size: var(--text-xl); font-weight: 500; line-height: 1.35; letter-spacing: -0.02em; }
+.view-tabs { display: flex; align-items: center; gap: var(--space-1); padding: 0 var(--space-6); height: 48px; flex-shrink: 0; overflow-x: auto; border-bottom: 1px solid var(--border); }
+.view-tabs > button { flex-shrink: 0; min-height: 32px; font-size: var(--text-sm); }
+
+/* A short message starts on one line. Drafts and attachments make room above
+   the actions, without bright rectangles inside the composer. */
+.chat-composer { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 4px 8px; padding: 10px 12px; }
+.chat-composer .composer-input { grid-column: 1; grid-row: 1; padding: 6px 8px; min-height: 33px; }
+.chat-composer .composer-actions { grid-column: 2; grid-row: 1; align-items: center; margin: 0; gap: 4px; flex-wrap: nowrap; }
+.chat-composer .composer-send { flex-shrink: 0; }
+.chat-composer:has(.composer-input[data-expanded="true"]),
+.chat-composer:has(.composer-attachments) { grid-template-columns: minmax(0, 1fr); border-radius: 22px; }
+.chat-composer:has(.composer-input[data-expanded="true"]) .composer-input,
+.chat-composer:has(.composer-attachments) .composer-input { grid-column: 1; grid-row: 2; }
+.chat-composer:has(.composer-input[data-expanded="true"]) .composer-actions,
+.chat-composer:has(.composer-attachments) .composer-actions { grid-column: 1; grid-row: 3; }
+.composer-attachments { grid-column: 1 / -1; grid-row: 1; max-height: 24vh; overflow-y: auto; padding-top: 4px; }
+.composer-menu { width: 280px; max-width: calc(100vw - 32px); max-height: min(520px, 60vh); overflow-y: auto; box-shadow: var(--shadow-lg); }
+.composer-menu > .pill { width: 100%; justify-content: flex-start; border-radius: var(--radius); }
+.chat-composer .composer-menu { left: auto; right: 0; }
+.greeting { margin-bottom: var(--space-6); font-size: clamp(22px, 2.3vw, 30px); gap: var(--space-3); }
+.greeting > svg { width: 32px; height: 32px; flex-shrink: 0; }
+@media (max-width: 767px) {
+  .page-column, .page-wide { padding: var(--space-6) var(--space-4); }
+  .view-tabs { padding: 0 var(--space-4); }
+  .chat-composer { padding: 8px 10px; gap: 4px; }
+  .chat-composer .composer-input { font-size: 16px; }
+  .chat-composer .composer-menu { position: fixed; top: auto; bottom: 96px; left: 16px; right: 16px; width: auto; }
+}
+
+.composer-model { max-width: 160px; padding: 0 8px; }
+.composer-model > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.composer-model > svg { flex-shrink: 0; }
+@media (max-width: 767px) {
+  .composer-model { max-width: 108px; }
+  .composer-model-menu { position: fixed !important; left: 16px !important; right: 16px !important; bottom: 96px !important; width: auto !important; }
+  .chat-composer { grid-template-columns: minmax(0, 1fr); }
+  .chat-composer .composer-input { grid-column: 1; grid-row: 2; }
+  .chat-composer .composer-actions { grid-column: 1; grid-row: 3; }
+}
+
+.training-section-title { display: flex; align-items: center; gap: 12px; }
+.training-section-title > span { font-size: 12px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.training-section-title h2 { font-size: 16px; font-weight: 500; }
+.training-presets { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.training-controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+.training-disclosure > summary { cursor: pointer; color: var(--text-2); font-size: 13px; padding: 4px 0; }
+.training-start { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 20px 0; }
+@media (max-width: 600px) { .training-presets, .training-controls { grid-template-columns: minmax(0, 1fr); } .training-start { align-items: stretch; flex-direction: column; } }
+
+.chat-context-footer { display: flex; align-items: center; justify-content: flex-end; gap: 12px; min-height: 22px; padding: 3px 12px 0; font-size: 11px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.chat-context-footer button, .chat-context-memory summary { cursor: pointer; color: var(--text-2); }
+.chat-context-footer button:hover, .chat-context-memory summary:hover { color: var(--text-1); }
+.chat-context-footer button:disabled { opacity: .5; cursor: default; }
+.chat-context-memory { position: relative; }
+.chat-context-memory > div { position: absolute; z-index: 20; bottom: 24px; right: 0; width: min(480px, calc(100vw - 40px)); max-height: 50vh; overflow: auto; white-space: pre-wrap; padding: 16px; border-radius: 12px; background: var(--bg-raised); border: 1px solid var(--border-strong); box-shadow: var(--shadow-lg); color: var(--text-2); line-height: 1.5; }

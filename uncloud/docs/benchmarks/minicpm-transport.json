@@ -1,0 +1,390 @@
+{
+  "model": "minicpm5-2b-mlx-8bit",
+  "engine": "mlx",
+  "hardware": "arm64",
+  "platform": "macOS-27.0-arm64-arm-64bit",
+  "config_sha256": "aa0fa827a83a29f2bc8b1b9c681914b0689554762f11f3d7240725133f8a104f",
+  "sampling": {
+    "temperature": 0,
+    "seed": 42,
+    "max_tokens": 384
+  },
+  "cold_request": {
+    "mode": "direct",
+    "ttft_ms": 331.83049999934155,
+    "total_ms": 3241.1281669919845,
+    "library_scan_ms": 0,
+    "usage": {
+      "prompt_tokens": 14,
+      "completion_tokens": 137,
+      "total_tokens": 151,
+      "prompt_tokens_details": {
+        "cached_tokens": 13
+      }
+    },
+    "answer": "\n\nHello! I'm a MiniCPM series model, developed by ModelBest and the OpenBMB open-source community. It's nice to meet you! You can find more details at https://github.com/OpenBMB/."
+  },
+  "records": [
+    {
+      "mode": "legacy",
+      "ttft_ms": 341.2082919967361,
+      "total_ms": 4862.147166990326,
+      "library_scan_ms": 160.36204200645443,
+      "usage": {
+        "prompt_tokens": 44,
+        "completion_tokens": 216,
+        "total_tokens": 260,
+        "prompt_tokens_details": {
+          "cached_tokens": 43
+        }
+      },
+      "answer": "\n\n3/10",
+      "case": "reasoning",
+      "basic_check": true
+    },
+    {
+      "mode": "optimized",
+      "ttft_ms": 99.54533400014043,
+      "total_ms": 4696.600625000428,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 44,
+        "completion_tokens": 216,
+        "total_tokens": 260,
+        "prompt_tokens_details": {
+          "cached_tokens": 43
+        }
+      },
+      "answer": "\n\n3/10",
+      "case": "reasoning",
+      "basic_check": true
+    },
+    {
+      "mode": "direct",
+      "ttft_ms": 96.43458299979102,
+      "total_ms": 4698.6525829997845,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 44,
+        "completion_tokens": 216,
+        "total_tokens": 260,
+        "prompt_tokens_details": {
+          "cached_tokens": 43
+        }
+      },
+      "answer": "\n\n3/10",
+      "case": "reasoning",
+      "basic_check": true
+    },
+    {
+      "mode": "optimized",
+      "ttft_ms": 90.0057920080144,
+      "total_ms": 1358.6646250041667,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 29,
+        "completion_tokens": 60,
+        "total_tokens": 89,
+        "prompt_tokens_details": {
+          "cached_tokens": 28
+        }
+      },
+      "answer": "\n\n{\"ready\":true,\"count\":3}",
+      "case": "instruction",
+      "basic_check": true
+    },
+    {
+      "mode": "direct",
+      "ttft_ms": 84.96979100164026,
+      "total_ms": 1342.382999995607,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 29,
+        "completion_tokens": 60,
+        "total_tokens": 89,
+        "prompt_tokens_details": {
+          "cached_tokens": 28
+        }
+      },
+      "answer": "\n\n{\"ready\":true,\"count\":3}",
+      "case": "instruction",
+      "basic_check": true
+    },
+    {
+      "mode": "legacy",
+      "ttft_ms": 284.8332089924952,
+      "total_ms": 1551.1347919964464,
+      "library_scan_ms": 103.74370899808127,
+      "usage": {
+        "prompt_tokens": 29,
+        "completion_tokens": 60,
+        "total_tokens": 89,
+        "prompt_tokens_details": {
+          "cached_tokens": 28
+        }
+      },
+      "answer": "\n\n{\"ready\":true,\"count\":3}",
+      "case": "instruction",
+      "basic_check": true
+    },
+    {
+      "mode": "direct",
+      "ttft_ms": 140.36229100020137,
+      "total_ms": 2501.2763330014423,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 39,
+        "completion_tokens": 111,
+        "total_tokens": 150,
+        "prompt_tokens_details": {
+          "cached_tokens": 38
+        }
+      },
+      "answer": "\n\nThe code name is Cedar and the budget is 73 credits.",
+      "case": "context",
+      "basic_check": true
+    },
+    {
+      "mode": "legacy",
+      "ttft_ms": 300.2362080005696,
+      "total_ms": 2652.142457998707,
+      "library_scan_ms": 120.1405000028899,
+      "usage": {
+        "prompt_tokens": 39,
+        "completion_tokens": 111,
+        "total_tokens": 150,
+        "prompt_tokens_details": {
+          "cached_tokens": 38
+        }
+      },
+      "answer": "\n\nThe code name is Cedar and the budget is 73 credits.",
+      "case": "context",
+      "basic_check": true
+    },
+    {
+      "mode": "optimized",
+      "ttft_ms": 107.60029200173449,
+      "total_ms": 2479.469750003773,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 39,
+        "completion_tokens": 111,
+        "total_tokens": 150,
+        "prompt_tokens_details": {
+          "cached_tokens": 38
+        }
+      },
+      "answer": "\n\nThe code name is Cedar and the budget is 73 credits.",
+      "case": "context",
+      "basic_check": true
+    },
+    {
+      "mode": "legacy",
+      "ttft_ms": 310.16141700092703,
+      "total_ms": 4650.915375008481,
+      "library_scan_ms": 129.04149999667425,
+      "usage": {
+        "prompt_tokens": 27,
+        "completion_tokens": 204,
+        "total_tokens": 231,
+        "prompt_tokens_details": {
+          "cached_tokens": 26
+        }
+      },
+      "answer": "\n\n```python\ndef add(a, b):\n    return a + b\n```",
+      "case": "coding",
+      "basic_check": true
+    },
+    {
+      "mode": "optimized",
+      "ttft_ms": 107.03904200636316,
+      "total_ms": 4483.257333005895,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 27,
+        "completion_tokens": 204,
+        "total_tokens": 231,
+        "prompt_tokens_details": {
+          "cached_tokens": 26
+        }
+      },
+      "answer": "\n\n```python\ndef add(a, b):\n    return a + b\n```",
+      "case": "coding",
+      "basic_check": true
+    },
+    {
+      "mode": "direct",
+      "ttft_ms": 100.36620800383389,
+      "total_ms": 4491.628999996465,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 27,
+        "completion_tokens": 204,
+        "total_tokens": 231,
+        "prompt_tokens_details": {
+          "cached_tokens": 26
+        }
+      },
+      "answer": "\n\n```python\ndef add(a, b):\n    return a + b\n```",
+      "case": "coding",
+      "basic_check": true
+    }
+  ],
+  "prompt_quality": [
+    {
+      "mode": "direct",
+      "ttft_ms": 248.074875009479,
+      "total_ms": 2954.08066699747,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 322,
+        "completion_tokens": 124,
+        "total_tokens": 446,
+        "prompt_tokens_details": {
+          "cached_tokens": 2
+        }
+      },
+      "answer": "\n\n3/10",
+      "prompt_version": "before",
+      "case": "reasoning",
+      "basic_check": true
+    },
+    {
+      "mode": "direct",
+      "ttft_ms": 157.83395899052266,
+      "total_ms": 829.0014999947743,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 307,
+        "completion_tokens": 31,
+        "total_tokens": 338,
+        "prompt_tokens_details": {
+          "cached_tokens": 282
+        }
+      },
+      "answer": "\n\n{\"ready\":true,\"count\":3}",
+      "prompt_version": "before",
+      "case": "instruction",
+      "basic_check": true
+    },
+    {
+      "mode": "direct",
+      "ttft_ms": 163.9669580035843,
+      "total_ms": 2395.2595419978024,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 317,
+        "completion_tokens": 102,
+        "total_tokens": 419,
+        "prompt_tokens_details": {
+          "cached_tokens": 282
+        }
+      },
+      "answer": "\n\nThe code name was Cedar and the budget was 73 credits.",
+      "prompt_version": "before",
+      "case": "context",
+      "basic_check": true
+    },
+    {
+      "mode": "direct",
+      "ttft_ms": 131.2365839985432,
+      "total_ms": 2522.672958992189,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 305,
+        "completion_tokens": 110,
+        "total_tokens": 415,
+        "prompt_tokens_details": {
+          "cached_tokens": 282
+        }
+      },
+      "answer": "\n\n```python\ndef add(a, b):\n    return a + b\n```",
+      "prompt_version": "before",
+      "case": "coding",
+      "basic_check": true
+    },
+    {
+      "mode": "direct",
+      "ttft_ms": 182.02395799744409,
+      "total_ms": 2620.73183299799,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 163,
+        "completion_tokens": 113,
+        "total_tokens": 276,
+        "prompt_tokens_details": {
+          "cached_tokens": 16
+        }
+      },
+      "answer": "\n\n3/10",
+      "prompt_version": "after",
+      "case": "reasoning",
+      "basic_check": true
+    },
+    {
+      "mode": "direct",
+      "ttft_ms": 144.51150000968482,
+      "total_ms": 836.8763340113219,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 148,
+        "completion_tokens": 32,
+        "total_tokens": 180,
+        "prompt_tokens_details": {
+          "cached_tokens": 123
+        }
+      },
+      "answer": "\n\n{\"ready\":true,\"count\":3}",
+      "prompt_version": "after",
+      "case": "instruction",
+      "basic_check": true
+    },
+    {
+      "mode": "direct",
+      "ttft_ms": 151.11929200065788,
+      "total_ms": 2829.127332995995,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 158,
+        "completion_tokens": 124,
+        "total_tokens": 282,
+        "prompt_tokens_details": {
+          "cached_tokens": 123
+        }
+      },
+      "answer": "\n\nThe code name is Cedar and the budget is 73 credits.",
+      "prompt_version": "after",
+      "case": "context",
+      "basic_check": true
+    },
+    {
+      "mode": "direct",
+      "ttft_ms": 151.28487499896437,
+      "total_ms": 2233.068917004857,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 146,
+        "completion_tokens": 96,
+        "total_tokens": 242,
+        "prompt_tokens_details": {
+          "cached_tokens": 123
+        }
+      },
+      "answer": "\n\n```python\ndef add(a, b):\n    return a + b\n```",
+      "prompt_version": "after",
+      "case": "coding",
+      "basic_check": true
+    }
+  ],
+  "median_ttft_ms": {
+    "direct": 98.40039550181245,
+    "legacy": 305.1988125007483,
+    "optimized": 103.2921880032518
+  },
+  "limits": [
+    "One local model; not a cross-family intelligence evaluation",
+    "Transport comparison excludes browser rendering and HTTP hop into sidecar",
+    "Legacy path reconstructed with identical inference payload",
+    "Basic checks do not establish general model intelligence"
+  ]
+}

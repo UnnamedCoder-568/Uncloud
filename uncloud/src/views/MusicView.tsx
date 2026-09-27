@@ -1,3 +1,4 @@
+import AutoGrowTextarea from "../components/AutoGrowTextarea";
 import { useDismiss } from '../lib/useDismiss';
 import ActivityOrb from '../components/ActivityOrb';
 import { useEffect, useRef, useState } from 'react';
@@ -201,7 +202,7 @@ export default function MusicView() {
             <label className="text-[10px] uppercase tracking-[0.18em] text-[var(--text-faint)]">Style</label>
             <Dictate title="Dictate the style" onText={(t) => setPrompt((v) => (v ? v.trimEnd() + ' ' + t : t))} />
           </div>
-          <textarea
+          <AutoGrowTextarea
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
             rows={3}
@@ -216,7 +217,7 @@ export default function MusicView() {
             <label className="text-[10px] uppercase tracking-[0.18em] text-[var(--text-faint)]">Lyrics</label>
             <Dictate title="Dictate the lyrics" onText={(t) => setLyrics((v) => (v ? v.trimEnd() + ' ' + t : t))} />
           </div>
-            <textarea
+            <AutoGrowTextarea
               value={lyrics}
               onChange={(e) => setLyrics(e.target.value)}
               rows={6}

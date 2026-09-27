@@ -1,3 +1,4 @@
+import AutoGrowTextarea from "../components/AutoGrowTextarea";
 import ActivityOrb from '../components/ActivityOrb';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AudioLines, BookmarkPlus, Upload, X } from 'lucide-react';
@@ -437,7 +438,7 @@ export default function SpeechStudio({ engineId }: { engineId: string }) {
               <Dictate title="Dictate the script" onText={(t) => setText((v) => (v ? v.trimEnd() + ' ' + t : t))} />
             </div>
           </div>
-          <textarea
+          <AutoGrowTextarea
             value={text}
             onChange={(e) => setText(e.target.value)}
             placeholder="Type or paste what to say. Long scripts are fine — they are spoken a few sentences at a time and joined."

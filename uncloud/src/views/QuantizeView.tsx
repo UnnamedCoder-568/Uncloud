@@ -41,7 +41,7 @@ export default function QuantizeView() {
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="max-w-3xl mx-auto px-6 py-8">
+      <div className="page-column">
         <div className="flex items-start gap-3 mb-2">
           <div className="w-9 h-9 rounded-xl bg-[var(--bg-inset)] flex items-center justify-center shrink-0">
             <Gauge size={17} className="text-[var(--text-dim)]" />

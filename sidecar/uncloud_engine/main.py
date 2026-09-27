@@ -27,13 +27,12 @@ from fastapi import (
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 from . import characters, product_studio, speech, voice_engine
 from . import conversations as conversations_store
 from . import music_engine as music_engine_mod
 from . import narration_engine as narration_engine_mod
-from . import profiles as uncloud_profiles
 from . import video_engine as video_engine_mod
 from .agent import approval as agent_approval
 from .agent import tools as agent_tools
@@ -41,7 +40,7 @@ from .agent.graph import ExecutionGraph
 from .agent.orchestrator import orchestrator
 from .agent.tools import TOOL_SPECS
 from .catalog import get_catalog, get_entry
-from .chat import build_chat_payload
+from .chat import model_payload
 from .config import CONFIG_DIR, settings
 from .core import AuditLog, Denied, Gate, Mode, Risk, dump_policy, load_policy
 from .core import Request as PermissionRequest
@@ -284,6 +283,13 @@ def health() -> dict:
     return {"status": "ok"}
 
 
+@app.on_event("startup")
+def _start_wake_assertion() -> None:
+    from .power import set_session_awake
+
+    set_session_awake(settings.keep_awake)
+
+
 @app.on_event("shutdown")
 def _stop_mcp_servers() -> None:
     """Reap MCP subprocesses.
@@ -303,8 +309,12 @@ async def _shutdown() -> None:
     A chat server can be holding twenty gigabytes and is a child process, so
     nothing reclaims it just because the window closed.
     """
+    from .chat_transport import close as close_chat_transport
     from .lifecycle import stop_all
+    from .power import set_session_awake
 
+    await close_chat_transport()
+    set_session_awake(False)
     await stop_all()
 
 
@@ -462,12 +472,14 @@ async def system_stop_all() -> dict:
 # ---------------------------------------------------------------- settings
 @app.get("/api/settings", dependencies=[Depends(require_token)])
 def get_settings() -> dict:
+    from .power import is_held
     return {
         "models_dir": str(settings.models_dir),
         "onboarded": settings.onboarded,
         "runtime_setup_complete": bool(settings._data.get("runtime_setup_complete", False)),
         "agent_device_access": settings.agent_device_access,
         "keep_awake": settings.keep_awake,
+        "keep_awake_active": is_held(),
         "output_dir": str(settings.output_dir),
         "output_dir_is_default": settings.output_dir_is_default,
         "hf_token_set": settings.hf_token_set,
@@ -514,8 +526,11 @@ def set_output_dir(body: OutputDirBody) -> dict:
 
 @app.post("/api/settings/keep_awake", dependencies=[Depends(require_token)])
 def set_keep_awake(body: DeviceAccessBody) -> dict:
+    from .power import set_session_awake
+
     settings.set_keep_awake(body.enabled)
-    return {"ok": True}
+    active = set_session_awake(body.enabled)
+    return {"ok": active if body.enabled else True, "keep_awake_active": active}
 
 
 @app.get("/api/agent/tools", dependencies=[Depends(require_token)])
@@ -683,15 +698,8 @@ def _active_profile():
     on a fresh install, and a plan built without a model is still valid — it
     simply buys no native reasoning, which is what most models answer anyway.
     """
-    from .library import scan_library
-
     active = engine_manager.active
-    if not active:
-        return None
-    for model in scan_library(settings.models_dir):
-        if model.path == active.model_path:
-            return uncloud_profiles.from_local(model)
-    return None
+    return getattr(active, "model_profile", None)
 
 
 class TrainBody(BaseModel):
@@ -700,6 +708,7 @@ class TrainBody(BaseModel):
     preset: str = "standard"
     batch_size: int | None = None
     name: str = ""
+    options: dict | None = None
 
 
 @app.get("/api/training/presets", dependencies=[Depends(require_token)])
@@ -727,7 +736,7 @@ def training_prepare(body: TrainBody) -> dict:
 
     try:
         return training.prepare(body.model_path, body.dataset_path, body.preset,
-                                batch_size=body.batch_size)
+                                batch_size=body.batch_size, overrides=body.options)
     except training.Refused as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -741,11 +750,12 @@ async def training_start(body: TrainBody) -> dict:
           f"Fine-tune {Path(body.model_path).name} on "
           f"{Path(body.dataset_path).name}",
           preview={"model": body.model_path, "dataset": body.dataset_path,
-                   "preset": body.preset},
+                   "preset": body.preset, "options": body.options, "batch_size": body.batch_size},
           origin="training")
     try:
         job = await training.start(body.model_path, body.dataset_path, body.preset,
-                                   batch_size=body.batch_size, name=body.name)
+                                   batch_size=body.batch_size, name=body.name,
+                                   overrides=body.options)
     except training.Refused as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return job.to_dict()
@@ -1832,12 +1842,23 @@ async def resume_download(download_id: str) -> dict:
 class EngineStartBody(BaseModel):
     model_path: str
     engine: str
+    adapter_path: str | None = None
 
 
 @app.post("/api/engine/start", dependencies=[Depends(require_token)])
 async def start_engine(body: EngineStartBody) -> dict:
     try:
-        active = await engine_manager.start(body.model_path, body.engine)
+        if body.adapter_path:
+            from .training import jobs as training
+
+            if body.engine != "mlx" or not any(
+                card["path"] == body.adapter_path
+                and card["base_model"] == body.model_path
+                and card["ready"] for card in training.adapters()
+            ):
+                raise HTTPException(status_code=400,
+                                    detail="This adapter is not ready for the selected MLX model.")
+        active = await engine_manager.start(body.model_path, body.engine, body.adapter_path)
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     return {"running": True, "port": active.port, "engine": active.engine}
@@ -1855,14 +1876,44 @@ def engine_status() -> dict:
 
 
 # ------------------------------------------------------------------- chat
+class ContextCountBody(BaseModel):
+    messages: list[dict]
+
+
+@app.post("/api/chat/context", dependencies=[Depends(require_token)])
+async def chat_context(body: ContextCountBody) -> dict:
+    active = engine_manager.active
+    if active is None:
+        return {"used": None, "limit": None, "exact": False}
+    from .context_count import count
+
+    try:
+        used = await count(active, body.messages)
+    except Exception:  # noqa: BLE001 - the meter must not break inference
+        used = None
+    return {"used": used, "limit": active.context_limit, "exact": used is not None}
+
+
 class ChatBody(BaseModel):
     messages: list[dict]
-    temperature: float = 0.7
-    max_tokens: int = 1024
+    temperature: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    sampling: dict = {}
+    max_tokens: int | None = Field(default=None, gt=0)
+    model_path: str | None = None
+    adapter_path: str | None = None
     #: fast | balanced | deep | maximum. Unreadable values fall back to the
     #: stored default rather than failing the request — effort is a preference,
     #: and a preference should never be able to break a conversation.
     effort: str = ""
+
+    @field_validator("sampling")
+    @classmethod
+    def valid_sampling(cls, values: dict) -> dict:
+        from .inference_profile import clean
+
+        if clean(values) != values:
+            raise ValueError("Unsupported sampling parameter or value")
+        return values
 
 
 @dataclass
@@ -1874,12 +1925,15 @@ class ChatRun:
     error: str = ""
     created: float = field(default_factory=time.time)
     task: asyncio.Task | None = field(default=None, repr=False)
+    changed: asyncio.Event = field(default_factory=asyncio.Event, repr=False)
+    timings: dict = field(default_factory=dict)
+    started: float = field(default_factory=time.perf_counter, repr=False)
 
     def public(self, cursor: int = 0) -> dict:
         start = max(0, min(cursor, len(self.frames)))
         return {"id": self.id, "status": self.status,
                 "frames": self.frames[start:], "cursor": len(self.frames),
-                "error": self.error}
+                "error": self.error, "timings": self.timings}
 
 
 _chat_runs: dict[str, ChatRun] = {}
@@ -1892,31 +1946,51 @@ def _chat_run(run_id: str, owner: str) -> ChatRun:
     return run
 
 
-async def _run_chat(run: ChatRun, body: ChatBody) -> None:
+async def _run_chat(run: ChatRun, body: ChatBody, active=None) -> None:
     """Own the model request independently of the browser connection.
 
     Mobile browsers freeze network readers when backgrounded.  Keeping the
     upstream stream here means generation continues and every frame is waiting
     when the page wakes again.
     """
-    import httpx
-
     try:
-        async with httpx.AsyncClient(timeout=None) as client:
-            payload = build_chat_payload(
-                body.messages, temperature=body.temperature,
-                max_tokens=body.max_tokens,
-                engine=engine_manager.active.engine if engine_manager.active else "",
-                effort=body.effort or settings.effort, model=_active_profile())
-            if not engine_manager.active:
-                raise RuntimeError("The text model was unloaded before this reply started.")
-            async with client.stream(
-                "POST", f"{engine_manager.active.base_url}/v1/chat/completions", json=payload,
-            ) as response:
-                response.raise_for_status()
-                async for line in response.aiter_lines():
-                    if line.startswith("data: "):
-                        run.frames.append(line[6:].strip())
+        active = active or engine_manager.active
+        if active is None:
+            raise RuntimeError("The text model was unloaded before this reply started.")
+        build_start = time.perf_counter()
+        payload = model_payload(active, body.messages,
+            overrides={**body.sampling, **({"temperature": body.temperature}
+                if body.temperature is not None else {})}, max_tokens=body.max_tokens,
+            effort=body.effort or settings.effort)
+        run.timings["prompt_build_ms"] = (time.perf_counter() - build_start) * 1000
+        run.timings["dispatch_ms"] = (time.perf_counter() - run.started) * 1000
+        run.timings["sampling"] = {k: v for k, v in payload.items()
+                                   if k not in {"messages", "stream", "stream_options"}}
+        from .chat_transport import client as chat_client
+
+        client = chat_client()
+        async with client.stream(
+            "POST", f"{active.base_url}/v1/chat/completions", json=payload,
+        ) as response:
+            response.raise_for_status()
+            run.timings["backend_headers_ms"] = (time.perf_counter() - run.started) * 1000
+            async for line in response.aiter_lines():
+                if line.startswith("data: "):
+                    data = line[6:].strip()
+                    run.frames.append(data)
+                    run.changed.set()
+                    try:
+                        frame = json.loads(data)
+                        delta = (frame.get("choices") or [{}])[0].get("delta", {})
+                        if any(delta.get(k) for k in ("content", "reasoning", "reasoning_content")):
+                            run.timings.setdefault("first_token_ms", (
+                                time.perf_counter() - run.started) * 1000)
+                        if frame.get("usage"):
+                            run.timings["usage"] = frame["usage"]
+                        if frame.get("timings"):
+                            run.timings["backend"] = frame["timings"]
+                    except (ValueError, TypeError, KeyError):
+                        pass
         run.status = "done"
     except asyncio.CancelledError:
         run.status = "cancelled"
@@ -1924,12 +1998,18 @@ async def _run_chat(run: ChatRun, body: ChatBody) -> None:
     except Exception as exc:  # noqa: BLE001 - delivered to the owning UI
         run.status = "error"
         run.error = str(exc).strip() or type(exc).__name__
+    finally:
+        run.timings["total_ms"] = (time.perf_counter() - run.started) * 1000
+        run.changed.set()
 
 
 @app.post("/api/chat/runs", dependencies=[Depends(require_token)])
 async def start_chat_run(body: ChatBody, request: Request) -> dict:
-    if not engine_manager.active:
-        raise HTTPException(status_code=400, detail="No text model loaded")
+    active = engine_manager.active
+    if (not active or active.process.poll() is not None or
+            (body.model_path and (body.model_path != active.model_path or
+                                 body.adapter_path != active.adapter_path))):
+        raise HTTPException(status_code=409, detail="Load the selected text model to continue.")
     # Finished runs are useful for a reconnect, but not forever.
     cutoff = time.time() - 3600
     for old_id, old in list(_chat_runs.items()):
@@ -1937,13 +2017,20 @@ async def start_chat_run(body: ChatBody, request: Request) -> dict:
             _chat_runs.pop(old_id, None)
     run = ChatRun(id=uuid.uuid4().hex, owner=principal_of(request))
     _chat_runs[run.id] = run
-    run.task = asyncio.create_task(_run_chat(run, body), name=f"chat-{run.id[:8]}")
+    run.task = asyncio.create_task(_run_chat(run, body, active), name=f"chat-{run.id[:8]}")
     return run.public()
 
 
 @app.get("/api/chat/runs/{run_id}", dependencies=[Depends(require_token)])
-def chat_run_status(run_id: str, request: Request, cursor: int = 0) -> dict:
-    return _chat_run(run_id, principal_of(request)).public(cursor)
+async def chat_run_status(run_id: str, request: Request, cursor: int = 0,
+                          wait: bool = False) -> dict:
+    run = _chat_run(run_id, principal_of(request))
+    if wait and cursor >= len(run.frames) and run.status == "running":
+        run.changed.clear()
+        # No await between checking the cursor and clearing the event.
+        with contextlib.suppress(TimeoutError):
+            await asyncio.wait_for(run.changed.wait(), timeout=1)
+    return run.public(cursor)
 
 
 @app.delete("/api/chat/runs/{run_id}", dependencies=[Depends(require_token)])
@@ -1952,6 +2039,15 @@ def cancel_chat_run(run_id: str, request: Request) -> dict:
     if run.task and not run.task.done():
         run.task.cancel()
     return {"cancelled": True}
+
+
+@app.get("/api/chat/diagnostics", dependencies=[Depends(require_token)])
+def chat_diagnostics(request: Request) -> dict:
+    """On-demand diagnostics; no prompts, replies or filesystem scans."""
+    owner = principal_of(request)
+    return {"engine": engine_manager.status(), "runs": [
+        {"id": run.id, "status": run.status, "timings": run.timings}
+        for run in list(_chat_runs.values())[-20:] if run.owner == owner]}
 
 
 @app.post("/api/chat", dependencies=[Depends(require_token)])
@@ -1963,14 +2059,10 @@ async def chat(body: ChatBody) -> StreamingResponse:
 
     async def relay() -> Any:
         async with httpx.AsyncClient(timeout=None) as client:
-            payload = build_chat_payload(
-                body.messages,
-                temperature=body.temperature,
-                max_tokens=body.max_tokens,
-                engine=engine_manager.active.engine,
-                effort=body.effort or settings.effort,
-                model=_active_profile(),
-            )
+            payload = model_payload(engine_manager.active, body.messages,
+                overrides={**body.sampling, **({"temperature": body.temperature}
+                    if body.temperature is not None else {})}, max_tokens=body.max_tokens,
+                effort=body.effort or settings.effort)
             # Plain Chat is a direct-answer surface. Thinking-capable GGUF
             # templates otherwise default to an unlimited private-reasoning
             # pass, and small Qwen variants can loop there without ever
@@ -1978,6 +2070,7 @@ async def chat(body: ChatBody) -> StreamingResponse:
             async with client.stream(
                 "POST", f"{engine_manager.active.base_url}/v1/chat/completions", json=payload,
             ) as resp:
+                resp.raise_for_status()
                 async for chunk in resp.aiter_bytes():
                     yield chunk
 
@@ -2975,6 +3068,8 @@ class ConversationBody(BaseModel):
     messages: list[dict] = []
     title: str | None = None
     model_path: str | None = None
+    compact_summary: str | None = None
+    compacted_through: int | None = None
 
 
 @app.get("/api/conversations", dependencies=[Depends(require_token)])
@@ -3000,6 +3095,9 @@ def create_conversation(body: ConversationBody, request: Request) -> dict:
         body.messages, body.model_path, owner=principal_of(request))
     if body.title:
         conversation.title = body.title
+    conversation.compact_summary = body.compact_summary or ""
+    conversation.compacted_through = min(
+            len(body.messages), max(0, body.compacted_through or 0))
     return conversations_store.save(conversation).to_dict()
 
 
@@ -3055,9 +3153,16 @@ def write_conversation(conversation_id: str, body: ConversationBody, request: Re
             id=conversation_id, title=body.title or "",
             created=time.time(), updated=time.time(),
             messages=body.messages, model_path=body.model_path, owner=owner)
+        conversation.compact_summary = body.compact_summary or ""
+        conversation.compacted_through = min(
+            len(body.messages), max(0, body.compacted_through or 0))
     else:
         existing.messages = body.messages
         existing.model_path = body.model_path or existing.model_path
+        if body.compact_summary is not None:
+            existing.compact_summary = body.compact_summary
+        if body.compacted_through is not None:
+            existing.compacted_through = min(len(body.messages), max(0, body.compacted_through))
         if body.title:
             existing.title = body.title
         conversation = existing
@@ -3101,6 +3206,7 @@ async def agent_ws(websocket: WebSocket) -> None:
     run_id = ""
     graph: ExecutionGraph | None = None
     connected = True
+    wake_lock = None
 
     async def send(event: dict) -> bool:
         """Best-effort progress delivery; the run belongs to the engine.
@@ -3141,6 +3247,10 @@ async def agent_ws(websocket: WebSocket) -> None:
         if not goal:
             await send({"type": "error", "message": "Empty goal"})
             return
+
+        from .power import keep_awake
+        wake_lock = keep_awake("agent")
+        wake_lock.__enter__()
 
         await send({"type": "planning"})
         graph = await orchestrator.plan(goal, context, effort=effort)
@@ -3192,6 +3302,8 @@ async def agent_ws(websocket: WebSocket) -> None:
         with contextlib.suppress(Exception):
             await send({"type": "error", "message": message})
     finally:
+        if wake_lock is not None:
+            wake_lock.__exit__(None, None, None)
         if run_id:
             _agent_runs.pop(run_id, None)
 

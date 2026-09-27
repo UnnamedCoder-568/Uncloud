@@ -467,17 +467,5 @@ def _planning_parameters(plan: Plan) -> dict:
 
 def _active_profile():
     """The loaded model in the shared vocabulary, or None if nothing is up."""
-    from ..config import settings
-    from ..library import scan_library
-    from ..profiles import from_local
-
     active = engine_manager.active
-    if not active:
-        return None
-    try:
-        for model in scan_library(settings.models_dir):
-            if model.path == active.model_path:
-                return from_local(model)
-    except Exception:  # noqa: BLE001 - a scan failure must not stop planning
-        return None
-    return None
+    return getattr(active, "model_profile", None)

@@ -163,7 +163,7 @@ export default function ModelsLibrary() {
         </div>
       </header>
 
-      <div className="px-6 py-5">
+      <div className="page-wide">
         <section className="card p-4 mb-8 flex flex-wrap items-center gap-3">
           <div className="w-8 h-8 rounded-lg bg-[var(--bg-inset)] flex items-center justify-center shrink-0">
             <FolderCog size={15} className="text-[var(--text-dim)]" />
