@@ -1,3 +1,4 @@
+import AutoGrowTextarea from "../components/AutoGrowTextarea";
 import { useDismiss } from '../lib/useDismiss';
 import ActivityOrb from '../components/ActivityOrb';
 import { useEffect, useState } from 'react';
@@ -391,7 +392,7 @@ export default function NarrationView() {
               <Dictate title="Dictate the script" onText={(t) => setText((v) => (v ? v.trimEnd() + ' ' + t : t))} />
             </div>
           </div>
-          <textarea
+          <AutoGrowTextarea
             value={text}
             onChange={(e) => setText(e.target.value)}
             placeholder="Paste your script. Long-form is fine — this generates in one pass, so the voice stays consistent throughout."

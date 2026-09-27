@@ -1,9 +1,12 @@
-Uncloud 0.4.12 — macOS Apple silicon, Linux x64 and Windows x64
+Uncloud v0.4.13 improves local chat, conversation continuity and everyday controls.
 
-- Web search removes conversational scaffolding before querying providers and checking relevance. Natural questions and short follow-ups no longer fail because polite wording is mistaken for the subject.
-- Model deletion now carries an exact, expiring, single-use confirmation across the HTTP retry. Approving one model never approves deleting another, and each deletion still requires confirmation.
-- Errors show readable messages instead of raw HTTP/JSON approval data.
-- Image defaults come from installed runtime declarations, model configuration and saved per-model preferences. Engine-wide frontend guesses have been removed. The source of the defaults is shown; users can save their settings or restore model recommendations.
-- Includes v0.4.11 page-reading search, persistent download pause/resume, model removal menus, outside-click dismissal, accurate version display and white app icon.
+- Faster warm chat dispatch: reuse the loaded model/profile and connection, and deliver streamed tokens without the old polling delay.
+- Model-specific sampling from metadata, with visible per-model temperature and reply-budget overrides. Report output-limit truncation instead of silently ending a reply.
+- Native-tokenizer context counter, Compact at 75%, and inspectable compacted memory while preserving the original transcript.
+- Cleaner expanding composer with the model selector beside the message field; consistent spacing and quieter focus states.
+- Expanded local training controls and a chat adapter selector.
+- Recognize Z-Image Turbo donor profiles for appropriate starting steps and guidance.
+- App-session Keep Awake protection and clearer image-edit progress/stall handling.
+- Optional developer diagnostics and a direct-model baseline mode.
 
-Source availability still varies. Uncloud labels unavailable web pages instead of treating snippets as fully verified content. Models without recommendations use explicitly labeled general starting settings.
+Validation includes backend/frontend regression tests and same-model MLX reasoning/context comparisons. See uncloud/docs/INFERENCE_AUDIT.md for measured results and limits. Cross-family and Windows/Linux runtime performance are not claimed by these Mac measurements.

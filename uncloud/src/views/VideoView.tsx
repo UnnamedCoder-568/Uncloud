@@ -1,3 +1,4 @@
+import AutoGrowTextarea from "../components/AutoGrowTextarea";
 import { useDismiss } from '../lib/useDismiss';
 import ActivityOrb from '../components/ActivityOrb';
 import { useEffect, useRef, useState } from 'react';
@@ -376,7 +377,7 @@ export default function VideoView() {
             <label className="text-[10px] uppercase tracking-[0.18em] text-[var(--text-faint)]">Prompt</label>
             <Dictate title="Dictate the prompt" onText={(t) => setPrompt((v) => (v ? v.trimEnd() + ' ' + t : t))} />
           </div>
-          <textarea
+          <AutoGrowTextarea
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
             placeholder="A slow drone shot over a foggy pine forest at dawn, mist moving between the trees…"

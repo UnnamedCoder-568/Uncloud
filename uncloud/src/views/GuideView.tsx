@@ -80,7 +80,7 @@ const SECTIONS: Section[] = [
       { term: 'Hugging Face token', body: 'Optional. Speeds up downloads and unlocks gated models such as FLUX.2.' },
       { term: 'Chisel device access', body: 'Off by default. Turning it on lets Chisel run shell commands anywhere on your machine.' },
       { term: 'Chisel tools', body: 'Which groups of tools Chisel can see. Left automatic it follows the loaded model\u2019s size, which is usually what you want.' },
-      { term: 'Keep this machine awake', body: 'Stops the machine sleeping while a job runs. Worth turning on before a long narration \u2014 otherwise the display times out and the job is suspended half-finished.' },
+      { term: 'Keep this machine awake', body: 'Prevents system sleep while Uncloud is open and the switch is enabled. The display may still turn off. Turn the switch off to restore normal sleep.' },
     ],
   },
 ];
@@ -90,7 +90,7 @@ export default function GuideView() {
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="max-w-2xl mx-auto px-8 py-10">
+      <div className="page-column">
         <h1 className="text-2xl font-semibold">Getting around Uncloud</h1>
         <p className="mt-2 text-sm text-[var(--text-dim)] leading-relaxed">
           Every model runs on this machine. Once the files are downloaded, none of it

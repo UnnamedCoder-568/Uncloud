@@ -1,3 +1,4 @@
+import AutoGrowTextarea from "../components/AutoGrowTextarea";
 import ActivityOrb from '../components/ActivityOrb';
 import { useEffect, useRef, useState } from 'react';
 import { ImagePlus, Plus, Trash2, UserRound, X } from 'lucide-react';
@@ -122,7 +123,7 @@ export default function CharactersView() {
             <label className="text-[10px] uppercase tracking-[0.18em] text-[var(--text-faint)]">Traits</label>
             <Dictate title="Dictate the traits" onText={(t) => setDescription((v) => (v ? v.trimEnd() + ' ' + t : t))} />
           </div>
-            <textarea
+            <AutoGrowTextarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={3}

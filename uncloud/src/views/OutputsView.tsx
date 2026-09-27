@@ -118,7 +118,7 @@ export default function OutputsView() {
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="px-6 py-5">
+      <div className="page-wide">
         <div className="flex items-start justify-between gap-4 mb-4">
           <div className="min-w-0">
             <h1 className="text-2xl font-semibold">Outputs</h1>

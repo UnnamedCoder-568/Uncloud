@@ -38,7 +38,7 @@ export default function VoiceView() {
 
   return (
     <div className="h-full flex flex-col">
-      <div className="h-12 shrink-0 border-b border-[var(--border-soft)] flex items-center px-4 gap-1 overflow-x-auto">
+      <div className="view-tabs">
         {TABS.map((t) => (
           <button
             key={t.id}
@@ -46,7 +46,7 @@ export default function VoiceView() {
             title={t.hint}
             className={`text-xs px-3 py-1.5 rounded-lg transition whitespace-nowrap ${
               tab === t.id
-                ? 'bg-[var(--bg-raised)] text-white'
+                ? 'bg-[var(--bg-raised)] text-[var(--text)]'
                 : 'text-[var(--text-faint)] hover:text-[var(--text-dim)] hover:bg-[var(--bg-raised)]/50'
             }`}
           >

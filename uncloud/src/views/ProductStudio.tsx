@@ -1,3 +1,4 @@
+import AutoGrowTextarea from "../components/AutoGrowTextarea";
 import { useDismiss } from '../lib/useDismiss';
 import ActivityOrb from '../components/ActivityOrb';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -353,7 +354,7 @@ export default function ProductStudio() {
                 onText={(t) => setModelDescription((v) => (v ? v.trimEnd() + ' ' + t : t))}
               />
             </div>
-            <textarea
+            <AutoGrowTextarea
               value={modelDescription}
               onChange={(e) => setModelDescription(e.target.value)}
               rows={2}
@@ -381,7 +382,7 @@ export default function ProductStudio() {
             <label className="text-[10px] uppercase tracking-[0.18em] text-[var(--text-faint)]">Extra direction</label>
             <Dictate title="Dictate the direction" onText={(t) => setExtra((v) => (v ? v.trimEnd() + ' ' + t : t))} />
           </div>
-          <textarea
+          <AutoGrowTextarea
             value={extra}
             onChange={(e) => setExtra(e.target.value)}
             rows={2}

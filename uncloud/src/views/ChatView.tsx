@@ -1,6 +1,7 @@
+import AutoGrowTextarea from "../components/AutoGrowTextarea";
 import { useDismiss } from '../lib/useDismiss';
 import ActivityOrb from '../components/ActivityOrb';
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ChevronDown, ArrowUp, Square, Mic, Volume2, VolumeX, Hammer, ImagePlus, PanelRight, Plus, X, Globe,
   Image as ImageIcon, ImageOff, GlobeLock, AudioLines, MessagesSquare,
   Settings2, Paperclip, FileText, Copy, Check, NotebookPen } from 'lucide-react';
@@ -16,13 +17,14 @@ import { splitThinking } from '../lib/thinking';
 import { Sentences, useTalk } from '../lib/useTalk';
 import { cleanReply } from '../lib/reply';
 import { MAX_ROUNDS, describe, findLookups, initialWebQuery, resultsTurn, stripLookups } from '../lib/lookup';
+import { compactAvailable, contextMessages, COMPACTION_INSTRUCTION } from '../lib/context';
 import { printerSound } from '../lib/printer-sound';
-import { getLibrary, startEngine, engineStatus, streamChat, transcribeAudio, speakReply, IMAGE_MARKER, chatSystemPrompt, parseReplyImages, generateReplyImage,
+import { getLibrary, getAdapters, startEngine, engineStatus, streamChat, countChatContext, transcribeAudio, speakReply, IMAGE_MARKER, chatSystemPrompt, parseReplyImages, generateReplyImage,
   listConversations, readConversation, writeConversation, deleteConversation,
   webSearch, webRead, webImages, MANNERS, getPermissions, setPermission,
   outputBlobUrl, revealOutput, uploadChatAttachment, saveNote as saveReplyNote,
   listNotes, deleteNote } from '../lib/sidecar';
-import type { LocalModel, ChatMessage, ChatAttachment, ConversationList, SavedNote, WebImage } from '../lib/sidecar';
+import type { AdapterCard, ChatContextUsage, LocalModel, ChatMessage, ChatAttachment, ConversationList, SavedNote, WebImage } from '../lib/sidecar';
 
 /** A conversation id: sixteen hex characters, which is what the engine accepts
  *  as a filename. `crypto.randomUUID` needs a secure context and is not
@@ -39,10 +41,25 @@ export default function ChatView() {
   const [networkError, setNetworkError] = useState('');
   const [models, setModels] = useState<LocalModel[]>([]);
   const [activeModel, setActiveModel] = useState<LocalModel | null>(null);
+  const [adapters, setAdapters] = useState<AdapterCard[]>([]);
+  const [activeAdapter, setActiveAdapter] = useState<string | null>(null);
   const [loadingModel, setLoadingModel] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const pickerRef = useDismiss(pickerOpen, () => setPickerOpen(false));
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [contextUsage, setContextUsage] = useState<ChatContextUsage | null>(null);
+  const [compactSummary, setCompactSummary] = useState('');
+  const [compactedThrough, setCompactedThrough] = useState(0);
+  const [compacting, setCompacting] = useState(false);
+  const [rawMode] = useState(() => localStorage.getItem('uncloud.debug.raw') === 'on');
+  const [temperatures, setTemperatures] = useState<Record<string, string>>(() => {
+    try { return JSON.parse(localStorage.getItem('uncloud.chat.temperatures') || '{}'); }
+    catch { return {}; }
+  });
+  const [replyBudgets, setReplyBudgets] = useState<Record<string, string>>(() => {
+    try { return JSON.parse(localStorage.getItem('uncloud.chat.replyBudgets') || '{}'); }
+    catch { return {}; }
+  });
   //: Which saved conversation this is. Made on the first send rather than on
   //  arrival, so opening Chat and changing your mind does not litter the list
   //  with empty conversations.
@@ -169,8 +186,13 @@ export default function ChatView() {
   }, [libraryVersion]);
 
   useEffect(() => {
+    if (pickerOpen) getAdapters().then(setAdapters).catch(() => setAdapters([]));
+  }, [pickerOpen]);
+
+  useEffect(() => {
     engineStatus().then((s) => {
       if (s.running && s.model_path) {
+        setActiveAdapter(s.adapter_path ?? null);
         setActiveModel((prev) => prev ?? {
           id: s.model_path!, name: s.model_path!.split('/').pop()!, category: 'text',
           engine: s.engine!, path: s.model_path!, size_gb: 0, catalog_id: null,
@@ -184,12 +206,13 @@ export default function ChatView() {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [messages]);
 
-  async function selectModel(model: LocalModel) {
+  async function selectModel(model: LocalModel, adapter: AdapterCard | null = null) {
     setPickerOpen(false);
     setLoadingModel(true);
     try {
-      await startEngine(model.path, model.engine);
+      await startEngine(model.path, model.engine, adapter?.path);
       setActiveModel(model);
+      setActiveAdapter(adapter?.path ?? null);
     } catch (e) {
       alert(`Failed to load model: ${e}`);
     } finally {
@@ -311,13 +334,14 @@ export default function ChatView() {
   const persist = useCallback(async (id: string, turns: ChatMessage[]) => {
     if (!turns.length) return;
     try {
-      await writeConversation(id, { messages: turns, model_path: activeModel?.path ?? null });
+      await writeConversation(id, { messages: turns, model_path: activeModel?.path ?? null,
+        compact_summary: compactSummary, compacted_through: compactedThrough });
       refreshSaved();
     } catch {
       // Saving is not the user's job to supervise. A failure here must not
       // interrupt a conversation that is otherwise working.
     }
-  }, [activeModel, refreshSaved]);
+  }, [activeModel, compactSummary, compactedThrough, refreshSaved]);
 
   const startNew = useCallback(() => {
     generationEpoch.current += 1;
@@ -326,6 +350,9 @@ export default function ChatView() {
     printerSound.stop();
     setGenerating(false);
     setMessages([]);
+    setCompactSummary('');
+    setCompactedThrough(0);
+    setContextUsage(null);
     setPreviews({});
     setConversationId(null);
     setAttached([]);
@@ -350,6 +377,8 @@ export default function ChatView() {
         const { thinking, answer } = splitThinking(m.content);
         return thinking ? { ...m, content: answer, reasoning: thinking } : m;
       }));
+      setCompactSummary(conversation.compact_summary || '');
+      setCompactedThrough(conversation.compacted_through || 0);
       setConversationId(conversation.id);
       setAttached([]);
       setAttachedFiles([]);
@@ -459,21 +488,17 @@ export default function ChatView() {
     const controller = new AbortController();
     chatAbort.current = controller;
     try {
-      // Generating an image frees the chat engine to make room — reload it transparently if needed.
-      const status = await engineStatus();
-      if (epoch !== generationEpoch.current) return;
-      if (!status.running || status.model_path !== activeModel.path) {
-        await startEngine(activeModel.path, activeModel.engine);
-      }
       const assistantIndex = next.length;
       //: The turns actually sent. It grows when the model asks to look
       //  something up, so its own request and the results are both in context
       //  for the answer that follows.
-      let sent: ChatMessage[] = [...next];
+      let sent: ChatMessage[] = [
+        ...next.slice(rawMode ? 0 : compactedThrough),
+      ];
       //: Hands-free only: the reply is cut into sentences as it is written so
       //  each can be spoken while the rest is still coming.
       const sentences = say ? new Sentences() : null;
-      const query = web ? initialWebQuery(text, messages.filter((m) => m.role === 'user').map((m) => m.content)) : null;
+      const query = web && !rawMode ? initialWebQuery(text, messages.filter((m) => m.role === 'user').map((m) => m.content)) : null;
       if (query) {
         const lookup = { kind: 'search' as const, argument: query };
         setLooking([describe(lookup)]);
@@ -496,8 +521,11 @@ export default function ChatView() {
       for (let round = 0; ; round++) {
         full = '';
         for await (const chunk of streamChat(
-          [{ role: 'system', content: chatSystemPrompt({ pictures, web, manner }) }, ...sent],
+          contextMessages(sent, chatSystemPrompt({ pictures, web, manner }), compactSummary, 0, rawMode),
           controller.signal,
+          replyBudgets[activeModel.path]?.trim() ? Number(replyBudgets[activeModel.path]) : undefined,
+          { path: activeModel.path, engine: activeModel.engine, adapter: activeAdapter,
+            temperature: temperatures[activeModel.path]?.trim() ? Number(temperatures[activeModel.path]) : undefined },
         )) {
           if (epoch !== generationEpoch.current) return;
           if (chunk.kind === 'text') {
@@ -533,7 +561,7 @@ export default function ChatView() {
         // Both switches hold whatever the model wrote. A model told it is
         // offline will occasionally ask to search anyway, and the setting has
         // to win that argument rather than merely take part in it.
-        const wanted = web
+        const wanted = web && !rawMode
           ? findLookups(full).filter((l) => pictures || l.kind !== 'pictures')
           : [];
         if (!wanted.length) break;
@@ -627,7 +655,7 @@ export default function ChatView() {
       // The markers were an instruction to the application, not part of the
       // answer. Left in, the user reads the plumbing.
       const rawReply = full;
-      full = cleanReply(stripLookups(full));
+      full = rawMode ? full : cleanReply(stripLookups(full));
       setMessages((m) => {
         if (epoch !== generationEpoch.current) return m;
         const copy = [...m];
@@ -646,7 +674,7 @@ export default function ChatView() {
       // Fire and forget: the reply is already readable, and a render may take
       // minutes. Pass the freshly minted id explicitly; state has not rerendered
       // yet on the first turn, and closing the phone must not orphan the file.
-      void renderPreviews(assistantIndex, rawReply, epoch, id);
+      if (!rawMode) void renderPreviews(assistantIndex, rawReply, epoch, id);
 
       // The tail: an answer that ends without punctuation, or a last clause
       // too short to have been spoken on its own.
@@ -742,35 +770,81 @@ export default function ChatView() {
     setRecording(false);
   }
 
-  // The field grows with what is typed, to a ceiling, then scrolls. Unbounded
-  // growth would push the conversation off the top of the screen, which is the
-  // opposite of what a bigger field is for.
-  const field = useRef<HTMLTextAreaElement>(null);
-  const resize = useCallback(() => {
-    const el = field.current;
-    if (!el) return;
-    el.style.height = 'auto';               // reset, or it can only ever grow
-    el.style.height = `${Math.min(el.scrollHeight, window.innerHeight * 0.4)}px`;
-  }, []);
-  useLayoutEffect(resize, [input, messages.length, resize]);
   useEffect(() => {
-    window.addEventListener('resize', resize);
-    return () => window.removeEventListener('resize', resize);
-  }, [resize]);
+    if (!activeModel || generating || compacting) return;
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      const turns = contextMessages([
+        ...messages,
+        ...(input.trim() ? [{ role: 'user' as const, content: input.trim() }] : []),
+      ], chatSystemPrompt({ pictures, web, manner }), compactSummary, compactedThrough, rawMode);
+      void countChatContext(turns).then((usage) => {
+        if (!cancelled) setContextUsage(usage);
+      }).catch(() => { if (!cancelled) setContextUsage(null); });
+    }, 550);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [activeModel, messages, input, compactSummary, compactedThrough, generating,
+      compacting, pictures, web, manner, rawMode]);
+
+  async function compactConversation() {
+    if (!activeModel || generating || compacting || !messages.length) return;
+    const through = messages.length > 4 ? messages.length - 2 : messages.length;
+    if (through <= compactedThrough) return;
+    setCompacting(true);
+    try {
+      const newHistory = messages.slice(compactedThrough, through).map((m) =>
+        `${m.role.toUpperCase()}: ${m.content}${m.files?.length ?
+          `\nAttached: ${m.files.map((f) => `${f.name}\n${f.text}`).join('\n')}` : ''}`).join('\n\n');
+      const instruction = COMPACTION_INSTRUCTION + `\n\n` +
+        `Existing compacted memory (update it without losing facts):\n${compactSummary || '(none)'}\n\n` +
+        `New conversation turns:\n${newHistory}`;
+      let result = '';
+      for await (const chunk of streamChat([
+        { role: 'system', content: 'You maintain accurate, concise conversation memory.' },
+        { role: 'user', content: instruction },
+      ], undefined, undefined, { path: activeModel.path, engine: activeModel.engine, adapter: activeAdapter })) {
+        if (chunk.kind === 'text') result += chunk.text;
+      }
+      const summary = result.trim();
+      if (!summary) throw new Error('The model returned an empty summary.');
+      const system = chatSystemPrompt({ pictures, web, manner });
+      const [before, after] = await Promise.all([
+        countChatContext(contextMessages(messages, system, compactSummary, compactedThrough)),
+        countChatContext(contextMessages(messages, system, summary, through)),
+      ]);
+      if (before.used == null || after.used == null) {
+        throw new Error('Could not verify the compacted context size. Your original conversation is preserved.');
+      }
+      if (after.used >= before.used) {
+        throw new Error('The summary did not reduce context. Your original conversation is preserved.');
+      }
+      if (conversationId) {
+        await writeConversation(conversationId, { messages, model_path: activeModel.path,
+          compact_summary: summary, compacted_through: through });
+        refreshSaved();
+      }
+      setCompactSummary(summary);
+      setCompactedThrough(through);
+    } catch (error) {
+      alert(`Could not compact this conversation: ${error}`);
+    } finally {
+      setCompacting(false);
+    }
+  }
 
   const empty = messages.length === 0;
 
   const composer = (
     <div className="composer-inner">
-      <div className="composer-card">
+      <div className="composer-card chat-composer">
         {/* What is going with the next message. Shown before sending, and
             removable: attaching the wrong screenshot is easy and noticing
             after the model has answered is too late. */}
         {(attached.length > 0 || attachedFiles.length > 0) && (
-          <div className="flex flex-wrap gap-2 px-1 pb-2">
+          <div className="composer-attachments flex flex-wrap gap-2 px-1 pb-2">
             {attached.map((url, i) => (
               <div key={i} className="relative">
-                <img src={url} alt="" className="h-14 w-14 object-cover rounded-lg
+                <img src={url} alt="" className="h-20 w-20 object-cover rounded-lg
                                                  border border-[var(--border)]" />
                 <button
                   className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-[var(--bg-inset)]
@@ -800,17 +874,17 @@ export default function ChatView() {
             ))}
           </div>
         )}
-        <textarea
-          ref={field}
+        <AutoGrowTextarea
+          aria-label="Message"
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
+            if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault();
               send(input, autoSpeak);
             }
           }}
-          placeholder={activeModel ? 'Ask anything' : 'Ask anything — pick a model above to send'}
+          placeholder={activeModel ? 'Ask anything' : 'Ask anything'}
           // Deliberately NOT disabled. Writing a question while a model is
           // still loading is normal; a field that refuses input reads as a
           // broken application rather than as a precondition. Only sending is
@@ -836,14 +910,37 @@ export default function ChatView() {
           )}
 
           <details className="relative" onToggle={(e) => {
+            const menu = e.currentTarget.querySelector<HTMLElement>('.composer-menu');
+            if (menu) menu.style.maxHeight = `${Math.max(120, Math.min(520, e.currentTarget.getBoundingClientRect().top - 20))}px`;
             if (e.currentTarget.open) getPermissions().then((p) => setNetworkDenied(p.policy.network === 'deny')).catch(() => undefined);
           }}>
             <summary className="pill pill-icon list-none cursor-pointer" aria-label="Chat settings" title="Chat settings">
               <Settings2 size={15} />
             </summary>
-            <div className="absolute bottom-full mb-2 left-0 z-40 card p-3 flex flex-col gap-2 min-w-64"
+            <div className="absolute bottom-full mb-2 left-0 z-40 card p-3 flex flex-col gap-2 composer-menu"
                  onKeyDown={(e) => { if (e.key === 'Escape') { e.currentTarget.closest('details')?.removeAttribute('open'); } }}>
               <span className="text-xs text-[var(--text-dim)]">Chat settings</span>
+              {rawMode && <span className="text-xs">Direct-model diagnostic mode</span>}
+              {activeModel && <label className="text-xs flex flex-col gap-1">
+                Temperature · this model
+                <input type="number" min="0" step="any" placeholder="Auto · model defaults"
+                  value={temperatures[activeModel.path] ?? ''}
+                  onChange={(e) => {
+                    const next = { ...temperatures, [activeModel.path]: e.target.value };
+                    setTemperatures(next);
+                    localStorage.setItem('uncloud.chat.temperatures', JSON.stringify(next));
+                  }} />
+              </label>}
+              {activeModel && <label className="text-xs flex flex-col gap-1">
+                Reply budget · tokens including reasoning
+                <input type="number" min="1" step="1" placeholder="Auto · model / runtime window"
+                  value={replyBudgets[activeModel.path] ?? ''}
+                  onChange={(e) => {
+                    const next = { ...replyBudgets, [activeModel.path]: e.target.value };
+                    setReplyBudgets(next);
+                    localStorage.setItem('uncloud.chat.replyBudgets', JSON.stringify(next));
+                  }} />
+              </label>}
               {networkDenied && <div className="text-xs max-w-64">
                 <p>Internet access is set to Never, even when Web is on.</p>
                 <button className="pill mt-2" onClick={async () => {
@@ -863,9 +960,9 @@ export default function ChatView() {
               : 'This model is text-only and cannot see images. Load a vision model '
                 + '(its name usually says VL or Vision) from the Models tab.'}
             aria-label="Attach an image"
-            className="pill pill-icon"
+            className="pill"
           >
-            <ImagePlus size={15} />
+            <ImagePlus size={15} /><span>Attach image</span>
           </button>
 
           <button
@@ -873,9 +970,9 @@ export default function ChatView() {
             disabled={!activeModel || attachingFile}
             title="Attach an image, document or source file"
             aria-label="Attach a file"
-            className="pill pill-icon"
+            className="pill"
           >
-            {attachingFile ? <ActivityOrb state="working" size={20} label="Working…" /> : <Paperclip size={15} />}
+            {attachingFile ? <ActivityOrb state="working" size={20} label="Working…" /> : <Paperclip size={15} />}<span>Attach file</span>
           </button>
 
           {/* The only control here that governs the network. Labelled plainly,
@@ -933,48 +1030,7 @@ export default function ChatView() {
             </button>
           )}
 
-            </div>
-          </details>
-
-          {/* Hands-free. The state is written out rather than left to a colour,
-              because "is it listening to me right now" is the one question a
-              voice interface must never leave ambiguous. */}
-          {talk.ready && (
-            <button
-              onClick={toggleConversation}
-              disabled={!activeModel}
-              title={talk.active
-                ? 'Stop the conversation'
-                : talk.native
-                  ? 'Talk instead of typing — this Mac transcribes as you speak'
-                  : 'Talk instead of typing — it listens, answers aloud, and listens again'}
-              className={talk.active ? 'pill pill-on' : 'pill'}
-              style={talk.active ? { color: 'var(--accent)' } : undefined}
-            >
-              {talk.active ? <AudioLines size={15} className="animate-pulse" />
-                : <MessagesSquare size={15} />}
-              <span>
-                {!talk.active ? 'Converse'
-                  : talk.state === 'hearing' ? 'Listening…'
-                  : talk.state === 'thinking' ? 'Thinking…'
-                  : talk.state === 'speaking' ? 'Speaking…'
-                  : 'Your turn'}
-              </span>
-            </button>
-          )}
-
-          {/* Voice and manner. Behind a menu: they are set once and then left
-              alone, and a row of pickers would crowd the things used every
-              message. */}
-          <details className="relative">
-            <summary className="pill list-none cursor-pointer select-none"
-                     title="How replies sound">
-              <Settings2 size={14} /><span>Voice</span>
-            </summary>
-            <div className="absolute bottom-full mb-2 left-0 z-40 card p-2
-                            flex flex-col gap-3
-                            max-md:fixed max-md:left-3 max-md:right-3 max-md:bottom-auto
-                            max-md:top-[calc(env(safe-area-inset-top)+4rem)]" style={{ minWidth: 240 }}>
+              <div className="border-t border-[var(--border)] pt-3 mt-1 flex flex-col gap-3">
               <label className="field">
                 <span className="label" style={{ fontSize: 11 }}>Voice</span>
                 <ReplyVoice className="input" value={voice} onChange={setVoice} />
@@ -993,10 +1049,99 @@ export default function ChatView() {
                 short sentences, no lists or markdown. Voices you save in
                 Voice → Text to voice appear here too.
               </p>
+              </div>
             </div>
           </details>
 
+          {/* Hands-free. The state is written out rather than left to a colour,
+              because "is it listening to me right now" is the one question a
+              voice interface must never leave ambiguous. */}
+          {talk.ready && (
+            <button
+              onClick={toggleConversation}
+              disabled={!activeModel}
+              title={talk.active
+                ? 'Stop the conversation'
+                : talk.native
+                  ? 'Talk instead of typing — this Mac transcribes as you speak'
+                  : 'Talk instead of typing — it listens, answers aloud, and listens again'}
+              className={talk.active ? 'pill pill-on' : 'pill pill-icon'}
+              aria-label={talk.active ? 'Stop voice conversation' : 'Start voice conversation'}
+              style={talk.active ? { color: 'var(--accent)' } : undefined}
+            >
+              {talk.active ? <AudioLines size={15} className="animate-pulse" />
+                : <MessagesSquare size={15} />}
+              <span className={!talk.active ? 'sr-only' : undefined}>
+                {!talk.active ? 'Converse'
+                  : talk.state === 'hearing' ? 'Listening…'
+                  : talk.state === 'thinking' ? 'Thinking…'
+                  : talk.state === 'speaking' ? 'Speaking…'
+                  : 'Your turn'}
+              </span>
+            </button>
+          )}
+
           <div className="composer-spacer" />
+        <div ref={pickerRef} style={{ position: 'relative' }}>
+          <button className="pill composer-model" title={activeModel ? `${activeModel.name}${activeAdapter ? ` · ${activeAdapter.split('/').pop()}` : ''}` : 'Choose a model'} aria-label="Choose a model" onClick={() => setPickerOpen((v) => !v)}
+                  aria-haspopup="listbox" aria-expanded={pickerOpen}>
+            {loadingModel ? (
+              <><ActivityOrb state="connecting" label="Loading model…" /><span>Loading model…</span></>
+            ) : activeModel ? (
+              <>
+                <span style={{
+                  width: 6, height: 6, borderRadius: 999,
+                  background: 'var(--success)', flex: 'none',
+                }} />
+                <span>{activeModel.name}{activeAdapter ? ` · ${activeAdapter.split('/').pop()}` : ''}</span>
+              </>
+            ) : (
+              <span style={{ color: 'var(--text-3)' }}>Select model</span>
+            )}
+            <ChevronDown size={15} style={{ flex: 'none', color: 'var(--text-3)' }} />
+          </button>
+
+          {pickerOpen && (
+            <div
+              className="card no-drag chassis-scroll composer-model-menu"
+              role="listbox"
+              style={{
+                position: 'absolute', bottom: 44, right: 0, zIndex: 50,
+                width: 340, maxWidth: "calc(100vw - 32px)", maxHeight: Math.max(120, Math.min(320, (pickerRef.current?.getBoundingClientRect().top ?? window.innerHeight) - 20)), padding: 6,
+                boxShadow: 'var(--shadow-lg)',
+              }}
+            >
+              {models.length === 0 && (
+                <div style={{
+                  fontSize: 'var(--text-xs)', color: 'var(--text-3)',
+                  padding: '16px 12px', textAlign: 'center',
+                }}>
+                  No text models yet. Download one from the Models tab, or add one you already have.
+                </div>
+              )}
+              {models.map((m) => <div key={m.id}>
+                <button onClick={() => selectModel(m)} role="option"
+                        aria-selected={activeModel?.id === m.id && !activeAdapter} className="menu-row">
+                  <span>{m.name}</span>
+                  <span className="font-mono" style={{ fontSize: 10, color: 'var(--text-3)', textTransform: 'uppercase', flex: 'none' }}>{m.engine}</span>
+                </button>
+                {m.engine === 'mlx' && adapters.filter((a) => a.ready && a.base_model === m.path).map((adapter) =>
+                  <button key={adapter.path} onClick={() => selectModel(m, adapter)} role="option"
+                          aria-selected={activeModel?.path === m.path && activeAdapter === adapter.path}
+                          className="menu-row" style={{ paddingLeft: 24 }}
+                          title={`Use ${m.name} with the trained adapter ${adapter.adapter}`}>
+                    <span>↳ {adapter.adapter}</span><span style={{ fontSize: 10, color: 'var(--text-3)' }}>adapter</span>
+                  </button>)}
+              </div>)}
+              {/* Pinned: the list scrolls, and an option below the fold is one nobody finds. */}
+              <div style={{ borderTop: '1px solid var(--border-soft)', marginTop: 4, paddingTop: 4,
+                            position: 'sticky', bottom: -6, background: 'inherit' }}>
+                <AddFromDisk onOpen={() => setPickerOpen(false)} />
+              </div>
+            </div>
+          )}
+        </div>
+
 
           <button
             onClick={generating ? stopGenerating : () => send(input, autoSpeak)}
@@ -1010,69 +1155,32 @@ export default function ChatView() {
           </button>
         </div>
       </div>
+      {activeModel && (contextUsage?.limit || compactSummary) && (
+        <div className="chat-context-footer">
+          {compactSummary && <details className="chat-context-memory">
+            <summary>Compacted memory</summary>
+            <div>{compactSummary}</div>
+          </details>}
+          {contextUsage?.limit && <span role="status" title="Tokens in this conversation, counted with the selected model's chat template">
+            {contextUsage.used == null ? 'Context unavailable' :
+              `${contextUsage.used.toLocaleString()} / ${contextUsage.limit.toLocaleString()} tokens`}
+          </span>}
+          {!rawMode && compactAvailable(contextUsage?.used ?? null, contextUsage?.limit ?? null) &&
+            <button onClick={() => void compactConversation()} disabled={compacting || generating}
+                    title="Preserve important earlier context in an inspectable summary">
+              {compacting ? 'Compacting…' : 'Compact'}
+            </button>}
+        </div>
+      )}
     </div>
   );
 
   return (
     <div className="h-full flex flex-col relative">
-      {/* The model in play is the window's context, so it lives in the title
-          bar rather than in a header of this view's own. */}
+      {/* Conversation navigation stays in the window chrome. */}
       <TitleBarPortal>
-        <div ref={pickerRef} style={{ position: 'relative' }}>
-          <button className="tb-context" onClick={() => setPickerOpen((v) => !v)}
-                  aria-haspopup="listbox" aria-expanded={pickerOpen}>
-            {loadingModel ? (
-              <><ActivityOrb state="connecting" label="Loading model…" /><span>Loading model…</span></>
-            ) : activeModel ? (
-              <>
-                <span style={{
-                  width: 6, height: 6, borderRadius: 999,
-                  background: 'var(--success)', flex: 'none',
-                }} />
-                <span>{activeModel.name}</span>
-              </>
-            ) : (
-              <span style={{ color: 'var(--text-3)' }}>Select model</span>
-            )}
-            <ChevronDown size={15} style={{ flex: 'none', color: 'var(--text-3)' }} />
-          </button>
-
-          {pickerOpen && (
-            <div
-              className="card no-drag chassis-scroll"
-              role="listbox"
-              style={{
-                position: 'absolute', top: 36, left: 0, zIndex: 50,
-                width: 340, maxHeight: 320, padding: 6,
-                boxShadow: 'var(--shadow-lg)',
-              }}
-            >
-              {models.length === 0 && (
-                <div style={{
-                  fontSize: 'var(--text-xs)', color: 'var(--text-3)',
-                  padding: '16px 12px', textAlign: 'center',
-                }}>
-                  No text models yet. Download one from the Models tab, or add one you already have.
-                </div>
-              )}
-              {models.map((m) => (
-                <button key={m.id} onClick={() => selectModel(m)} role="option"
-                        aria-selected={activeModel?.id === m.id} className="menu-row">
-                  <span>{m.name}</span>
-                  <span className="font-mono" style={{
-                    fontSize: 10, color: 'var(--text-3)',
-                    textTransform: 'uppercase', flex: 'none',
-                  }}>{m.engine}</span>
-                </button>
-              ))}
-              {/* Pinned: the list scrolls, and an option below the fold is one nobody finds. */}
-              <div style={{ borderTop: '1px solid var(--border-soft)', marginTop: 4, paddingTop: 4,
-                            position: 'sticky', bottom: -6, background: 'inherit' }}>
-                <AddFromDisk onOpen={() => setPickerOpen(false)} />
-              </div>
-            </div>
-          )}
-        </div>
+        <span className="text-sm text-[var(--text-dim)] px-2">Chat</span>
+        <span className="flex-1" />
 
         {/* Starting again, and going back to something. Both belong in the
             window chrome: they are about WHICH conversation, not about the

@@ -49,6 +49,8 @@ class Conversation:
     #: model is allowed, but it should be a visible choice rather than a
     #: surprise.
     model_path: str | None = None
+    compact_summary: str = ""
+    compacted_through: int = 0
     #: Desktop and every paired device have separate shelves. A phone must not
     #: discover or overwrite a conversation merely because it guessed an id.
     owner: str = "desktop"
@@ -59,7 +61,9 @@ class Conversation:
                 "model_path": self.model_path}
 
     def to_dict(self) -> dict:
-        return {**self.summary(), "messages": self.messages}
+        return {**self.summary(), "messages": self.messages,
+                "compact_summary": self.compact_summary,
+                "compacted_through": self.compacted_through}
 
     def storage_dict(self) -> dict:
         return {**self.to_dict(), "owner": self.owner}
@@ -179,6 +183,8 @@ def load(conversation_id: str, *, owner: str = "desktop") -> Conversation | None
         id=data["id"], title=data.get("title", ""),
         created=data.get("created", 0.0), updated=data.get("updated", 0.0),
         messages=data.get("messages", []), model_path=data.get("model_path"),
+        compact_summary=data.get("compact_summary", ""),
+        compacted_through=data.get("compacted_through", 0),
         owner=stored_owner,
     )
 
