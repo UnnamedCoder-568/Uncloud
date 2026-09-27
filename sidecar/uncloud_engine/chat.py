@@ -1,21 +1,41 @@
-"""Request policy for the plain chat surface.
-
-Two things happen here that are easy to get wrong and invisible when you do.
-
-**Thinking is switched off explicitly, not by omission.** Thinking-capable GGUF
-templates default to an unlimited private reasoning pass, and small Qwen
-variants can loop there without ever emitting an answer — measured this year at
-fifteen seconds producing an unterminated block and no reply. Chat is a
-direct-answer surface, so Fast and Balanced say no out loud.
-
-**Effort is translated, not forwarded.** Almost no local model takes a
-reasoning parameter. What a level buys on a model that has none is a bigger
-answer budget and, above this layer, more passes — see `foundation.effort`.
-"""
+"""Native plain-chat payloads and the legacy agent effort policy."""
 
 from __future__ import annotations
 
 from .core import Effort, ModelProfile, translate
+
+
+def model_payload(active, messages: list[dict], *, overrides: dict | None = None,
+                  max_tokens: int | None = None, effort: str = "") -> dict:
+    """Native model recommendations with explicit request overrides.
+
+    Balanced/default chat keeps the model's native thinking/template behavior.
+    Advanced effort remains opt-in and never launches additional model passes.
+    """
+    from .inference_profile import for_backend
+
+    metadata = getattr(active, "inference_profile", {})
+    payload = {"messages": messages, "stream": True, "stream_options": {"include_usage": True}}
+    payload.update(for_backend(metadata.get("parameters", {}), overrides or {}, active.engine))
+    if max_tokens is not None:
+        payload["max_tokens"] = max_tokens
+    elif metadata.get("max_output_tokens"):
+        payload["max_tokens"] = metadata["max_output_tokens"]
+    elif getattr(active, "context_limit", 0):
+        # Reserve a quarter of this runtime's usable window for output when
+        # the model gives no recommendation. Avoid MLX's silent 512-token cap,
+        # which can consume the whole answer in reasoning. User budgets win.
+        payload["max_tokens"] = max(1, active.context_limit // 4)
+    if effort and effort != "balanced":
+        model = getattr(active, "model_profile", None)
+        plan = translate(effort, model, **(
+            {"base_output_tokens": max_tokens} if max_tokens is not None else {}))
+        if "enable_thinking" in plan.parameters:
+            payload["chat_template_kwargs"] = {
+                "enable_thinking": bool(plan.parameters["enable_thinking"])}
+        if max_tokens is None:
+            payload["max_tokens"] = plan.max_output_tokens
+    return payload
 
 
 def build_chat_payload(

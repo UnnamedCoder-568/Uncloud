@@ -39,6 +39,8 @@ class LocalModel:
     # would mean another 8-20GB on disk per variation.
     lora_paths: list[str] | None = None
     lora_scales: list[float] | None = None
+    # Pipeline supplying components to an assembled GGUF image checkpoint.
+    profile_base: str | None = None
 
     def to_dict(self) -> dict:
         defaults, defaults_source = self.defaults or {}, ''
@@ -171,7 +173,7 @@ def _gguf_architecture(path: Path) -> tuple[str | None, str | None]:
         return None, None
 
 
-def _classify_gguf(path: Path, models_dir: Path) -> tuple[str, str, str | None, bool]:
+def _classify_gguf(path: Path, models_dir: Path) -> tuple[str, str, str | None, bool, str | None]:
     """(category, engine, note, ready) for a .gguf file, from its header.
 
     Through Core's identifier, which reads the architecture rather than trusting
@@ -195,10 +197,11 @@ def _classify_gguf(path: Path, models_dir: Path) -> tuple[str, str, str | None, 
         from .gguf_diffusion import assembly_for
 
         assembly = assembly_for(path, identification.family or "", models_dir)
-        return v.category, v.engine, assembly.note(), assembly.ready
+        return (v.category, v.engine, assembly.note(), assembly.ready,
+                str(assembly.base) if assembly.base else None)
     if identification.warnings and not note:
         note = identification.warnings[0]
-    return v.category, v.engine, note, v.runnable
+    return v.category, v.engine, note, v.runnable, None
 
 
 # A checkpoint written by `mflux-save` has no manifest at the root — just
@@ -444,11 +447,12 @@ def _scan_library(models_dir: Path) -> list[LocalModel]:
         if str(gguf.resolve()) in claimed:
             continue
         seen_paths.add(str(gguf))
-        category, engine, note, ready = _classify_gguf(gguf, models_dir)
+        category, engine, note, ready, profile_base = _classify_gguf(gguf, models_dir)
         size_gb = gguf.stat().st_size / (1024 ** 3)
         found.append(LocalModel(
             id=f"local:{gguf}", name=gguf.stem, category=category, engine=engine,
             path=str(gguf), size_gb=size_gb, note=note, ready=ready,
+            profile_base=profile_base,
         ))
 
     # 2. HF-cache-style `models--org--name` dirs (from huggingface_hub snapshot downloads)
@@ -676,6 +680,7 @@ def _imported(models_dir: Path, already: set[str]) -> list[LocalModel]:
 
             assembly = assembly_for(path, identification.family or "", models_dir)
             model.note, model.ready = assembly.note(), assembly.ready
+            model.profile_base = str(assembly.base) if assembly.base else None
         out.append(model)
     return out
 

@@ -1,3 +1,4 @@
+import AutoGrowTextarea from "../components/AutoGrowTextarea";
 import { useDismiss } from '../lib/useDismiss';
 import ActivityOrb from '../components/ActivityOrb';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -477,7 +478,7 @@ export default function ImageGenerate({ onEdit }: { onEdit?: () => void }) {
         <div className="p-4 border-t border-[var(--border-soft)]">
           <div className="max-w-2xl mx-auto flex flex-col gap-2">
             <div className="flex items-end gap-2 card px-3 py-2 focus-within:border-[#3a3a42]">
-              <textarea
+              <AutoGrowTextarea
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
                 placeholder={model

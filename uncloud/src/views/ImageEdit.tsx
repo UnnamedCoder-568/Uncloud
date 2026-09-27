@@ -1,3 +1,4 @@
+import AutoGrowTextarea from "../components/AutoGrowTextarea";
 import { useDismiss } from '../lib/useDismiss';
 import ActivityOrb from '../components/ActivityOrb';
 import { useEffect, useRef, useState } from 'react';
@@ -92,7 +93,10 @@ export default function ImageEdit() {
   async function run() {
     if (!model || !refPath || !instruction.trim() || (job && !job.done)) return;
     setOutUrl(null);
-    setJob(await editImage(model.path, instruction.trim(), refPath, model.catalog_id));
+    setJob(await editImage(model.path, instruction.trim(), refPath, model.catalog_id, {
+      steps: model.defaults?.steps,
+      guidance: model.defaults?.guidance,
+    }));
   }
 
   /** Send the current result back round as the new input, so edits can stack. */
@@ -192,7 +196,7 @@ export default function ImageEdit() {
             <label className="text-[10px] uppercase tracking-[0.18em] text-[var(--text-faint)]">Describe the edit</label>
             <Dictate title="Dictate the edit" onText={(t) => setInstruction((v) => (v ? v.trimEnd() + ' ' + t : t))} />
           </div>
-          <textarea
+          <AutoGrowTextarea
             value={instruction}
             onChange={(e) => setInstruction(e.target.value)}
             rows={5}
@@ -238,7 +242,7 @@ export default function ImageEdit() {
           <div className="flex flex-col items-center gap-3 text-[var(--text-dim)]">
             <ActivityOrb state="working" size={20} label="Working…" />
             <span className="text-sm">
-              {job?.total_steps ? `Editing — step ${job.step}/${job.total_steps}` : 'Editing…'}
+              {job?.step ? `Editing — step ${job.step}/${job.total_steps}` : (job?.phase || 'Preparing edit…')}
             </span>
             <button
               onClick={() => { void stopImage(); }}

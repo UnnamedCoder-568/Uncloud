@@ -87,7 +87,8 @@ def model_size_gb(model_path: str | Path) -> float:
 
 
 def estimate(model_path: str | Path, *, examples: int = 0, batch_size: int = 4,
-             iterations: int = 600, budget_gb: float | None = None) -> Estimate:
+             iterations: int = 600, budget_gb: float | None = None,
+             max_seq_length: int = 2048, rank: int = 16, num_layers: int = 16) -> Estimate:
     """Whether to start, how much it will hold, and how long it will take."""
     from ..budget import memory_budget
 
@@ -102,8 +103,11 @@ def estimate(model_path: str | Path, *, examples: int = 0, batch_size: int = 4,
     if budget_gb is None:
         budget_gb = float(memory_budget().get("budget_gb") or 0.0)
 
-    needed = weights + ADAPTER_OVERHEAD_GB + ACTIVATION_GB_PER_BATCH * batch_size
-    seconds = (iterations * batch_size) / EXAMPLES_PER_SECOND
+    # Conservative estimates: memory saving may help, but is not a promise.
+    adapter = ADAPTER_OVERHEAD_GB * max(1, rank / 16) * max(1, num_layers / 16)
+    activation = ACTIVATION_GB_PER_BATCH * (max_seq_length / 2048)
+    needed = weights + adapter + activation * batch_size
+    seconds = (iterations * batch_size) / EXAMPLES_PER_SECOND * (max_seq_length / 2048)
     # The adapter, plus the checkpoints kept along the way.
     disk = 0.4 + 0.12 * max(1, iterations // 200)
 
@@ -124,7 +128,7 @@ def estimate(model_path: str | Path, *, examples: int = 0, batch_size: int = 4,
     smaller = None
     for candidate in (batch_size // 2, 1):
         if candidate >= 1:
-            trial = weights + ADAPTER_OVERHEAD_GB + ACTIVATION_GB_PER_BATCH * candidate
+            trial = weights + adapter + activation * candidate
             if trial <= budget_gb:
                 smaller = {"batch_size": candidate}
                 break

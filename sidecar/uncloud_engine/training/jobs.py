@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 import re
 import shutil
 import time
@@ -86,6 +87,7 @@ class TrainingJob:
     log: list[str] = field(default_factory=list)
     estimate: dict = field(default_factory=dict)
     examples: int = 0
+    settings: dict = field(default_factory=dict)
 
     @property
     def percent(self) -> float:
@@ -105,7 +107,7 @@ class TrainingJob:
             "iteration": self.iteration, "iterations": self.iterations,
             "percent": round(self.percent, 1),
             "train_loss": self.train_loss, "val_loss": self.val_loss,
-            "error": self.error, "examples": self.examples,
+            "error": self.error, "examples": self.examples, "settings": dict(self.settings),
             "started_at": self.started_at, "ended_at": self.ended_at,
             "estimate": dict(self.estimate),
             # The tail only. A full log of a long run is megabytes, and the
@@ -134,29 +136,76 @@ def all_jobs() -> list[TrainingJob]:
     return sorted(_jobs.values(), key=lambda j: j.started_at, reverse=True)
 
 
+_OPTION_LIMITS = {
+    "iterations": (10, 100000), "batch_size": (1, 8), "rank": (4, 64),
+    "num_layers": (1, 64), "max_seq_length": (256, 8192),
+    "learning_rate": (1e-7, 1e-3),
+}
+
+
+def resolve_settings(preset: str, batch_size: int | None = None,
+                     overrides: dict | None = None) -> dict:
+    if preset not in PRESETS:
+        raise Refused(f"Unknown training preset: {preset}.")
+    settings = {**PRESETS[preset], "num_layers": 8, "max_seq_length": 2048,
+                "grad_checkpoint": True}
+    for key, value in (overrides or {}).items():
+        if value is None:
+            continue
+        if key == "grad_checkpoint":
+            if not isinstance(value, bool):
+                raise Refused("Memory saving must be on or off.")
+        elif key in _OPTION_LIMITS:
+            low, high = _OPTION_LIMITS[key]
+            if (isinstance(value, bool) or not isinstance(value, (int, float))
+                    or not math.isfinite(value) or not low <= value <= high
+                    or (key != "learning_rate" and int(value) != value)):
+                raise Refused(f"{key} must be between {low} and {high}.")
+        else:
+            raise Refused(f"Unknown training option: {key}.")
+        settings[key] = value
+    if batch_size is not None:
+        if (isinstance(batch_size, bool) or not isinstance(batch_size, int)
+                or not 1 <= batch_size <= 8):
+            raise Refused("Batch size must be between 1 and 8.")
+        settings["batch_size"] = batch_size
+    return settings
+
+
 def prepare(model_path: str, dataset_path: str, preset: str = "standard",
-            *, batch_size: int | None = None) -> dict:
+            *, batch_size: int | None = None, overrides: dict | None = None) -> dict:
     """Everything that would happen, without starting it.
 
     Called by the interface before offering the button, so a run that cannot
     work is explained while the user is still deciding rather than eight
     minutes in.
     """
-    if preset not in PRESETS:
-        raise Refused(f"{preset!r} is not a preset. Known: {', '.join(PRESETS)}.")
-    settings = PRESETS[preset]
+    settings = resolve_settings(preset, batch_size, overrides)
     dataset = datasets.read(dataset_path)
     guess = feasibility.estimate(
         model_path, examples=dataset.count,
-        batch_size=batch_size or settings["batch_size"],
-        iterations=settings["iterations"])
+        batch_size=settings["batch_size"], iterations=settings["iterations"],
+        max_seq_length=settings["max_seq_length"], rank=settings["rank"],
+        num_layers=settings["num_layers"])
+    config_path = Path(model_path) / "config.json"
+    if config_path.is_file():
+        try:
+            config = json.loads(config_path.read_text())
+            layer_count = (config.get("text_config") or config).get("num_hidden_layers")
+            if isinstance(layer_count, int) and settings["num_layers"] > layer_count:
+                guess.feasible = False
+                guess.reason = (f"This model has {layer_count} layers. Choose {layer_count} "
+                                "or fewer layers to train.")
+        except (OSError, ValueError, AttributeError):
+            guess.feasible = False
+            guess.reason = "Could not read the model configuration. Choose a complete MLX model."
     return {"dataset": dataset.to_dict(), "estimate": guess.to_dict(),
             "preset": {"id": preset, **settings}}
 
 
 async def start(model_path: str, dataset_path: str, preset: str = "standard",
                 *, batch_size: int | None = None,
-                name: str = "") -> TrainingJob:
+                name: str = "", overrides: dict | None = None) -> TrainingJob:
     """Validate, size, and only then spawn.
 
     Both refusals happen here rather than inside the run: a dataset that cannot
@@ -164,7 +213,7 @@ async def start(model_path: str, dataset_path: str, preset: str = "standard",
     milliseconds, and discovering either after twenty minutes is the failure
     this whole module is arranged to avoid.
     """
-    plan = prepare(model_path, dataset_path, preset, batch_size=batch_size)
+    plan = prepare(model_path, dataset_path, preset, batch_size=batch_size, overrides=overrides)
     dataset = datasets.read(dataset_path)
     if not dataset.usable:
         fatal = next((p.what for p in dataset.problems if p.fatal),
@@ -173,7 +222,7 @@ async def start(model_path: str, dataset_path: str, preset: str = "standard",
     if not plan["estimate"]["feasible"]:
         raise Refused(plan["estimate"]["reason"])
 
-    settings = PRESETS[preset]
+    settings = resolve_settings(preset, batch_size, overrides)
     job_id = uuid.uuid4().hex[:12]
     slug = re.sub(r"[^a-z0-9]+", "-", (name or Path(model_path).name).lower()).strip("-")
     output = TRAINING_DIR / "adapters" / f"{slug or 'adapter'}-{job_id}"
@@ -183,7 +232,7 @@ async def start(model_path: str, dataset_path: str, preset: str = "standard",
         id=job_id, model_path=str(model_path), dataset_path=str(dataset_path),
         preset=preset, output_dir=str(output),
         iterations=settings["iterations"], examples=dataset.count,
-        estimate=plan["estimate"])
+        estimate=plan["estimate"], settings=dict(settings))
     _jobs[job_id] = job
     _tasks[job_id] = asyncio.create_task(_run(job, settings, batch_size))
     return job
@@ -203,6 +252,11 @@ def cancel(job_id: str) -> bool:
 async def _run(job: TrainingJob, settings: dict, batch_size: int | None) -> None:
     import sys
 
+    from ..power import keep_awake
+
+    process = None
+    wake_lock = keep_awake("training")
+    wake_lock.__enter__()
     try:
         job.status = "preparing"
         workspace = Path(job.output_dir) / "data"
@@ -216,6 +270,12 @@ async def _run(job: TrainingJob, settings: dict, batch_size: int | None) -> None
         datasets.write(train, workspace / "train.jsonl")
         datasets.write(validate or train[-1:], workspace / "valid.jsonl")
 
+        # JSON is valid YAML. Explicit rank avoids confusing adapter rank with
+        # the number of transformer layers, which are independent controls.
+        config = Path(job.output_dir) / "training-config.json"
+        config.write_text(json.dumps({"lora_parameters": {
+            "rank": settings["rank"], "dropout": 0.0, "scale": 20.0,
+        }}) + "\n")
         command = [
             sys.executable, "-m", "mlx_lm", "lora",
             "--model", job.model_path,
@@ -224,9 +284,13 @@ async def _run(job: TrainingJob, settings: dict, batch_size: int | None) -> None
             "--adapter-path", job.output_dir,
             "--iters", str(settings["iterations"]),
             "--batch-size", str(batch_size or settings["batch_size"]),
-            "--num-layers", str(settings["rank"]),
+            "--num-layers", str(settings["num_layers"]),
+            "--max-seq-length", str(settings["max_seq_length"]),
+            "--config", str(config),
             "--learning-rate", str(settings["learning_rate"]),
         ]
+        if settings["grad_checkpoint"]:
+            command.append("--grad-checkpoint")
         job.log.append("$ " + " ".join(command[2:]))
         job.status = "training"
 
@@ -256,6 +320,14 @@ async def _run(job: TrainingJob, settings: dict, batch_size: int | None) -> None
         job.status = "error"
         job.error = f"{type(exc).__name__}: {exc}"
     finally:
+        wake_lock.__exit__(None, None, None)
+        if process is not None and process.returncode is None:
+            process.terminate()
+            try:
+                await asyncio.wait_for(process.wait(), timeout=5)
+            except TimeoutError:
+                process.kill()
+                await process.wait()
         job.ended_at = time.time()
 
 
@@ -302,6 +374,7 @@ def _write_card(job: TrainingJob) -> None:
         "dataset": job.dataset_path,
         "examples": job.examples,
         "preset": job.preset,
+        "settings": dict(job.settings),
         "iterations": job.iterations,
         "train_loss": job.train_loss,
         "val_loss": job.val_loss,

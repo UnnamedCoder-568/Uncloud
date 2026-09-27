@@ -5,10 +5,14 @@ import contextlib
 import socket
 import subprocess
 import sys
-from dataclasses import dataclass
+import threading
+from collections import deque
+from dataclasses import dataclass, field
 
 import httpx
 
+from .context_profile import for_model
+from .inference_profile import load as load_inference_profile
 from .native_chat import server_path
 
 LLAMA_SERVER_BIN = server_path()
@@ -26,6 +30,11 @@ class ActiveEngine:
     engine: str  # gguf | mlx
     port: int
     process: subprocess.Popen
+    adapter_path: str | None = None
+    context_limit: int = 8192
+    model_profile: object = None
+    inference_profile: dict = field(default_factory=dict)
+    logs: deque = field(default_factory=lambda: deque(maxlen=80), repr=False)
 
     @property
     def base_url(self) -> str:
@@ -43,33 +52,49 @@ class EngineManager:
         self.active: ActiveEngine | None = None
         self._lock = asyncio.Lock()
 
-    async def start(self, model_path: str, engine: str) -> ActiveEngine:
+    async def start(self, model_path: str, engine: str,
+                    adapter_path: str | None = None) -> ActiveEngine:
         async with self._lock:
-            if self.active and self.active.model_path == model_path:
+            if (self.active and self.active.model_path == model_path
+                    and self.active.engine == engine
+                    and self.active.adapter_path == adapter_path
+                    and self.active.process.poll() is None):
                 return self.active
             if self.active:
                 self._stop_process(self.active)
+                self.active = None
 
             port = _free_port()
+            profile = for_model(model_path, engine)
+            model_profile, inference_profile = load_inference_profile(model_path, engine)
             if engine == "gguf":
-                proc = self._spawn_llama_cpp(model_path, port)
+                proc = self._spawn_llama_cpp(model_path, port, profile["effective_limit"])
             elif engine == "mlx":
-                proc = self._spawn_mlx(model_path, port)
+                proc = self._spawn_mlx(model_path, port, adapter_path)
             elif engine == "mlx-vlm":
                 proc = self._spawn_mlx_vlm(model_path, port)
             else:
                 raise ValueError(f"No text-inference launcher for engine: {engine}")
 
-            active = ActiveEngine(model_path=model_path, engine=engine, port=port, process=proc)
-            await self._wait_healthy(active)
+            active = ActiveEngine(model_path=model_path, engine=engine, port=port,
+                                  process=proc, adapter_path=adapter_path,
+                                  context_limit=profile["effective_limit"],
+                                  model_profile=model_profile, inference_profile=inference_profile)
+            threading.Thread(target=self._drain_logs, args=(active,), daemon=True).start()
+            try:
+                await self._wait_healthy(active)
+            except BaseException:
+                self._stop_process(active)
+                raise
             self.active = active
             return active
 
-    def _spawn_llama_cpp(self, model_path: str, port: int) -> subprocess.Popen:
+    def _spawn_llama_cpp(self, model_path: str, port: int,
+                         context_limit: int) -> subprocess.Popen:
         native = LLAMA_SERVER_BIN or server_path()
         if native:
             command = [native, "-m", model_path, "--port", str(port),
-                       "--host", "127.0.0.1", "-ngl", "999", "-c", "8192"]
+                       "--host", "127.0.0.1", "-ngl", "999", "-c", str(context_limit)]
         else:
             try:
                 import llama_cpp  # noqa: F401
@@ -80,16 +105,20 @@ class EngineManager:
                 ) from exc
             command = [sys.executable, "-m", "llama_cpp.server", "--model", model_path,
                        "--port", str(port), "--host", "127.0.0.1",
-                       "--n_gpu_layers", "999", "--n_ctx", "8192"]
+                       "--n_gpu_layers", "999", "--n_ctx", str(context_limit)]
         return subprocess.Popen(
             command,
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         )
 
-    def _spawn_mlx(self, model_path: str, port: int) -> subprocess.Popen:
+    def _spawn_mlx(self, model_path: str, port: int,
+                   adapter_path: str | None = None) -> subprocess.Popen:
+        command = [sys.executable, "-m", "mlx_lm", "server", "--model", model_path,
+                   "--port", str(port), "--host", "127.0.0.1"]
+        if adapter_path:
+            command += ["--adapter-path", adapter_path]
         return subprocess.Popen(
-            [sys.executable, "-m", "mlx_lm", "server", "--model", model_path,
-             "--port", str(port), "--host", "127.0.0.1"],
+            command,
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         )
 
@@ -107,17 +136,23 @@ class EngineManager:
     def supports_vision(self) -> bool:
         return self.active is not None and self.active.engine == "mlx-vlm"
 
+    @staticmethod
+    def _drain_logs(active: ActiveEngine) -> None:
+        # A full unread stdout pipe blocks generation, not just logging.
+        if active.process.stdout:
+            for line in active.process.stdout:
+                active.logs.append(line.decode(errors="replace").rstrip()[-2000:])
+
     async def _wait_healthy(self, active: ActiveEngine, timeout: float = 120.0) -> None:
         deadline = asyncio.get_event_loop().time() + timeout
         async with httpx.AsyncClient() as client:
             while asyncio.get_event_loop().time() < deadline:
                 if active.process.poll() is not None:
-                    out = (active.process.stdout.read().decode(errors="ignore")
-                           if active.process.stdout else "")
+                    out = "\n".join(active.logs)
                     raise RuntimeError(f"Engine process exited early:\n{out[-2000:]}")
                 try:
                     r = await client.get(f"{active.base_url}/v1/models", timeout=2.0)
-                    if r.status_code < 500:
+                    if r.is_success:
                         return
                 except httpx.HTTPError:
                     pass
@@ -138,11 +173,15 @@ class EngineManager:
             self.active = None
 
     def status(self) -> dict:
-        if not self.active:
+        if not self.active or self.active.process.poll() is not None:
             return {"running": False}
         return {
             "running": True, "model_path": self.active.model_path,
             "engine": self.active.engine, "port": self.active.port,
+            "adapter_path": self.active.adapter_path,
+            "context_limit": self.active.context_limit,
+            "context_profile": for_model(self.active.model_path, self.active.engine),
+            "inference_profile": self.active.inference_profile,
             # So the interface can offer image attachment against a model that
             # can actually receive one, and say why when it cannot — rather
             # than accepting the picture and having the model ignore it.

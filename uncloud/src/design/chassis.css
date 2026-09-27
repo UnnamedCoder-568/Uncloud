@@ -419,7 +419,7 @@
 }
 .input::placeholder { color: var(--text-3); }
 .input:hover { border-color: var(--text-3); }
-.input:focus { outline: none; border-color: var(--accent); }
+.input:focus { outline: none; border-color: var(--border-strong); box-shadow: 0 0 0 1px var(--border-strong); }
 /* A colour well should look like the colour, not like a text box. */
 .input[type="color"] { padding: 2px; height: 34px; cursor: pointer; }
 
@@ -450,7 +450,7 @@
 
 /* Focus stays visible. A tool used all day has to work without a mouse. */
 :focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--text-3);
   outline-offset: 2px;
 }
 
@@ -768,3 +768,23 @@
 
   .prose { max-width: none; }
 }
+
+/* Text entry belongs to its containing surface; keyboard buttons keep their
+   visible ring. Native select painting otherwise collapses controls on macOS. */
+textarea { min-width: 0; max-height: 40vh; line-height: 1.5; }
+textarea:focus-visible { outline: 1px solid var(--border-strong); outline-offset: 2px; }
+.composer-input:focus-visible { outline: none; box-shadow: none; }
+select:not([multiple]):not([size]) {
+  appearance: none;
+  -webkit-appearance: none;
+  min-height: 36px;
+  padding: 8px 32px 8px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='m3 4.5 3 3 3-3' fill='none' stroke='%238f8f8f' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+}
+select:focus-visible { outline: 1px solid var(--text-3); outline-offset: 2px; }

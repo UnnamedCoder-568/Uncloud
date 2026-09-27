@@ -14,6 +14,7 @@ import OnTheComputer from '../components/OnTheComputer';
 import { inDesktop } from '../lib/platform';
 import AppearanceSection from '../components/AppearanceSection';
 import PrinterSoundSection from '../components/PrinterSoundSection';
+import InferenceDiagnostics from '../components/InferenceDiagnostics';
 import { Check } from 'lucide-react';
 
 export default function SettingsView() {
@@ -25,6 +26,12 @@ export default function SettingsView() {
 
   useEffect(() => {
     getSettings().then(setSettings);
+    const timer = setInterval(() => {
+      void getSettings().then((next) => setSettings((current) =>
+        current ? { ...current, keep_awake_active: next.keep_awake_active } : next
+      )).catch(() => undefined);
+    }, 3000);
+    return () => clearInterval(timer);
   }, []);
 
   async function saveToken() {
@@ -120,17 +127,19 @@ export default function SettingsView() {
   async function toggleKeepAwake() {
     if (!settings) return;
     const next = !settings.keep_awake;
-    await setKeepAwake(next);
-    setSettings({ ...settings, keep_awake: next });
+    const result = await setKeepAwake(next);
+    setSettings({ ...settings, keep_awake: next, keep_awake_active: result.keep_awake_active });
   }
 
   if (!settings) return null;
 
   return (
-    <div className="h-full overflow-y-auto px-6 py-5">
-      <h1 className="text-2xl font-semibold mb-6">Settings</h1>
+    <div className="h-full overflow-y-auto settings-page">
 
-      <div className="max-w-xl flex flex-col gap-4">
+
+      <div className="page-column flex flex-col gap-4">
+        <h1 className="page-title">Settings</h1>
+        <InferenceDiagnostics />
         <AppearanceSection />
         <PrinterSoundSection />
         <section className="card p-4">
@@ -263,10 +272,13 @@ export default function SettingsView() {
             <div>
               <h2 className="text-sm mb-1">Keep this machine awake</h2>
               <p className="text-[11px] text-[var(--text-faint)] max-w-sm">
-                Stops the machine sleeping while an image, music, narration or agent
-                job is running. Without it a long job is suspended when the display
-                times out, and you come back to it unfinished. Released as soon as
-                the last job ends.
+                Prevents this machine from sleeping while Uncloud is open. The display
+                can still turn off. Turn this off to allow normal sleep again.
+              </p>
+              <p className="text-[11px] mt-2 text-[var(--text-dim)]" role="status">
+                {settings.keep_awake_active ? 'Awake protection is active.'
+                  : settings.keep_awake ? 'Unable to activate awake protection on this machine.'
+                  : 'Awake protection is off.'}
               </p>
             </div>
             <button

@@ -18,12 +18,12 @@ import ActivityOrb from '../components/ActivityOrb';
 
 import { useCallback, useEffect, useState } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
-import { AlertTriangle, Ban, Check, FileJson, GraduationCap, Trash2 } from 'lucide-react';
+import { AlertTriangle, Ban, Check, FileJson, GraduationCap, Trash2, Copy, SlidersHorizontal } from 'lucide-react';
 
 import { cancelTraining, forgetAdapter, getAdapters, getLibrary,
          getTrainingJobs, getTrainingPresets, prepareTraining, startTraining,
          type AdapterCard, type LocalModel, type TrainingJob,
-         type TrainingPlan, type TrainingPreset } from '../lib/sidecar';
+         type TrainingPlan, type TrainingPreset, type TrainingOptions } from '../lib/sidecar';
 import OnTheComputer from '../components/OnTheComputer';
 import { inDesktop } from '../lib/platform';
 import { useLibraryVersion } from '../lib/library-changed';
@@ -35,6 +35,9 @@ export default function TrainingView() {
   const [modelPath, setModelPath] = useState('');
   const [dataset, setDataset] = useState('');
   const [preset, setPreset] = useState('standard');
+  const [name, setName] = useState('');
+  const [options, setOptions] = useState<TrainingOptions>({});
+  const [copied, setCopied] = useState(false);
   const [plan, setPlan] = useState<TrainingPlan | null>(null);
   const [planning, setPlanning] = useState(false);
   const [jobs, setJobs] = useState<TrainingJob[]>([]);
@@ -48,7 +51,7 @@ export default function TrainingView() {
 
   useEffect(() => {
     getLibrary()
-      .then((all) => setModels(all.filter((m) => m.category === 'text')))
+      .then((all) => setModels(all.filter((m) => m.category === 'text' && m.engine === 'mlx' && m.ready)))
       .catch(() => undefined);
     getTrainingPresets().then(setPresets).catch(() => undefined);
     refresh();
@@ -66,14 +69,19 @@ export default function TrainingView() {
   // Re-planned whenever either input changes, because the answer depends on
   // both and a stale plan is worse than none.
   useEffect(() => {
-    if (!modelPath || !dataset) { setPlan(null); return; }
+    let cancelled = false;
+    setPlan(null);
+    if (!modelPath || !dataset) { setPlanning(false); return; }
     setPlanning(true);
     setError(null);
-    prepareTraining({ model_path: modelPath, dataset_path: dataset, preset })
-      .then(setPlan)
-      .catch((e) => { setPlan(null); setError(String(e.message ?? e)); })
-      .finally(() => setPlanning(false));
-  }, [modelPath, dataset, preset]);
+    const timer = window.setTimeout(() => {
+      prepareTraining({ model_path: modelPath, dataset_path: dataset, preset, options })
+        .then((next) => { if (!cancelled) setPlan(next); })
+        .catch((e) => { if (!cancelled) setError(String(e.message ?? e)); })
+        .finally(() => { if (!cancelled) setPlanning(false); });
+    }, 300);
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [modelPath, dataset, preset, options]);
 
   async function pickDataset() {
     const picked = await open({
@@ -86,37 +94,59 @@ export default function TrainingView() {
   async function start() {
     setError(null);
     try {
-      await startTraining({ model_path: modelPath, dataset_path: dataset, preset });
+      await startTraining({ model_path: modelPath, dataset_path: dataset, preset, name, options });
       refresh();
     } catch (e) {
       setError(String((e as Error).message ?? e));
     }
   }
 
-  const ready = !!plan?.dataset.usable && !!plan?.estimate.feasible;
+  const ready = !!plan?.dataset.usable && !!plan?.estimate.feasible && !planning && !running;
+  const selectedPreset = presets.find((item) => item.id === preset);
+  const effective = { iterations: 600, batch_size: 4, rank: 16, learning_rate: 0.00001,
+    num_layers: 8, max_seq_length: 2048, grad_checkpoint: true, ...selectedPreset, ...options };
+  const selectedModel = models.find((model) => model.path === modelPath);
+  const controls = [
+    { key: 'iterations', label: 'Training steps', hint: 'How many updates to make.', min: 10, max: 100000, step: 10 },
+    { key: 'batch_size', label: 'Batch size', hint: 'Examples per step. Smaller uses less memory.', min: 1, max: 8, step: 1 },
+    { key: 'learning_rate', label: 'Learning rate', hint: 'How much each update changes the adapter.', min: 0.0000001, max: 0.001, step: 0.000001 },
+    { key: 'rank', label: 'Adapter rank', hint: 'Adapter capacity. Higher needs more memory.', min: 4, max: 64, step: 4 },
+    { key: 'num_layers', label: 'Layers to train', hint: 'Last transformer layers to adapt.', min: 1, max: 64, step: 1 },
+    { key: 'max_seq_length', label: 'Example length', hint: 'Maximum tokens per example; longer text is truncated.', min: 256, max: 8192, step: 256 },
+  ] as const;
+  async function copyExample() {
+    try {
+      await navigator.clipboard.writeText(JSON.stringify({ messages: [
+        { role: 'user', content: 'Summarize this project in one sentence.' },
+        { role: 'assistant', content: 'A local assistant that helps people work with their own documents.' },
+      ] }) + '\n');
+      setCopied(true);
+    } catch { setError('Could not copy. Select and copy the example below.'); }
+  }
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="max-w-3xl mx-auto p-6 flex flex-col gap-4">
+      <div className="page-column flex flex-col gap-6">
         <div>
-          <h1 className="text-base flex items-center gap-2">
+          <h1 className="page-title flex items-center gap-2">
             <GraduationCap size={18} /> Training
           </h1>
-          <p className="text-[11px] text-[var(--text-faint)] mt-1 leading-relaxed">
-            Teach a model a consistent behaviour from your own examples. It runs
-            on this machine, your examples never leave it, and what comes out is
-            an adapter — a small file that works with the model it was trained
-            against, not a copy of it.
+          <p className="text-sm text-[var(--text-dim)] mt-2 leading-relaxed">
+            Teach a model using your own examples. Training runs locally and creates
+            a small adapter to use with the original model.
           </p>
         </div>
 
         {/* ------------------------------------------------------ set it up */}
-        <section className="card p-4 flex flex-col gap-3">
+        <section className="card p-6 flex flex-col gap-6">
+          <div className="training-section-title"><span>01</span><h2>Base model &amp; adapter</h2></div>
+          <label className="field"><span className="label">Adapter name</span>
+            <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. My research assistant" maxLength={80} />
+          </label>
           <div>
             <label className="text-xs">Model</label>
             <select value={modelPath} onChange={(e) => setModelPath(e.target.value)}
-                    className="w-full mt-1 bg-[var(--bg-inset)] px-3 py-2 rounded-lg
-                               text-xs outline-none">
+                    className="input mt-2">
               <option value="">Choose a model on this computer…</option>
               {models.map((m) => (
                 <option key={m.id} value={m.path}>{m.name}</option>
@@ -124,13 +154,17 @@ export default function TrainingView() {
             </select>
             {models.length === 0 && (
               <p className="text-[11px] text-[var(--text-faint)] mt-1">
-                No text models are installed yet. Download one from Models first.
+                No compatible MLX text models are installed. Add one from the Library to train locally on Apple Silicon.
               </p>
             )}
           </div>
 
+          {selectedModel && <p className="text-xs text-[var(--text-dim)]">Base weights: {selectedModel.size_gb.toFixed(1)} GB · Original model stays unchanged</p>}
+        </section>
+        <section className="card p-6 flex flex-col gap-4">
+          <div className="training-section-title"><span>02</span><h2>Training examples</h2></div>
           <div>
-            <label className="text-xs">Examples</label>
+            <label className="text-xs">Dataset · JSONL</label>
             {!inDesktop() && <div className="mt-1"><OnTheComputer>Training files are chosen on the computer running Uncloud.</OnTheComputer></div>}
             <button onClick={pickDataset} disabled={!inDesktop()}
                     className="w-full mt-1 flex items-center justify-between gap-3
@@ -147,16 +181,28 @@ export default function TrainingView() {
             </p>
           </div>
 
+          <details className="training-disclosure">
+            <summary>How to prepare your examples</summary>
+            <div className="mt-3 flex flex-col gap-3 text-xs text-[var(--text-dim)]">
+              <p>Use one JSON object per line. Include varied questions and the answers you want the model to learn. Remove private information you do not want in the adapter.</p>
+              <pre className="bg-[var(--bg-inset)] p-3 rounded-lg overflow-x-auto">{'{"messages":[{"role":"user","content":"Your question"},{"role":"assistant","content":"Your ideal answer"}]}'}</pre>
+              <button className="pill self-start" onClick={copyExample}><Copy size={14} />{copied ? 'Example copied' : 'Copy an example'}</button>
+              <p>Save the file with a .jsonl extension. Uncloud checks its format and holds back validation examples when the dataset is large enough.</p>
+            </div>
+          </details>
+        </section>
+        <section className="card p-6 flex flex-col gap-5">
+          <div className="training-section-title"><span>03</span><h2>Training settings</h2></div>
           <div>
-            <label className="text-xs">How much to change</label>
-            <div className="flex flex-col gap-1.5 mt-1">
+            <label className="text-xs">Starting preset</label>
+            <div className="training-presets mt-2">
               {presets.map((option) => (
-                <button key={option.id} onClick={() => setPreset(option.id)}
-                        className={`text-left px-3 py-2 rounded-lg transition ${
+                <button key={option.id} onClick={() => { setPreset(option.id); setOptions({}); }} aria-pressed={preset === option.id}
+                        className={`text-left px-3 py-3 rounded-lg transition ${
                           preset === option.id
-                            ? 'bg-[var(--bg-inset)] ring-1 ring-[var(--accent)]'
+                            ? 'bg-[var(--bg-inset)] ring-1 ring-[var(--border-strong)]'
                             : 'hover:bg-[var(--bg-inset)]'}`}>
-                  <div className="text-xs">{option.label}</div>
+                  <div className="text-sm flex items-center justify-between">{option.label}{preset === option.id && <Check size={15} />}</div>
                   <div className="text-[11px] text-[var(--text-faint)]">
                     {option.note}
                   </div>
@@ -164,6 +210,23 @@ export default function TrainingView() {
               ))}
             </div>
           </div>
+          <details className="training-disclosure">
+            <summary className="flex items-center gap-2"><SlidersHorizontal size={15} />Customize settings</summary>
+            <div className="training-controls mt-4">
+              {controls.map(({ key, label, hint, min, max, step }) => <label className="field" key={key}>
+                <span className="label">{label}</span>
+                <input className="input" type="number" min={min} max={max} step={step} value={effective[key]}
+                  onChange={(e) => setOptions((current) => ({ ...current, [key]: e.target.value === '' ? min : Number(e.target.value) }))} />
+                <span className="text-xs text-[var(--text-faint)]">{hint}</span>
+              </label>)}
+            </div>
+            <label className="flex items-start gap-3 mt-5 text-sm">
+              <input type="checkbox" checked={effective.grad_checkpoint} onChange={(e) => setOptions((current) => ({ ...current, grad_checkpoint: e.target.checked }))} />
+              <span>Save memory<span className="block text-xs text-[var(--text-faint)]">Recompute intermediate values during training. Uses less memory but may take longer.</span></span>
+            </label>
+            <button className="pill mt-3" onClick={() => setOptions({})}>Reset to preset</button>
+          </details>
+          <p className="text-xs text-[var(--text-dim)]">{effective.iterations.toLocaleString()} steps · Batch {effective.batch_size} · Rank {effective.rank} · {effective.max_seq_length.toLocaleString()} tokens</p>
         </section>
 
         {/* ------------------------------------------- what would happen */}
@@ -176,12 +239,12 @@ export default function TrainingView() {
         {plan && <Plan plan={plan} />}
         {error && <p className="text-[11px] text-rose-400">{error}</p>}
 
-        {plan && (
-          <button onClick={start} disabled={!ready}
-                  className="grad-button text-sm self-start disabled:opacity-30">
-            {ready ? 'Start training' : 'Cannot start'}
-          </button>
-        )}
+        <div className="training-start">
+          <div><h2 className="text-sm">{ready ? 'Ready to train' : planning ? 'Checking your setup…' : running ? 'A training run is active' : 'Review your setup'}</h2>
+            <p className="text-xs text-[var(--text-dim)] mt-1">{!modelPath ? 'Choose a compatible base model to begin.' : !dataset ? 'Choose your examples to check quality and memory use.' : ready ? 'Creates an adapter. It still needs the original base model.' : 'Resolve the checks above before starting.'}</p>
+          </div>
+          <button onClick={start} disabled={!ready} className="btn-accent px-5 py-2.5 rounded-lg shrink-0">Start training</button>
+        </div>
 
         {/* --------------------------------------------------------- runs */}
         {jobs.length > 0 && (
@@ -247,7 +310,7 @@ function Plan({ plan }: { plan: TrainingPlan }) {
       {!dataset.usable && (
         <p className="text-[11px] text-rose-400 flex items-start gap-2">
           <Ban size={13} className="mt-0.5 shrink-0" />
-          These examples cannot be trained on.
+          These examples need changes before training.
         </p>
       )}
 
@@ -283,7 +346,7 @@ function Plan({ plan }: { plan: TrainingPlan }) {
 
       {dataset.usable && estimate.feasible && dataset.warnings.length === 0 && (
         <p className="text-[11px] text-emerald-400 flex items-center gap-2">
-          <Check size={13} /> Nothing here looks wrong.
+          <Check size={13} /> Dataset checks passed. Quality still needs to be evaluated after training.
         </p>
       )}
     </section>

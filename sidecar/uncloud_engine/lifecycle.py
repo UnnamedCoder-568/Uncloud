@@ -204,7 +204,7 @@ async def stop_all(*, close_browser: bool = True) -> Released:
     try:
         from . import power
 
-        if power.is_held():
+        if power.is_held() and power._session_lock is None:  # noqa: SLF001
             power._end()          # noqa: SLF001 - the module is ours
             power._holders = 0    # noqa: SLF001
             freed.wake_lock = True

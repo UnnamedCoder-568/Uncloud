@@ -280,3 +280,91 @@ def test_a_failure_reports_the_line_a_person_can_act_on() -> None:
            "    train()",
            "ValueError: expected 2 dimensions, got 3"]
     assert jobs._why(log) == "ValueError: expected 2 dimensions, got 3"
+
+
+@pytest.mark.parametrize("option,value", [("batch_size", 0), ("rank", 0),
+    ("iterations", -1), ("learning_rate", float("nan")), ("num_layers", 100),
+    ("max_seq_length", 100000), ("rank", 4.5), ("grad_checkpoint", "yes")])
+def test_invalid_custom_options_refuse_before_training(option, value):
+    with pytest.raises(jobs.Refused):
+        jobs.resolve_settings("standard", overrides={option: value})
+
+
+def test_custom_options_do_not_mutate_the_preset():
+    changed = jobs.resolve_settings("standard", overrides={"rank": 32, "num_layers": 4})
+    assert changed["rank"] == 32 and changed["num_layers"] == 4
+    assert jobs.resolve_settings("standard")["rank"] == 16
+
+
+def test_longer_training_sequences_increase_estimated_memory(tmp_path):
+    model = fake_model(tmp_path / "m.safetensors", 1)
+    short = feasibility.estimate(model, budget_gb=8, max_seq_length=512)
+    long = feasibility.estimate(model, budget_gb=8, max_seq_length=8192)
+    assert short.feasible and not long.feasible
+    assert long.memory_gb > short.memory_gb
+
+
+def test_custom_rank_reaches_lora_config_and_layers_reach_cli(tmp_path, monkeypatch):
+    data = write_jsonl(tmp_path / "examples.jsonl", chat(80))
+    output = tmp_path / "adapter"
+    output.mkdir()
+    captured = []
+
+    class Lines:
+        def __aiter__(self):
+            return self
+        async def __anext__(self):
+            raise StopAsyncIteration
+
+    class Process:
+        stdout = Lines()
+        returncode = 0
+        async def wait(self):
+            return 0
+
+    async def spawn(*args, **kwargs):
+        captured.extend(args)
+        return Process()
+
+    monkeypatch.setattr(jobs.asyncio, "create_subprocess_exec", spawn)
+    settings = jobs.resolve_settings("standard", overrides={"rank": 32, "num_layers": 4,
+        "batch_size": 1, "max_seq_length": 512, "iterations": 100})
+    job = jobs.TrainingJob(id="custom", model_path="/models/base", dataset_path=str(data),
+        preset="standard", output_dir=str(output), settings=settings)
+    asyncio.run(jobs._run(job, settings, None))
+    assert job.status == "done"
+    assert captured[captured.index("--num-layers") + 1] == "4"
+    assert captured[captured.index("--max-seq-length") + 1] == "512"
+    assert captured[captured.index("--batch-size") + 1] == "1"
+    config = json.loads(Path(captured[captured.index("--config") + 1]).read_text())
+    assert config["lora_parameters"]["rank"] == 32
+    assert "--grad-checkpoint" in captured
+    assert json.loads((output / "uncloud-adapter.json").read_text())["settings"]["rank"] == 32
+
+
+def test_cancel_releases_the_training_process(tmp_path, monkeypatch):
+    data = write_jsonl(tmp_path / "examples.jsonl", chat(10))
+    output = tmp_path / "adapter"
+    output.mkdir()
+    stopped = []
+    class Lines:
+        def __aiter__(self):
+            return self
+        async def __anext__(self):
+            raise asyncio.CancelledError
+    class Process:
+        stdout = Lines()
+        returncode = None
+        def terminate(self):
+            stopped.append(True)
+            self.returncode = -15
+        async def wait(self):
+            return self.returncode
+    async def spawn(*args, **kwargs):
+        return Process()
+    monkeypatch.setattr(jobs.asyncio, "create_subprocess_exec", spawn)
+    job = jobs.TrainingJob(id="cancel", model_path="/model", dataset_path=str(data),
+        preset="light", output_dir=str(output))
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(jobs._run(job, jobs.resolve_settings("light"), None))
+    assert stopped and job.status == "cancelled"

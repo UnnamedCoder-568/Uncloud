@@ -70,6 +70,7 @@ class ImageJob:
     #: Asked to stop. Read at every step, so a job that has already started
     #: ends at the next one rather than running to completion unwatched.
     cancelled: bool = False
+    phase: str = "Queued"
 
     def to_dict(self) -> dict:
         return {
@@ -77,6 +78,7 @@ class ImageJob:
             "step": self.step, "total_steps": self.total_steps,
             "done": self.status in ("done", "error", "cancelled"), "error": self.error,
             "kind": self.kind, "label": self.label, "seed": self.seed,
+            "phase": self.phase,
             # The UI needs the path to offer Save / Save as / Reveal on a result.
             "output_path": self.output_path,
         }
@@ -278,52 +280,62 @@ class ImageEngine:
     ) -> None:
         job.status = "running"
         try:
-            if not Path(reference_path).exists():
-                raise FileNotFoundError(f"Reference image not found: {reference_path}")
-            self._free_memory_for("mflux")
-
-            mflux_bin = _mflux_bin(mflux_cli)
-            if not mflux_bin:
-                raise RuntimeError(
-                    f"{mflux_cli} not found on PATH — is the `mflux` package installed?")
-
-            out_path = output_dir_for() / f"{job.id}.png"
-            steps = steps or 28
-            job.total_steps = steps
-            seed = seed if seed is not None else int(time.time())
-
-            cmd = [
-                mflux_bin, "--model", model_path, "--prompt", prompt,
-                "--image", reference_path,
-            ]
-            if strength is not None:
-                cmd.append(str(strength))
-            cmd += [
-                "--steps", str(steps), "--seed", str(seed),
-                "--guidance", str(guidance if guidance is not None else 2.5),
-                "--low-ram", "--vae-tiling",
-                "--output", str(out_path),
-            ]
-            # Caller-supplied dimensions win; otherwise clamp to the pixel budget so a
-            # large source photo can't silently drive the machine into swap.
-            if not (width and height):
-                fitted = _fit_within_budget(reference_path)
-                if fitted:
-                    width, height = fitted
-            if width:
-                cmd += ["--width", str(width)]
-            if height:
-                cmd += ["--height", str(height)]
-
-            await self._stream_mflux(job, cmd, out_path, mflux_cli)
-            verify_image(out_path, what="edited image")
-            job.output_path = str(out_path)
-            job.status = "done"
+            with keep_awake("image edit"):
+                await self._edit_with_wake_lock(
+                    job, model_path, prompt, reference_path, steps, guidance,
+                    width, height, seed, strength, mflux_cli)
         except Cancelled:
             job.status = "cancelled"
         except Exception as exc:  # noqa: BLE001 - surface any failure to the UI
             job.status = "cancelled" if job.cancelled else "error"
             job.error = None if job.cancelled else str(exc)
+
+    async def _edit_with_wake_lock(
+        self, job: ImageJob, model_path: str, prompt: str, reference_path: str,
+        steps: int | None, guidance: float | None, width: int | None, height: int | None,
+        seed: int | None, strength: float | None, mflux_cli: str,
+    ) -> None:
+        if not Path(reference_path).exists():
+            raise FileNotFoundError(f"Reference image not found: {reference_path}")
+        self._free_memory_for("mflux")
+
+        mflux_bin = _mflux_bin(mflux_cli)
+        if not mflux_bin:
+            raise RuntimeError(
+                f"{mflux_cli} not found on PATH — is the `mflux` package installed?")
+
+        out_path = output_dir_for() / f"{job.id}.png"
+        steps = steps or 28
+        job.total_steps = steps
+        seed = seed if seed is not None else int(time.time())
+
+        cmd = [
+            mflux_bin, "--model", model_path, "--prompt", prompt,
+            "--image", reference_path,
+        ]
+        if strength is not None:
+            cmd.append(str(strength))
+        cmd += [
+            "--steps", str(steps), "--seed", str(seed),
+            "--guidance", str(guidance if guidance is not None else 2.5),
+            "--low-ram", "--vae-tiling",
+            "--output", str(out_path),
+        ]
+        # Caller-supplied dimensions win; otherwise clamp to the pixel budget so a
+        # large source photo can't silently drive the machine into swap.
+        if not (width and height):
+            fitted = _fit_within_budget(reference_path)
+            if fitted:
+                width, height = fitted
+        if width:
+            cmd += ["--width", str(width)]
+        if height:
+            cmd += ["--height", str(height)]
+
+        await self._stream_mflux(job, cmd, out_path, mflux_cli)
+        verify_image(out_path, what="edited image")
+        job.output_path = str(out_path)
+        job.status = "done"
 
     async def _stream_mflux(self, job: ImageJob, cmd: list[str], out_path: Path,
                             cli_name: str) -> None:
@@ -331,22 +343,50 @@ class ImageEngine:
             *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
         )
         self._running[job.id] = proc
+        job.phase = "Loading model"
         tail: list[str] = []
         assert proc.stdout
         try:
+            pending = ""
+            last_step_at = time.monotonic()
             while True:
-                line = await proc.stdout.readline()
-                if not line:
+                if time.monotonic() - last_step_at > 12 * 60:
+                    raise RuntimeError(
+                        "The image model made no progress for 12 minutes. "
+                        "Try a smaller reference image or a lighter model.")
+                try:
+                    chunk = await asyncio.wait_for(proc.stdout.read(4096), timeout=30)
+                except TimeoutError:
+                    continue
+                if not chunk:
                     break
-                text = line.decode(errors="ignore")
-                tail.append(text)
-                tail[:] = tail[-40:]
-                m = re.search(r"(\d+)\s*/\s*(\d+)", text)
+                pending += chunk.decode(errors="ignore")
+                parts = re.split(r"[\r\n]", pending)
+                pending = parts.pop()
+                for text in parts:
+                    tail.append(text)
+                    tail[:] = tail[-40:]
+                    m = re.search(r"(\d+)\s*/\s*(\d+)", text)
+                    if m:
+                        job.step, job.total_steps = int(m.group(1)), int(m.group(2))
+                        job.phase = "Editing" if job.kind == "edit" else "Generating"
+                        last_step_at = time.monotonic()
+            if pending:
+                tail.append(pending)
+                m = re.search(r"(\d+)\s*/\s*(\d+)", pending)
                 if m:
                     job.step, job.total_steps = int(m.group(1)), int(m.group(2))
+                    job.phase = "Editing" if job.kind == "edit" else "Generating"
             code = await proc.wait()
         finally:
             self._running.pop(job.id, None)
+            if proc.returncode is None:
+                proc.terminate()
+                try:
+                    await asyncio.wait_for(proc.wait(), timeout=5)
+                except TimeoutError:
+                    proc.kill()
+                    await proc.wait()
         if job.cancelled:
             raise Cancelled
         if code != 0 or not out_path.exists():

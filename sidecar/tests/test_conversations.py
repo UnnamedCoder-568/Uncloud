@@ -226,3 +226,15 @@ def test_the_key_is_stable_across_restarts(tmp_path, monkeypatch) -> None:
     first = vault_module.Vault().key()
     second = vault_module.Vault().key()
     assert first == second
+
+
+def test_compacted_memory_and_original_history_survive_reopening():
+    saved = _saved('Keep the original source files')
+    original = list(saved.messages)
+    saved.compact_summary = 'Constraint: keep the original source files.'
+    saved.compacted_through = len(saved.messages)
+    convo.save(saved)
+    loaded = convo.load(saved.id)
+    assert loaded.messages == original
+    assert loaded.compact_summary == saved.compact_summary
+    assert loaded.compacted_through == len(original)

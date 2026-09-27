@@ -10,6 +10,21 @@ from pathlib import Path
 
 from .config import settings
 
+# Verified model variants whose runtime's generic pipeline defaults are wrong.
+# Keep variant recommendations here, after reading the actual model identity,
+# rather than in image screens or a single default for every checkpoint.
+_VARIANT_PROFILES = {
+    ("ZImagePipeline", "turbo"): {"steps": 9, "guidance": 0.0},
+}
+
+
+def _pipeline_identity(folder: Path) -> str:
+    try:
+        data = json.loads((folder / "model_index.json").read_text())
+        return data.get("_class_name", "") if isinstance(data, dict) else ""
+    except (OSError, ValueError):
+        return ""
+
 
 def validated(values: dict) -> dict:
     if not isinstance(values, dict):
@@ -124,15 +139,20 @@ def resolve(model) -> tuple[dict, str]:
     values = {"steps": 25, "guidance": 3.5, "width": 1024, "height": 768}
     source = "General starting settings — no model recommendation found"
     runtime = runtime_defaults(model.mflux_cli or "", model.mflux_base or "")
-    try:
-        index = json.loads((Path(model.path) / "model_index.json").read_text())
-        if isinstance(index, dict):
-            runtime = {**runtime, **pipeline_defaults(index.get("_class_name", ""))}
-    except (OSError, ValueError, TypeError):
-        pass
+    own_path = Path(model.path)
+    base_path = Path(model.profile_base) if model.profile_base else None
+    pipeline_path = base_path or own_path
+    pipeline_class = _pipeline_identity(pipeline_path) if pipeline_path.is_dir() else ""
+    if pipeline_class:
+        runtime = {**runtime, **pipeline_defaults(pipeline_class)}
     if runtime:
         values.update(runtime)
         source = "Installed runtime recommendations"
+    for (family, variant), profile in _VARIANT_PROFILES.items():
+        if pipeline_class == family and variant in pipeline_path.name.casefold():
+            values.update(profile)
+            source = f"{variant.title()} model profile"
+            break
     if model.defaults:
         values.update(validated(model.defaults))
         source = "Model recommendations"

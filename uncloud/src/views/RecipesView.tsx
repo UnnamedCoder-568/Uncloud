@@ -1,3 +1,4 @@
+import AutoGrowTextarea from "../components/AutoGrowTextarea";
 /** Recipes: saved procedures, visible and editable.
  *
  *  The reason this screen exists rather than the recipes living quietly in a
@@ -47,7 +48,7 @@ export default function RecipesView() {
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="max-w-3xl mx-auto p-6 flex flex-col gap-4">
+      <div className="page-column flex flex-col gap-6">
         <div className="flex items-start justify-between gap-4">
           <div>
             <h1 className="text-base flex items-center gap-2">
@@ -327,7 +328,7 @@ function Text({ label, value, onChange, placeholder, multiline }: {
         {label}
       </span>
       {multiline
-        ? <textarea value={value} placeholder={placeholder} rows={2}
+        ? <AutoGrowTextarea value={value} placeholder={placeholder} rows={2}
                     onChange={(e) => onChange(e.target.value)}
                     className={`${shared} font-mono`} />
         : <input value={value} placeholder={placeholder}

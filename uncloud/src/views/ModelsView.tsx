@@ -31,14 +31,14 @@ export default function ModelsView() {
 
   return (
     <div className="h-full flex flex-col">
-      <div className="h-12 shrink-0 border-b border-[var(--border-soft)] flex items-center px-4 gap-1">
+      <div className="view-tabs">
         {TABS.map((t) => (
           <button
             key={t.id}
             onClick={() => setTab(t.id)}
             className={`text-xs px-3 py-1.5 rounded-lg transition ${
               tab === t.id
-                ? 'bg-[var(--bg-raised)] text-white'
+                ? 'bg-[var(--bg-raised)] text-[var(--text)]'
                 : 'text-[var(--text-faint)] hover:text-[var(--text-dim)] hover:bg-[var(--bg-raised)]/50'
             }`}
           >

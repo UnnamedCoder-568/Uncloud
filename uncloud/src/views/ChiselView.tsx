@@ -1,3 +1,4 @@
+import AutoGrowTextarea from "../components/AutoGrowTextarea";
 import ActivityOrb from '../components/ActivityOrb';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { CheckCircle2, XCircle, Circle, Send, ShieldAlert, Cpu, Square, MessagesSquare, AudioLines, Copy, NotebookPen, Check } from 'lucide-react';
@@ -452,11 +453,11 @@ export default function ChiselView() {
           </div>
         )}
         <div className="max-w-2xl mx-auto flex items-end gap-2 card px-3 py-2 focus-within:border-[#3a3a42]">
-          <textarea
+          <AutoGrowTextarea
             value={goal}
             onChange={(e) => setGoal(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
+              if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                 e.preventDefault();
                 run();
               }
