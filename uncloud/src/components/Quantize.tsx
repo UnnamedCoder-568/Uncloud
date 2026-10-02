@@ -2,7 +2,7 @@ import ActivityOrb from './ActivityOrb';
 import { useEffect, useState } from 'react';
 import { Gauge, CheckCircle2, XCircle } from 'lucide-react';
 import {
-  getQuantizeBases, startQuantize, listQuantizeJobs,
+  getQuantizeBases, startQuantize, listQuantizeJobs, cancelQuantize,
 } from '../lib/sidecar';
 import type { LocalModel, QuantizeBase, QuantizeJob } from '../lib/sidecar';
 
@@ -28,7 +28,8 @@ import type { LocalModel, QuantizeBase, QuantizeJob } from '../lib/sidecar';
  */
 export function quantisable(models: LocalModel[]): LocalModel[] {
   return models.filter(
-    (m) => m.category === 'image' && !m.mflux_base && m.size_gb > 1,
+    (m) => (m.category === 'image' && !m.mflux_base && m.size_gb > 1)
+      || (m.category === 'text' && ['mlx', 'gguf'].includes(m.engine) && m.ready),
   );
 }
 
@@ -99,20 +100,22 @@ export default function Quantize({ models, onBuilt }: {
   }, [jobs.filter((j) => j.status === 'done').length]);
 
   const model = candidates.find((m) => m.path === source) ?? null;
-  const unsupported = !!model && UNSUPPORTED.test(model.name);
+  const text = model?.category === 'text';
+  const unsupported = !!model && !text && UNSUPPORTED.test(model.name);
 
   useEffect(() => {
     if (!model || !bases.length) return;
     setBase(guessBase(model.name, bases));
-    setName(`${model.name} (${qBits}-bit MLX)`);
+    setName(`${model.name} (${qBits}-bit ${model.engine === 'gguf' ? 'GGUF' : 'MLX'})`);
   }, [source, bases.length, qBits]);
 
   async function build() {
-    if (!model || !base || !name.trim()) return;
+    if (!model || (!text && !base) || !name.trim()) return;
     setError(null);
     try {
       await startQuantize({
         source: model.path, base, name: name.trim(),
+        kind: text ? (model.engine === 'gguf' ? 'gguf' : 'text') : 'image',
         transformer_bits: qBits, encoder_bits: qBits,
       });
       setJobs(await listQuantizeJobs().catch(() => []));
@@ -154,13 +157,13 @@ export default function Quantize({ models, onBuilt }: {
           </select>
         </label>
 
-        <label className="flex flex-col gap-1">
+        {!text && <label className="flex flex-col gap-1">
           <span className="text-[10px] uppercase tracking-wider text-[var(--text-faint)]">Based on</span>
           <select className={`${select} w-52`} value={base} onChange={(e) => setBase(e.target.value)}>
             <option value="">Choose…</option>
             {bases.map((b) => <option key={b.id} value={b.id}>{b.cli}</option>)}
           </select>
-        </label>
+        </label>}
 
         <label className="flex flex-col gap-1">
           <span className="text-[10px] uppercase tracking-wider text-[var(--text-faint)]">Precision</span>
@@ -177,13 +180,15 @@ export default function Quantize({ models, onBuilt }: {
 
         <button
           onClick={build}
-          disabled={!model || !base || !name.trim() || unsupported}
+          disabled={!model || (!text && !base) || !name.trim() || unsupported}
           className="btn-accent text-xs px-4 py-1.5 rounded-lg disabled:opacity-40 disabled:cursor-not-allowed"
         >
           Build
         </button>
       </div>
 
+      {text && <p className="text-xs text-[var(--text-faint)] mt-2">Builds a separate copy. Re-quantizing already compressed weights can reduce quality; use original full-precision weights when available.</p>}
+      {running.map(job => <button key={job.id} className="pill text-xs mt-2" onClick={() => void cancelQuantize(job.id).then(() => listQuantizeJobs().then(setJobs))}>Stop {job.name}</button>)}
       {unsupported && (
         <p className="text-[11px] text-amber-400/90 mt-2 max-w-2xl leading-relaxed">
           mflux has no implementation for this architecture, so it cannot be quantised
@@ -192,7 +197,7 @@ export default function Quantize({ models, onBuilt }: {
           small enough that memory was never the problem.
         </p>
       )}
-      {model && !unsupported && !base && (
+      {model && !text && !unsupported && !base && (
         <p className="text-[11px] text-amber-400/90 mt-2">
           Pick which base model this is built on — the guess failed, and the wrong one
           fails minutes into the build rather than immediately.

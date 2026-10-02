@@ -310,7 +310,7 @@ export default function ChiselView() {
   const orderedTasks = graph ? Object.values(graph.tasks) : [];
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full flex flex-col chisel-workspace">
       <header className="px-6 pt-5 pb-4 border-b border-[var(--border-soft)]">
         <h1 className="text-2xl font-semibold mb-1">Chisel</h1>
         <p className="text-xs text-[var(--text-faint)]">
@@ -318,10 +318,78 @@ export default function ChiselView() {
         </p>
         {!deviceAccess && (
           <div className="flex items-center gap-1.5 text-[11px] text-amber-400/90 mt-2">
-            <ShieldAlert size={12} /> Scoped to the Uncloud workspace folder. Enable full device access in Settings for unrestricted shell/filesystem.
+            <ShieldAlert size={12} /> File tools stay in the Uncloud workspace. Shell and desktop controls are blocked until full device access is enabled; approvals still apply.
           </div>
         )}
 
+
+      </header>
+
+      <div className="flex-1 overflow-y-auto px-6 py-5">
+        {!graph && phase === 'idle' && (
+          <div className="h-full flex items-center justify-center text-[var(--text-faint)] text-sm">
+            Give Chisel a goal. Its plan and progress will appear here.
+          </div>
+        )}
+        {phase === 'planning' && (
+          <div className="flex items-center gap-2 text-sm text-[var(--text-dim)]">
+            <ActivityOrb state="working" size={20} label="Working…" /> Planning task graph…
+          </div>
+        )}
+        {error && (
+          <div className="flex items-center gap-2 text-sm text-rose-400 card p-3 border-rose-900/40">
+            <XCircle size={14} /> {error}
+          </div>
+        )}
+
+        {/* A plan with no steps rendered as an empty page: the model returned
+            nothing usable and the interface said nothing at all. Whatever else
+            is true, the user asked for something and deserves an answer. */}
+        {graph && orderedTasks.length === 0 && phase !== 'planning' && (
+          <div className="max-w-[768px] card p-4 flex flex-col gap-2">
+            <div className="flex items-center gap-2 text-sm text-amber-400">
+              <XCircle size={14} /> No plan came back
+            </div>
+            <p className="text-xs text-[var(--text-dim)] leading-relaxed">
+              The planning model did not produce any steps for this goal. That
+              usually means the goal needs a tool Uncloud does not have, or the
+              model is too small to plan it. Uncloud can search and read the
+              web, read and write files, run shell commands and inspect a
+              browser's console — it cannot drive another application's
+              interface.
+            </p>
+            <p className="text-xs text-[var(--text-faint)]">
+              Try a smaller, more concrete goal, or a larger planning model.
+            </p>
+          </div>
+        )}
+
+        {graph && orderedTasks.length > 0 && (
+          <div className="max-w-[768px] flex flex-col gap-3">
+            {orderedTasks.map((task) => (
+              <div key={task.id} className="card p-4 flex gap-3">
+                <div className="pt-0.5">
+                  {task.status === 'completed' && <CheckCircle2 size={16} className="text-emerald-400" />}
+                  {task.status === 'failed' && <XCircle size={16} className="text-rose-400" />}
+                  {task.status === 'in_progress' && (
+                    <ActivityOrb state={taskOrbState(task.tool_id)} label={`Working on ${task.description}`} />
+                  )}
+                  {task.status === 'pending' && <Circle size={16} className="text-[var(--text-faint)]" />}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm">{task.description}</div>
+                  <div className="text-[10px] font-mono text-[var(--text-faint)] mt-1 uppercase">{task.tool_id}</div>
+                  <TaskOutput task={task} />
+                  {task.error && <div className="text-[11px] text-rose-400 mt-2">{task.error}</div>}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="p-4 border-t border-[var(--border-soft)]">
+        <div className="chisel-model-row">
         {/* Which model does the planning. Previously invisible here, so an
             engine with nothing loaded looked like a broken agent. */}
         <div className="flex items-center gap-2 mt-3 text-[11px]">
@@ -329,9 +397,10 @@ export default function ChiselView() {
           {loaded ? (
             <>
               <span className="text-[var(--text-faint)]">Planning with</span>
-              <span className="font-mono text-[var(--text-dim)] truncate">
-                {loaded.split('/').pop()}
-              </span>
+              <select aria-label="Chisel model" className="input text-xs max-w-xs" value={loaded} disabled={loading || phase !== 'idle'} onChange={(e) => { const m = textModels.find(x => x.path === e.target.value); if (m) loadModel(m); }}>
+                {!textModels.some(m => m.path === loaded) && <option value={loaded}>{loaded.split('/').pop()}</option>}
+                {textModels.map(m => <option key={m.id} value={m.path}>{m.name}</option>)}
+              </select>
             </>
           ) : textModels.length ? (
             <>
@@ -361,77 +430,12 @@ export default function ChiselView() {
             </>
           )}
         </div>
-      </header>
-
-      <div className="flex-1 overflow-y-auto px-6 py-5">
-        {!graph && phase === 'idle' && (
-          <div className="h-full flex items-center justify-center text-[var(--text-faint)] text-sm">
-            No task graph yet. Describe a goal below.
-          </div>
-        )}
-        {phase === 'planning' && (
-          <div className="flex items-center gap-2 text-sm text-[var(--text-dim)]">
-            <ActivityOrb state="working" size={20} label="Working…" /> Planning task graph…
-          </div>
-        )}
-        {error && (
-          <div className="flex items-center gap-2 text-sm text-rose-400 card p-3 border-rose-900/40">
-            <XCircle size={14} /> {error}
-          </div>
-        )}
-
-        {/* A plan with no steps rendered as an empty page: the model returned
-            nothing usable and the interface said nothing at all. Whatever else
-            is true, the user asked for something and deserves an answer. */}
-        {graph && orderedTasks.length === 0 && phase !== 'planning' && (
-          <div className="max-w-2xl card p-4 flex flex-col gap-2">
-            <div className="flex items-center gap-2 text-sm text-amber-400">
-              <XCircle size={14} /> No plan came back
-            </div>
-            <p className="text-xs text-[var(--text-dim)] leading-relaxed">
-              The planning model did not produce any steps for this goal. That
-              usually means the goal needs a tool Uncloud does not have, or the
-              model is too small to plan it. Uncloud can search and read the
-              web, read and write files, run shell commands and inspect a
-              browser's console — it cannot drive another application's
-              interface.
-            </p>
-            <p className="text-xs text-[var(--text-faint)]">
-              Try a smaller, more concrete goal, or a larger planning model.
-            </p>
-          </div>
-        )}
-
-        {graph && orderedTasks.length > 0 && (
-          <div className="max-w-2xl flex flex-col gap-3">
-            {orderedTasks.map((task) => (
-              <div key={task.id} className="card p-4 flex gap-3">
-                <div className="pt-0.5">
-                  {task.status === 'completed' && <CheckCircle2 size={16} className="text-emerald-400" />}
-                  {task.status === 'failed' && <XCircle size={16} className="text-rose-400" />}
-                  {task.status === 'in_progress' && (
-                    <ActivityOrb state={taskOrbState(task.tool_id)} label={`Working on ${task.description}`} />
-                  )}
-                  {task.status === 'pending' && <Circle size={16} className="text-[var(--text-faint)]" />}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm">{task.description}</div>
-                  <div className="text-[10px] font-mono text-[var(--text-faint)] mt-1 uppercase">{task.tool_id}</div>
-                  <TaskOutput task={task} />
-                  {task.error && <div className="text-[11px] text-rose-400 mt-2">{task.error}</div>}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div className="p-4 border-t border-[var(--border-soft)]">
+        </div>
         {/* What came across from Chat. Silent context is untrustworthy
             context: the plan will read differently because of it, so the fact
             that it is there has to be visible, and droppable. */}
         {handedOver > 0 && (
-          <div className="max-w-2xl mx-auto mb-2 flex items-center gap-2 text-[11px] text-[var(--text-faint)]">
+          <div className="max-w-[768px] mx-auto mb-2 flex items-center gap-2 text-[11px] text-[var(--text-faint)]">
             <MessagesSquare size={12} />
             <span>
               Carrying {handedOver} {handedOver === 1 ? 'message' : 'messages'} from Chat as background
@@ -445,14 +449,14 @@ export default function ChiselView() {
           </div>
         )}
         {(talk.active || talk.error) && (
-          <div className="max-w-2xl mx-auto mb-2 flex items-center gap-2 text-[11px] text-[var(--text-faint)] flex-wrap">
+          <div className="max-w-[768px] mx-auto mb-2 flex items-center gap-2 text-[11px] text-[var(--text-faint)] flex-wrap">
             <span>Answers in</span>
             <ReplyVoice value={voice} onChange={setVoice}
                         className="bg-[var(--bg-inset)] text-[11px] px-2 py-1 rounded-lg outline-none" />
             {talk.error && <span className="text-rose-400">{talk.error}</span>}
           </div>
         )}
-        <div className="max-w-2xl mx-auto flex items-end gap-2 card px-3 py-2 focus-within:border-[#3a3a42]">
+        <div className="max-w-[768px] mx-auto flex items-end gap-2 card px-3 py-2 focus-within:border-[#3a3a42]">
           <AutoGrowTextarea
             value={goal}
             onChange={(e) => setGoal(e.target.value)}

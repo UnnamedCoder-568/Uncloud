@@ -18,6 +18,7 @@ import InferenceDiagnostics from '../components/InferenceDiagnostics';
 import { Check } from 'lucide-react';
 
 export default function SettingsView() {
+  const [section, setSection] = useState('General');
   const [version, setVersion] = useState(packageInfo.version);
   useEffect(() => { if (inDesktop()) void getVersion().then(setVersion).catch(() => undefined); }, []);
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -139,9 +140,38 @@ export default function SettingsView() {
 
       <div className="page-column flex flex-col gap-4">
         <h1 className="page-title">Settings</h1>
-        <InferenceDiagnostics />
+        <div className="workflow-tabs settings-tabs" role="tablist" aria-label="Settings category">
+          {['General', 'Models', 'Permissions', 'Connections', 'Developer'].map(label => <button key={label} role="tab" id={`settings-tab-${label}`} aria-controls={`settings-panel-${label}`} aria-selected={section === label} onClick={() => setSection(label)}>{label}</button>)}
+        </div>
+        <div hidden={section !== 'Developer'} role="tabpanel" id="settings-panel-Developer" aria-labelledby="settings-tab-Developer"><InferenceDiagnostics /></div>
+        <div className="settings-group" hidden={section !== 'General'} role="tabpanel" id="settings-panel-General" aria-labelledby="settings-tab-General">
         <AppearanceSection />
         <PrinterSoundSection />
+        <section className="card p-4">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h2 className="text-sm mb-1">Keep this machine awake</h2>
+              <p className="text-[11px] text-[var(--text-faint)] max-w-sm">
+                Prevents this machine from sleeping while Uncloud is open. The display
+                can still turn off. Turn this off to allow normal sleep again.
+              </p>
+              <p className="text-[11px] mt-2 text-[var(--text-dim)]" role="status">
+                {settings.keep_awake_active ? 'Awake protection is active.'
+                  : settings.keep_awake ? 'Unable to activate awake protection on this machine.'
+                  : 'Awake protection is off.'}
+              </p>
+            </div>
+            <button
+              aria-label="Keep this machine awake" role="switch" aria-checked={settings.keep_awake}
+              onClick={toggleKeepAwake}
+              className={`w-11 h-6 rounded-full shrink-0 transition relative ${settings.keep_awake ? 'accent-bar' : 'bg-[var(--border)]'}`}
+            >
+              <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition ${settings.keep_awake ? 'left-5' : 'left-0.5'}`} />
+            </button>
+          </div>
+        </section>
+        </div>
+        <div className="settings-group" hidden={section !== 'Models'} role="tabpanel" id="settings-panel-Models" aria-labelledby="settings-tab-Models">
         <section className="card p-4">
           <h2 className="text-sm mb-1">Models folder</h2>
           <p className="text-[11px] text-[var(--text-faint)] mb-3">
@@ -248,17 +278,21 @@ export default function SettingsView() {
           )}
         </section>
 
+        </div>
+        <div className="settings-group" hidden={section !== 'Permissions'} role="tabpanel" id="settings-panel-Permissions" aria-labelledby="settings-tab-Permissions">
         <section className="card p-4">
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-sm mb-1">Chisel full device access</h2>
               <p className="text-[11px] text-[var(--text-faint)] max-w-sm">
-                Off by default: Chisel's shell and filesystem tools are scoped to
-                <code className="font-mono"> ~/.otto/workspace</code>. Turning this on lets the agent
-                touch your whole Mac when you give it a goal.
+                Off by default: file tools stay inside
+                <code className="font-mono"> ~/.uncloud/workspace</code>, and shell commands,
+                desktop input and app launching are blocked. Turning this on permits
+                device-wide access; action approvals still apply.
               </p>
             </div>
             <button
+              aria-label="Chisel full device access" role="switch" aria-checked={settings.agent_device_access}
               onClick={toggleDeviceAccess}
               className={`w-11 h-6 rounded-full shrink-0 transition relative ${settings.agent_device_access ? 'bg-emerald-500' : 'bg-[var(--border)]'}`}
             >
@@ -267,28 +301,7 @@ export default function SettingsView() {
           </div>
         </section>
 
-        <section className="card p-4">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <h2 className="text-sm mb-1">Keep this machine awake</h2>
-              <p className="text-[11px] text-[var(--text-faint)] max-w-sm">
-                Prevents this machine from sleeping while Uncloud is open. The display
-                can still turn off. Turn this off to allow normal sleep again.
-              </p>
-              <p className="text-[11px] mt-2 text-[var(--text-dim)]" role="status">
-                {settings.keep_awake_active ? 'Awake protection is active.'
-                  : settings.keep_awake ? 'Unable to activate awake protection on this machine.'
-                  : 'Awake protection is off.'}
-              </p>
-            </div>
-            <button
-              onClick={toggleKeepAwake}
-              className={`w-11 h-6 rounded-full shrink-0 transition relative ${settings.keep_awake ? 'accent-bar' : 'bg-[var(--border)]'}`}
-            >
-              <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition ${settings.keep_awake ? 'left-5' : 'left-0.5'}`} />
-            </button>
-          </div>
-        </section>
+
 
         {tools && (
           <section className="card p-4">
@@ -354,7 +367,12 @@ export default function SettingsView() {
           </section>
         )}
 
-        <section className="card p-4">
+
+
+        <PermissionsSection />
+        </div>
+        <div className="settings-group" hidden={section !== 'General'}><UpdatesSection /><LegalSection /></div>
+        <div className="settings-group" hidden={section !== 'Connections'} role="tabpanel" id="settings-panel-Connections" aria-labelledby="settings-tab-Connections">        <section className="card p-4">
           <h2 className="text-sm mb-1">Hugging Face token</h2>
           <p className="text-[11px] text-[var(--text-faint)] mb-3 max-w-sm">
             Needed for gated repos (e.g. Black Forest Labs' FLUX.2 license) and gives faster,
@@ -378,16 +396,7 @@ export default function SettingsView() {
             </button>
           </div>
         </section>
-
-        <PermissionsSection />
-
-        <UpdatesSection />
-
-        <DevicesSection />
-
-        <IntegrationsSection />
-
-        <LegalSection />
+        <DevicesSection /><IntegrationsSection /></div>
 
         <section className="card p-4">
           <h2 className="text-sm mb-1">About</h2>

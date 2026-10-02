@@ -50,6 +50,14 @@ TOOL_RISK: dict[str, Risk] = {
     "shell": Risk.SHELL,
     "app_open": Risk.DEVICE,
     "screen_capture": Risk.DEVICE,
+    "computer_read": Risk.DEVICE,
+    "computer_move": Risk.DEVICE,
+    "computer_click": Risk.DEVICE,
+    "computer_drag": Risk.DEVICE,
+    "computer_type": Risk.DEVICE,
+    "computer_key": Risk.DEVICE,
+    "computer_scroll": Risk.DEVICE,
+
 
     "integrations": Risk.READ,
 
@@ -136,6 +144,8 @@ def _summarise(tool_id: str, args: dict[str, Any]) -> tuple[str, dict]:
                 return str(value)
         return ""
 
+    if tool_id.startswith("computer_"):
+        return f"Control the focused application: {tool_id.removeprefix('computer_')}", dict(args)
     if tool_id == "shell":
         command = first("command")
         return f"Run this command: {command}", {"command": command}
@@ -405,6 +415,8 @@ TOOL_SPECS = [
                   "seed (optional)"],
     },
 ]
+TOOL_SPECS.extend([{'id': 'computer_read', 'name': 'Read desktop geometry', 'description': 'Return current screen dimensions and pointer position.', 'args': []}, {'id': 'computer_move', 'name': 'Move desktop pointer', 'description': 'Move the physical pointer to screenshot pixel coordinates. Capture screen first.', 'args': ['x', 'y']}, {'id': 'computer_click', 'name': 'Click desktop', 'description': 'Click the focused desktop application at screenshot coordinates; verify with screen_capture.', 'args': ['x', 'y', 'button']}, {'id': 'computer_drag', 'name': 'Drag desktop', 'description': 'Drag from the current pointer position to screenshot coordinates.', 'args': ['x', 'y']}, {'id': 'computer_type', 'name': 'Type in application', 'description': 'Type ASCII text into the currently focused app. Never type credentials or secrets.', 'args': ['text']}, {'id': 'computer_key', 'name': 'Press desktop keys', 'description': 'Press a key or shortcut in the focused app, for example ctrl+l or enter.', 'args': ['keys']}, {'id': 'computer_scroll', 'name': 'Scroll application', 'description': 'Scroll the focused app; positive amount scrolls up, negative down.', 'args': ['amount']}])
+
 
 
 def _resolve_image_model(name: str | None):
@@ -486,9 +498,22 @@ async def run_tool(tool_id: str, args: dict[str, Any], *, origin: str = "") -> s
     summary, preview = _summarise(tool_id, args)
     from .approval import decide
 
+    # Approval is consent, not OS isolation. These capabilities can escape any
+    # project directory, so do not expose them through confined workspace mode.
+    if not settings.agent_device_access and (
+        tool_id == "shell" or tool_id.startswith("computer_") or tool_id == "app_open"
+    ):
+        raise PermissionError(
+            "This action requires full device access. Workspace mode cannot "
+            "isolate arbitrary commands or desktop input, so the action was blocked."
+        )
+
     await decide(Request(action=tool_id, category=risk, summary=summary,
                          preview=preview, origin=origin or "agent"))
 
+    if tool_id.startswith("computer_"):
+        from .computer import execute
+        return await asyncio.to_thread(execute, tool_id, args)
     if tool_id == "shell":
         return await _shell(args.get("command", ""))
     if tool_id == "integrations":
@@ -607,6 +632,13 @@ async def _screen_capture() -> str:
 
     out = Path.home() / ".uncloud" / "outputs" / f"screen-{uuid.uuid4().hex[:10]}.png"
     out.parent.mkdir(parents=True, exist_ok=True)
+    import sys
+    if sys.platform != "darwin":
+        def capture():
+            import pyautogui
+            pyautogui.screenshot().save(out)
+        await asyncio.to_thread(capture)
+        return str(out)
     proc = await asyncio.create_subprocess_exec(
         "screencapture", "-x", str(out),
         stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
@@ -682,6 +714,10 @@ def _truthy(value: Any) -> bool:
 async def _shell(command: str) -> str:
     if not command:
         raise ValueError("shell tool requires a 'command' argument")
+    if not settings.agent_device_access:
+        raise PermissionError(
+            "Shell execution is unavailable in workspace mode until an OS sandbox is available."
+        )
     cwd = str(Path.home()) if settings.agent_device_access else str(WORKSPACE_DIR)
     proc = await asyncio.create_subprocess_shell(
         command, cwd=cwd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
@@ -1062,6 +1098,7 @@ def _app_open(target: str, app: str = "") -> str:
 
 
 TOOL_GROUPS: dict[str, dict] = {
+    "computer": {"label": "Computer use", "note": "Control desktop apps with keyboard and pointer. Device approval required; use screenshots to verify actions.", "ids": {'computer_scroll', 'computer_read', 'computer_type', 'computer_drag', 'computer_click', 'computer_move', 'computer_key'}},
     "files": {
         "label": "Files",
         "note": "Read, write, edit, list, glob and grep.",

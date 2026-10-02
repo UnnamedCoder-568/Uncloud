@@ -144,7 +144,9 @@ def test_shell_can_never_be_granted_for_a_session(gate) -> None:
     assert gate.set_mode(Risk.SHELL, Mode.ASK_ONCE) is Mode.ASK
 
 
-def test_saying_yes_to_a_shell_command_does_not_approve_the_next_one(gate) -> None:
+def test_saying_yes_to_a_shell_command_does_not_approve_the_next_one(gate, monkeypatch) -> None:
+    from uncloud_engine.config import settings
+    monkeypatch.setattr(settings, "_data", {"agent_device_access": True})
     asked = []
 
     async def ask(request):
@@ -165,7 +167,9 @@ def test_the_shell_prompt_names_the_actual_command(gate) -> None:
     assert preview["command"] == "rm -rf build"
 
 
-def test_answering_always_to_a_shell_still_leaves_it_asking(gate) -> None:
+def test_answering_always_to_a_shell_still_leaves_it_asking(gate, monkeypatch) -> None:
+    from uncloud_engine.config import settings
+    monkeypatch.setattr(settings, "_data", {"agent_device_access": True})
     answers = iter(["always", "no"])
 
     async def ask(request):
@@ -178,7 +182,9 @@ def test_answering_always_to_a_shell_still_leaves_it_asking(gate) -> None:
         asyncio.run(tools.run_tool("shell", {"command": "echo two"}))
 
 
-def test_shell_may_still_be_refused_outright(gate) -> None:
+def test_shell_may_still_be_refused_outright(gate, monkeypatch) -> None:
+    from uncloud_engine.config import settings
+    monkeypatch.setattr(settings, "_data", {"agent_device_access": True})
     gate.set_mode(Risk.SHELL, Mode.DENY)
     with pytest.raises(Denied):
         asyncio.run(tools.run_tool("shell", {"command": "echo hello"}))
@@ -504,19 +510,30 @@ def test_file_tools_stay_in_the_workspace_until_device_access_is_granted(
     assert tools._resolve_path(str(outside)) == outside.resolve()
 
 
-def test_the_shell_starts_in_the_workspace_when_device_access_is_off(monkeypatch) -> None:
-    """Its working directory, not its reach: `cd ~ && …` still goes home. That
-    is why shell is its own category that asks every time and can never be
-    granted for a session — see ALWAYS_ASK."""
-    import inspect
-
+def test_workspace_shell_cannot_escape_via_command(monkeypatch) -> None:
     from uncloud_engine.config import settings
-
     monkeypatch.setattr(settings, "_data", {"agent_device_access": False})
-    monkeypatch.setattr(settings, "_save", lambda: None)
-    source = inspect.getsource(tools._shell)
-    assert "WORKSPACE_DIR" in source and "agent_device_access" in source
+    async def forbidden(*args, **kwargs):
+        pytest.fail("A confined command must never spawn a process")
+    monkeypatch.setattr(asyncio, "create_subprocess_shell", forbidden)
+    with pytest.raises(PermissionError, match="OS sandbox"):
+        asyncio.run(tools._shell("cd ~ && cat .ssh/id_rsa"))
     assert Risk.SHELL in ALWAYS_ASK
+
+
+@pytest.mark.parametrize("tool_id,args", [
+    ("shell", {"command": "pwd"}),
+    ("computer_key", {"keys": "ctrl+l"}),
+    ("app_open", {"app": "Terminal"}),
+])
+def test_workspace_blocks_unconfined_capabilities_before_approval(monkeypatch, tool_id, args):
+    from uncloud_engine.config import settings
+    monkeypatch.setattr(settings, "_data", {"agent_device_access": False})
+    async def forbidden(*args, **kwargs):
+        pytest.fail("Blocked capabilities must not request approval or execute")
+    monkeypatch.setattr(approval, "decide", forbidden)
+    with pytest.raises(PermissionError, match="full device access"):
+        asyncio.run(tools.run_tool(tool_id, args))
 
 
 def test_network_denial_explains_how_to_enable_access(gate) -> None:

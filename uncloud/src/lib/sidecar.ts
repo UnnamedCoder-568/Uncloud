@@ -1381,7 +1381,7 @@ export interface QuantizeJob {
   id: string;
   name: string;
   dest: string;
-  status: 'running' | 'done' | 'error';
+  status: 'running' | 'done' | 'error' | 'cancelled';
   stage: string;
   error: string | null;
   done: boolean;
@@ -1396,7 +1396,7 @@ export async function listQuantizeJobs() {
   return api<QuantizeJob[]>('/api/quantize');
 }
 export async function startQuantize(body: {
-  source: string; base: string; name: string;
+  source: string; base: string; name: string; kind?: string; adapter_path?: string;
   transformer_bits: number; encoder_bits: number;
   lora_paths?: string[]; lora_scales?: number[];
 }) {
@@ -1862,6 +1862,7 @@ export interface TrainingJob {
 }
 
 export interface AdapterCard {
+  kind?: 'text' | 'image';
   adapter: string; base_model: string; dataset: string; examples: number;
   preset: string; iterations: number;
   train_loss: number | null; val_loss: number | null;
@@ -1991,7 +1992,7 @@ export interface SpeechClip {
   engine: string; voice: string; text: string; duration: number; created: number;
 }
 export interface SpeechJob {
-  id: string; kind: string; status: 'running' | 'done' | 'error'; stage: string;
+  id: string; kind: string; status: 'running' | 'done' | 'error' | 'cancelled'; stage: string;
   done: number; total: number; clip: SpeechClip | null; error: string | null;
   finished: boolean;
 }
@@ -2154,3 +2155,9 @@ export const resumeDownload = (id: string) => apiPost<DownloadState>(`/api/downl
 export const removeLibraryModel = (path: string, deleteFiles: boolean) => apiPost('/api/models/remove', { path, delete_files: deleteFiles });
 
 export const saveImageDefaults = (path: string, values: Record<string, number>) => apiPost('/api/models/image-defaults', { path, values });
+
+export async function cancelQuantize(id: string) { return apiPost(`/api/quantize/${id}/cancel`, {}); }
+
+export async function getImageTrainingTemplate(model = 'z-image-turbo') { return api<{ config: Record<string, unknown>; source: string }>(`/api/training/image/template?model=${encodeURIComponent(model)}`); }
+export async function prepareImageTraining(config: Record<string, unknown>) { return apiPost<{ examples: number; estimated_memory_gb: number; note: string }>('/api/training/image/prepare', { config }); }
+export async function startImageTraining(config: Record<string, unknown>, name: string) { return apiPost<TrainingJob>('/api/training/image/start', { config, name }); }

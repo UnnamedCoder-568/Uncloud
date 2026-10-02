@@ -1,11 +1,5 @@
-Uncloud v0.4.14 fixes chat status handling and exposes image LoRA controls.
+Uncloud 0.4.15 makes local training and creative workflows easier to navigate. Text adapters and image LoRAs have separate training panels; advanced image configuration remains accessible alongside engine-derived training controls. Chisel model selection is beside the goal field, creative options consistently sit on the right, and Settings are grouped by purpose.
 
-- Keep application errors out of model history; preserve partial answers and show status below the reply without duplicate action rows.
-- Surface the backend rejection reason and retain bounded diagnostic details instead of a generic HTTP client traceback.
-- Use one native llama.cpp chat slot and read the effective runtime context at startup.
-- Use native GGUF output defaults rather than automatically limiting replies to a quarter of the context window. Explicit model recommendations and user overrides remain authoritative.
-- Style the chat temperature and reply-budget fields consistently.
-- Add a LoRA file picker and strength control to supported MFlux image generation.
-- Clarify that Recipes are reusable action workflows, separate from model training.
+Adds offline MFlux image LoRA jobs, local MLX text adapter fusion/export, cancellable staged quantization, and desktop computer-use tools. Workspace mode blocks shell commands, desktop input and app launches; full device access and action permissions are required for those tools.
 
-Validation: backend regression suite and frontend tests/build. The first Windows Gemma request failure and live adapter generation require verification on the target machine; this release improves diagnostics without claiming those hardware cases have been reproduced. Expanded desktop computer use and provider-assisted training are follow-up work.
+Validation: 982 backend tests passed, one skipped; 121 frontend tests passed; production build passed. Native text LoRA training and 4-bit fusion/export were exercised. Full diffusion training, physical desktop input and GGUF quantization were not end-to-end validated on all platforms. API-teacher training is not included.

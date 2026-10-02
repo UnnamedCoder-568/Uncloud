@@ -37,6 +37,7 @@ dependencies = [
     "mlx-vlm>=0.4.4 ; platform_machine == 'arm64' and sys_platform == 'darwin'",
     "playwright>=1.62.0",
     "pydantic>=2.13.4",
+    "pyautogui>=0.9.54",
     "python-multipart>=0.0.32",
     "soundfile>=0.14.0",
     "torch>=2.13.0",

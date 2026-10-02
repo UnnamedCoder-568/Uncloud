@@ -253,9 +253,9 @@ export default function SpeechStudio({ engineId }: { engineId: string }) {
   }
 
   return (
-    <div className="h-full flex split">
+    <div className="h-full flex split creative-workspace">
       <SplitTabs split={split} labels={['Voice', 'Script']} />
-      <div className={`w-[320px] shrink-0 border-r border-[var(--border-soft)] overflow-y-auto p-4 flex flex-col gap-5 split-pane${split.on(0)}`}>
+      <div className={`creative-inspector w-[320px] shrink-0 border-r border-[var(--border-soft)] overflow-y-auto p-4 flex flex-col gap-5 split-pane${split.on(0)}`}>
         <p className="text-[11px] text-[var(--text-dim)] leading-relaxed">{engine.summary}</p>
 
         {!engine.installed && (

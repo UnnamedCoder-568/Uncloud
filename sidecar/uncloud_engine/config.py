@@ -61,12 +61,10 @@ class Settings:
         decides whether a write happens at all. Both apply, and neither
         substitutes for the other.
 
-        It was never the sandbox its name suggests. With it off, the `fs_*`
-        tools are confined and `_shell` gets the workspace as its working
-        directory — but the command itself was always unrestricted, so
-        `cd ~ && …` ran. That hole is closed by shell being its own approval
-        category that asks every time and cannot be granted for a session, not
-        by this flag.
+        With it off, file tools are confined and arbitrary shell commands,
+        desktop input and application launching are blocked. A working
+        directory alone cannot isolate these capabilities. Enabling device
+        access permits those paths, but does not bypass per-action consent.
         """
         return bool(self._data.get("agent_device_access", False))
 
