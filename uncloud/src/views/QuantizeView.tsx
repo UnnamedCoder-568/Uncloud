@@ -49,9 +49,8 @@ export default function QuantizeView() {
           <div>
             <h1 className="text-2xl font-semibold leading-tight">Quantize</h1>
             <p className="text-[13px] text-[var(--text-dim)] mt-1 max-w-xl leading-relaxed">
-              Build a smaller copy of an image model once, so it loads in
-              seconds and stays in memory instead of being rebuilt for every
-              prompt.
+              Build a smaller copy of a text or supported image model.
+              Keep the original weights and choose the highest precision that fits your device.
             </p>
           </div>
         </div>
@@ -82,10 +81,8 @@ export default function QuantizeView() {
               <div className="min-w-0">
                 <h2 className="text-sm mb-1.5">Nothing here can be quantised yet</h2>
                 <p className="text-[11.5px] text-[var(--text-faint)] leading-relaxed max-w-xl">
-                  This works on full-precision image models over a gigabyte —
-                  the kind you download as a checkpoint. Anything already built
-                  for mflux is quantised by definition and is left alone, and
-                  text, video and audio models do not go through this at all.
+                  Choose a local MLX text model, a GGUF text file, or a supported
+                  full-precision image checkpoint. Video and audio conversion are not available.
                 </p>
                 <p className="text-[11.5px] text-[var(--text-faint)] leading-relaxed max-w-xl mt-2">
                   Install an image model from <strong>Models</strong> and it

@@ -1,3 +1,4 @@
+import ImageTraining from '../components/ImageTraining';
 import ActivityOrb from '../components/ActivityOrb';
 /** Fine-tuning a language model on your own examples, locally.
  *
@@ -21,7 +22,7 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { AlertTriangle, Ban, Check, FileJson, GraduationCap, Trash2, Copy, SlidersHorizontal } from 'lucide-react';
 
 import { cancelTraining, forgetAdapter, getAdapters, getLibrary,
-         getTrainingJobs, getTrainingPresets, prepareTraining, startTraining,
+         getTrainingJobs, getTrainingPresets, prepareTraining, startTraining, startQuantize,
          type AdapterCard, type LocalModel, type TrainingJob,
          type TrainingPlan, type TrainingPreset, type TrainingOptions } from '../lib/sidecar';
 import OnTheComputer from '../components/OnTheComputer';
@@ -30,6 +31,7 @@ import { useLibraryVersion } from '../lib/library-changed';
 
 export default function TrainingView() {
   const libraryVersion = useLibraryVersion();
+  const [trainingKind, setTrainingKind] = useState<'text' | 'image'>('text');
   const [models, setModels] = useState<LocalModel[]>([]);
   const [presets, setPresets] = useState<TrainingPreset[]>([]);
   const [modelPath, setModelPath] = useState('');
@@ -41,6 +43,8 @@ export default function TrainingView() {
   const [plan, setPlan] = useState<TrainingPlan | null>(null);
   const [planning, setPlanning] = useState(false);
   const [jobs, setJobs] = useState<TrainingJob[]>([]);
+  const [exportBits, setExportBits] = useState(4);
+  const [exportNotice, setExportNotice] = useState('');
   const [adapters, setAdapters] = useState<AdapterCard[]>([]);
   const [error, setError] = useState<string | null>(null);
 
@@ -129,7 +133,7 @@ export default function TrainingView() {
       <div className="page-column flex flex-col gap-6">
         <div>
           <h1 className="page-title flex items-center gap-2">
-            <GraduationCap size={18} /> Training
+            <GraduationCap size={18} /> Make it your own.
           </h1>
           <p className="text-sm text-[var(--text-dim)] mt-2 leading-relaxed">
             Teach a model using your own examples. Training runs locally and creates
@@ -137,6 +141,11 @@ export default function TrainingView() {
           </p>
         </div>
 
+        <div className="workflow-tabs" role="tablist" aria-label="Training type">
+          <button role="tab" id="text-training-tab" aria-controls="text-training-panel" aria-selected={trainingKind === 'text'} onClick={() => setTrainingKind('text')}>Text adapter</button>
+          <button role="tab" id="image-training-tab" aria-controls="image-training-panel" aria-selected={trainingKind === 'image'} onClick={() => setTrainingKind('image')}>Image LoRA</button>
+        </div>
+        <div id="text-training-panel" role="tabpanel" aria-labelledby="text-training-tab" hidden={trainingKind !== 'text'} className="training-flow">
         {/* ------------------------------------------------------ set it up */}
         <section className="card p-6 flex flex-col gap-6">
           <div className="training-section-title"><span>01</span><h2>Base model &amp; adapter</h2></div>
@@ -246,6 +255,9 @@ export default function TrainingView() {
           <button onClick={start} disabled={!ready} className="btn-accent px-5 py-2.5 rounded-lg shrink-0">Start training</button>
         </div>
 
+        </div>
+        <div id="image-training-panel" role="tabpanel" aria-labelledby="image-training-tab" hidden={trainingKind !== 'image'}><ImageTraining onChange={refresh} /></div>
+
         {/* --------------------------------------------------------- runs */}
         {jobs.length > 0 && (
           <section className="card p-4">
@@ -256,10 +268,17 @@ export default function TrainingView() {
           </section>
         )}
 
+
         {/* ----------------------------------------------------- adapters */}
         {adapters.length > 0 && (
           <section className="card p-4">
             <h2 className="text-sm mb-1">Adapters</h2>
+            <label className="text-xs flex items-center gap-2 mb-3">Text export precision
+              <select className="input w-28" value={exportBits} onChange={e => setExportBits(Number(e.target.value))}>
+                {[3, 4, 5, 6, 8].map(bits => <option key={bits} value={bits}>{bits}-bit</option>)}
+              </select>
+            </label>
+            {exportNotice && <p role="status" className="text-xs mb-3">{exportNotice}</p>}
             <p className="text-[11px] text-[var(--text-faint)] mb-3">
               Each one only works with the model it was trained against.
             </p>
@@ -275,6 +294,13 @@ export default function TrainingView() {
                       {adapter.val_loss != null && ` · val loss ${adapter.val_loss}`}
                     </div>
                   </div>
+                  {adapter.kind !== 'image' && <button className="pill text-xs" disabled={!adapter.ready} onClick={async () => {
+                    try {
+                      await startQuantize({ source: adapter.base_model, base: '', kind: 'text',
+                        adapter_path: adapter.path, name: `${adapter.adapter}-${exportBits}bit`, transformer_bits: exportBits, encoder_bits: exportBits });
+                      setExportNotice('Export started. Open Models → Quantize to follow progress or stop it.');
+                    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+                  }}>Merge and export</button>}
                   <button onClick={() => forgetAdapter(adapter.adapter).then(refresh)}
                           className="shrink-0 text-[var(--text-faint)]
                                      hover:text-rose-400 transition">

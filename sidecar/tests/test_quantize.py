@@ -90,7 +90,7 @@ def test_a_uniform_build_at_every_supported_precision_is_accepted(
         manager, model, tmp_path, quiet) -> None:
     for bits in quantize.BITS:
         job = start(manager, model, tmp_path,
-                    transformer_bits=bits, encoder_bits=bits)
+                    name=f"Test {bits}-bit", transformer_bits=bits, encoder_bits=bits)
         assert job.status == "running"
 
 
@@ -228,3 +228,35 @@ def test_a_missing_mflux_is_a_sentence_not_a_traceback(monkeypatch, tmp_path) ->
     with pytest.raises(RuntimeError) as raised:
         quantize._mflux_save_bin()
     assert "mflux" in str(raised.value)
+
+
+def test_existing_output_is_preserved(manager, model, tmp_path, quiet):
+    dest = tmp_path / 'out' / 'Test 6-bit'
+    dest.mkdir(parents=True)
+    sentinel = dest / 'keep.txt'
+    sentinel.write_text('original')
+    with pytest.raises(ValueError, match='already exists'):
+        start(manager, model, tmp_path)
+    assert sentinel.read_text() == 'original'
+
+@pytest.mark.parametrize('name', ['../outside', '.', '..', 'a/b', 'a\\b'])
+def test_output_name_cannot_escape_destination(manager, model, tmp_path, quiet, name):
+    with pytest.raises(ValueError, match='single folder'):
+        start(manager, model, tmp_path, name=name)
+
+
+def test_cancel_cleans_staging_and_preserves_source(manager, model, tmp_path, monkeypatch):
+    async def blocked(*args):
+        await asyncio.Event().wait()
+    monkeypatch.setattr(manager, '_mflux_save', blocked)
+    async def run():
+        job = manager.start(source=str(model), base='dev', dest_dir=str(tmp_path / 'out'),
+            name='cancelled', transformer_bits=4, encoder_bits=4)
+        await asyncio.sleep(0)
+        assert manager.cancel(job.id)
+        await asyncio.gather(manager._by_id[job.id], return_exceptions=True)
+        assert job.status == 'cancelled'
+        assert not __import__('pathlib').Path(job.dest).exists()
+        assert not list((tmp_path / 'out').glob('*.building'))
+        assert (model / 'model.safetensors').exists()
+    asyncio.run(run())

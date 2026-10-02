@@ -22,6 +22,8 @@ SPECS = {
     'kokoro': ('Kokoro speech', ['kokoro', 'soundfile'], False, None),
     'bark': ('Bark speech', ['transformers', 'torch', 'soundfile'], False, None),
     'quantize': ('Image quantization', ['mflux', 'mlx.core'], True, None),
+    'computer': ('Computer use', ['pyautogui'], False, None),
+    'image_train': ('Image LoRA training', ['mflux.models.common.cli.train'], True, None),
     'train': ('Language model training', ['mlx_lm.lora'], True, None),
     'mlx': ('MLX chat and vision', ['mlx_lm', 'mlx_vlm'], True, None),
     'music': ('ACE-Step music', ['acestep.handler'], False, '.venv-acestep'),

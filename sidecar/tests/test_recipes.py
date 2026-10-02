@@ -261,6 +261,10 @@ def test_a_recipe_containing_a_shell_step_prompts_as_a_shell_step(monkeypatch,
                                                                    tmp_path) -> None:
     """The case that would matter most if this were wrong."""
     from uncloud_engine.agent import approval
+    from uncloud_engine.config import settings
+    # Full device mode still requires per-command consent. Workspace mode
+    # refuses shell before execution because a cwd is not an OS sandbox.
+    monkeypatch.setattr(settings, "_data", {"agent_device_access": True})
 
     made = workflows.create(
         name="Tidy", parameters={},
