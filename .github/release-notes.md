@@ -1,12 +1,11 @@
-Uncloud v0.4.13 improves local chat, conversation continuity and everyday controls.
+Uncloud v0.4.14 fixes chat status handling and exposes image LoRA controls.
 
-- Faster warm chat dispatch: reuse the loaded model/profile and connection, and deliver streamed tokens without the old polling delay.
-- Model-specific sampling from metadata, with visible per-model temperature and reply-budget overrides. Report output-limit truncation instead of silently ending a reply.
-- Native-tokenizer context counter, Compact at 75%, and inspectable compacted memory while preserving the original transcript.
-- Cleaner expanding composer with the model selector beside the message field; consistent spacing and quieter focus states.
-- Expanded local training controls and a chat adapter selector.
-- Recognize Z-Image Turbo donor profiles for appropriate starting steps and guidance.
-- App-session Keep Awake protection and clearer image-edit progress/stall handling.
-- Optional developer diagnostics and a direct-model baseline mode.
+- Keep application errors out of model history; preserve partial answers and show status below the reply without duplicate action rows.
+- Surface the backend rejection reason and retain bounded diagnostic details instead of a generic HTTP client traceback.
+- Use one native llama.cpp chat slot and read the effective runtime context at startup.
+- Use native GGUF output defaults rather than automatically limiting replies to a quarter of the context window. Explicit model recommendations and user overrides remain authoritative.
+- Style the chat temperature and reply-budget fields consistently.
+- Add a LoRA file picker and strength control to supported MFlux image generation.
+- Clarify that Recipes are reusable action workflows, separate from model training.
 
-Validation includes backend/frontend regression tests and same-model MLX reasoning/context comparisons. See uncloud/docs/INFERENCE_AUDIT.md for measured results and limits. Cross-family and Windows/Linux runtime performance are not claimed by these Mac measurements.
+Validation: backend regression suite and frontend tests/build. The first Windows Gemma request failure and live adapter generation require verification on the target machine; this release improves diagnostics without claiming those hardware cases have been reproduced. Expanded desktop computer use and provider-assisted training are follow-up work.

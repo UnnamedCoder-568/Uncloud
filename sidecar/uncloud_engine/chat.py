@@ -21,7 +21,7 @@ def model_payload(active, messages: list[dict], *, overrides: dict | None = None
         payload["max_tokens"] = max_tokens
     elif metadata.get("max_output_tokens"):
         payload["max_tokens"] = metadata["max_output_tokens"]
-    elif getattr(active, "context_limit", 0):
+    elif active.engine != "gguf" and getattr(active, "context_limit", 0):
         # Reserve a quarter of this runtime's usable window for output when
         # the model gives no recommendation. Avoid MLX's silent 512-token cap,
         # which can consume the whole answer in reasoning. User budgets win.

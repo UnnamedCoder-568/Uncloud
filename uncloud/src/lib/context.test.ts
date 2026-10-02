@@ -20,6 +20,19 @@ describe('conversation context', () => {
   it('raw baseline bypasses the system prompt and memory', () => {
     expect(contextMessages(turns, 'Assistant', 'Memory', 2, true)).toBe(turns);
   });
+  it('keeps application errors and failed user turns out of native prompts', () => {
+    const failed: ChatMessage[] = [
+      { role: 'user', content: 'Hi' },
+      { role: 'assistant', content: '', error: 'HTTP 400' },
+      { role: 'user', content: 'Try again' },
+    ];
+    expect(contextMessages(failed, 'Assistant').slice(1)).toEqual([failed[2]]);
+    expect(failed).toHaveLength(3);
+  });
+  it('retains partial model replies but never injects status text', () => {
+    const partial: ChatMessage = { role: 'assistant', content: 'Hello', error: 'Reply limit' };
+    expect(contextMessages([partial], 'Assistant')[1].content).toBe('Hello');
+  });
   it('offers compact at 75 percent of the actual limit', () => {
     expect(compactAvailable(6143, 8192)).toBe(false);
     expect(compactAvailable(6144, 8192)).toBe(true);

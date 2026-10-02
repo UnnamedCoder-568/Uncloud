@@ -1,3 +1,4 @@
+import { open } from '@tauri-apps/plugin-dialog';
 import AutoGrowTextarea from "../components/AutoGrowTextarea";
 import { useDismiss } from '../lib/useDismiss';
 import ActivityOrb from '../components/ActivityOrb';
@@ -50,6 +51,8 @@ export default function ImageGenerate({ onEdit }: { onEdit?: () => void }) {
   // of the width, so there it starts closed and opens over the canvas instead.
   const [optionsOpen, setOptionsOpen] = useState(() => !isNarrow());
   const [defaultsError, setDefaultsError] = useState('');
+  const [loraPath, setLoraPath] = useState('');
+  const [loraScale, setLoraScale] = useState(1);
   const [prompt, setPrompt] = useState('');
   const [negativePrompt, setNegativePrompt] = useState('');
   const [steps, setSteps] = useState(8);
@@ -182,6 +185,7 @@ export default function ImageGenerate({ onEdit }: { onEdit?: () => void }) {
 
   function selectModel(m: LocalModel) {
     setModel(m);
+    setLoraPath('');
     setPickerOpen(false);
     const d = defaultsFor(m);
     setSteps(d.steps);
@@ -240,8 +244,8 @@ export default function ImageGenerate({ onEdit }: { onEdit?: () => void }) {
       // unset and the engine falls back to the catalog's own entry point.
       mflux_cli: model.mflux_cli ?? undefined,
       mflux_base: model.mflux_base ?? undefined,
-      lora_paths: model.lora_paths?.length ? model.lora_paths : undefined,
-      lora_scales: model.lora_scales?.length ? model.lora_scales : undefined,
+      lora_paths: loraPath ? [...(model.lora_paths ?? []), loraPath] : model.lora_paths,
+      lora_scales: loraPath ? [...(model.lora_paths ?? []).map((_, i) => model.lora_scales?.[i] ?? 1), loraScale] : model.lora_scales,
     });
     begin(newJob);
   }
@@ -557,6 +561,22 @@ export default function ImageGenerate({ onEdit }: { onEdit?: () => void }) {
               Done
             </button>
           </div>
+
+          {model?.engine === 'mflux' && <div className="flex flex-col gap-2">
+            <span className="text-xs text-[var(--text-dim)]">LoRA adapter</span>
+            <button className="input text-left text-xs" disabled={running} onClick={async () => {
+              const selected = await open({ multiple: false, filters: [{ name: 'LoRA weights', extensions: ['safetensors'] }] });
+              if (typeof selected === 'string') setLoraPath(selected);
+            }}>{loraPath ? loraPath.split(/[\\/]/).pop() : 'Choose a LoRA file…'}</button>
+            <span className="text-[10px] text-[var(--text-faint)]">Choose an adapter trained for this image model. Text adapters use Models → Train.</span>
+            {loraPath && <>
+              <label className="text-xs flex flex-col gap-1">Adapter strength
+                <input className="input" type="number" min="0" max="2" step="0.1" value={loraScale}
+                  disabled={running} onChange={e => setLoraScale(Number(e.target.value))} />
+              </label>
+              <button className="pill text-xs" disabled={running} onClick={() => setLoraPath('')}>Remove adapter</button>
+            </>}
+          </div>}
 
           <div className="flex flex-col gap-1.5">
             <span className="text-xs text-[var(--text-dim)]">Images</span>
