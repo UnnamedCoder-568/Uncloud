@@ -27,14 +27,26 @@ def test_native_template_counts_tokens_not_encoding_fields(monkeypatch, encoded)
 
 def test_gguf_native_counter_accepts_zero_without_falling_back(monkeypatch):
     import asyncio
-    import httpx
     from types import SimpleNamespace
+
+    import httpx
+
     requests = []
+
     def handler(request):
         requests.append(request.url.path)
         return httpx.Response(200, json={"input_tokens": 0})
+
     factory = httpx.AsyncClient
-    monkeypatch.setattr(context_count.httpx, 'AsyncClient', lambda **kwargs:
-        factory(transport=httpx.MockTransport(handler), **kwargs))
-    assert asyncio.run(context_count.count(SimpleNamespace(engine='gguf', base_url='http://model'), [])) == 0
-    assert requests == ['/v1/chat/completions/input_tokens']
+    monkeypatch.setattr(
+        context_count.httpx,
+        "AsyncClient",
+        lambda **kwargs: factory(transport=httpx.MockTransport(handler), **kwargs),
+    )
+    assert (
+        asyncio.run(
+            context_count.count(SimpleNamespace(engine="gguf", base_url="http://model"), [])
+        )
+        == 0
+    )
+    assert requests == ["/v1/chat/completions/input_tokens"]

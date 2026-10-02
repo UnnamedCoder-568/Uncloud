@@ -52,13 +52,17 @@ class EngineManager:
         self.active: ActiveEngine | None = None
         self._lock = asyncio.Lock()
 
-    async def start(self, model_path: str, engine: str,
-                    adapter_path: str | None = None) -> ActiveEngine:
+    async def start(
+        self, model_path: str, engine: str, adapter_path: str | None = None
+    ) -> ActiveEngine:
         async with self._lock:
-            if (self.active and self.active.model_path == model_path
-                    and self.active.engine == engine
-                    and self.active.adapter_path == adapter_path
-                    and self.active.process.poll() is None):
+            if (
+                self.active
+                and self.active.model_path == model_path
+                and self.active.engine == engine
+                and self.active.adapter_path == adapter_path
+                and self.active.process.poll() is None
+            ):
                 return self.active
             if self.active:
                 self._stop_process(self.active)
@@ -76,10 +80,16 @@ class EngineManager:
             else:
                 raise ValueError(f"No text-inference launcher for engine: {engine}")
 
-            active = ActiveEngine(model_path=model_path, engine=engine, port=port,
-                                  process=proc, adapter_path=adapter_path,
-                                  context_limit=profile["effective_limit"],
-                                  model_profile=model_profile, inference_profile=inference_profile)
+            active = ActiveEngine(
+                model_path=model_path,
+                engine=engine,
+                port=port,
+                process=proc,
+                adapter_path=adapter_path,
+                context_limit=profile["effective_limit"],
+                model_profile=model_profile,
+                inference_profile=inference_profile,
+            )
             threading.Thread(target=self._drain_logs, args=(active,), daemon=True).start()
             try:
                 await self._wait_healthy(active)
@@ -90,7 +100,9 @@ class EngineManager:
                         async with httpx.AsyncClient(timeout=5) as client:
                             response = await client.get(f"{active.base_url}/props")
                             response.raise_for_status()
-                            effective = response.json().get("default_generation_settings", {}).get("n_ctx")
+                            effective = (
+                                response.json().get("default_generation_settings", {}).get("n_ctx")
+                            )
                             if isinstance(effective, int) and effective > 0:
                                 active.context_limit = min(active.context_limit, effective)
                     except (httpx.HTTPError, ValueError, AttributeError):
@@ -101,12 +113,24 @@ class EngineManager:
             self.active = active
             return active
 
-    def _spawn_llama_cpp(self, model_path: str, port: int,
-                         context_limit: int) -> subprocess.Popen:
+    def _spawn_llama_cpp(self, model_path: str, port: int, context_limit: int) -> subprocess.Popen:
         native = LLAMA_SERVER_BIN or server_path()
         if native:
-            command = [native, "-m", model_path, "--port", str(port),
-                       "--host", "127.0.0.1", "-ngl", "999", "-c", str(context_limit), "--parallel", "1"]
+            command = [
+                native,
+                "-m",
+                model_path,
+                "--port",
+                str(port),
+                "--host",
+                "127.0.0.1",
+                "-ngl",
+                "999",
+                "-c",
+                str(context_limit),
+                "--parallel",
+                "1",
+            ]
         else:
             try:
                 import llama_cpp  # noqa: F401
@@ -115,23 +139,48 @@ class EngineManager:
                     "The local text runtime is missing. Open Settings and repair the "
                     "Uncloud engine."
                 ) from exc
-            command = [sys.executable, "-m", "llama_cpp.server", "--model", model_path,
-                       "--port", str(port), "--host", "127.0.0.1",
-                       "--n_gpu_layers", "999", "--n_ctx", str(context_limit)]
+            command = [
+                sys.executable,
+                "-m",
+                "llama_cpp.server",
+                "--model",
+                model_path,
+                "--port",
+                str(port),
+                "--host",
+                "127.0.0.1",
+                "--n_gpu_layers",
+                "999",
+                "--n_ctx",
+                str(context_limit),
+            ]
         return subprocess.Popen(
             command,
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
         )
 
-    def _spawn_mlx(self, model_path: str, port: int,
-                   adapter_path: str | None = None) -> subprocess.Popen:
-        command = [sys.executable, "-m", "mlx_lm", "server", "--model", model_path,
-                   "--port", str(port), "--host", "127.0.0.1"]
+    def _spawn_mlx(
+        self, model_path: str, port: int, adapter_path: str | None = None
+    ) -> subprocess.Popen:
+        command = [
+            sys.executable,
+            "-m",
+            "mlx_lm",
+            "server",
+            "--model",
+            model_path,
+            "--port",
+            str(port),
+            "--host",
+            "127.0.0.1",
+        ]
         if adapter_path:
             command += ["--adapter-path", adapter_path]
         return subprocess.Popen(
             command,
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
         )
 
     def _spawn_mlx_vlm(self, model_path: str, port: int) -> subprocess.Popen:
@@ -139,9 +188,19 @@ class EngineManager:
         which mlx_lm's server can't drive — mlx_vlm serves the same OpenAI-shaped
         API but accepts image content parts in messages."""
         return subprocess.Popen(
-            [sys.executable, "-m", "mlx_vlm.server", "--model", model_path,
-             "--port", str(port), "--host", "127.0.0.1"],
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            [
+                sys.executable,
+                "-m",
+                "mlx_vlm.server",
+                "--model",
+                model_path,
+                "--port",
+                str(port),
+                "--host",
+                "127.0.0.1",
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
         )
 
     @property
@@ -188,8 +247,10 @@ class EngineManager:
         if not self.active or self.active.process.poll() is not None:
             return {"running": False}
         return {
-            "running": True, "model_path": self.active.model_path,
-            "engine": self.active.engine, "port": self.active.port,
+            "running": True,
+            "model_path": self.active.model_path,
+            "engine": self.active.engine,
+            "port": self.active.port,
             "adapter_path": self.active.adapter_path,
             "context_limit": self.active.context_limit,
             "context_profile": for_model(self.active.model_path, self.active.engine),
