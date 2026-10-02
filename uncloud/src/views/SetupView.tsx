@@ -68,7 +68,7 @@ export default function SetupView({ onReady }: { onReady: () => void }) {
     { label: 'uv (package manager)', ok: status.uv_found,
       detail: status.uv_found ? 'Found' : 'Not installed' },
     { label: 'Dependencies', ok: status.deps_ready,
-      detail: status.deps_ready ? 'Installed' : 'Several GB, downloaded once' },
+      detail: status.deps_ready ? 'Installed' : 'AI runtimes; size depends on this device and installed features' },
   ] : [];
 
   return (
@@ -82,9 +82,10 @@ export default function SetupView({ onReady }: { onReady: () => void }) {
         <h1 className="mt-8 text-xl font-semibold">Set up the engine</h1>
         <p className="mt-2 text-sm text-[var(--text-dim)] leading-relaxed">
           Uncloud ships as a small app. The engine that runs the models is
-          installed here on first launch, so the download stays a few megabytes
-          instead of a few gigabytes. This happens once and needs an internet
-          connection; Python and the package manager are already included.
+          installed here on first launch. The small app installer does not include
+          these additional downloads. Setup needs an internet connection and
+          installs Python when needed, plus the runtimes for text, images,
+          transcription and speech. Model files are downloaded separately.
         </p>
 
         <div className="mt-6 card p-4 flex flex-col gap-3">
@@ -97,7 +98,7 @@ export default function SetupView({ onReady }: { onReady: () => void }) {
               </div>
               <div className="min-w-0">
                 <div className="text-xs font-medium">{c.label}</div>
-                <div className="text-[11px] text-[var(--text-faint)] truncate">{c.detail}</div>
+                <div className="text-[11px] text-[var(--text-faint)] break-words">{c.detail}</div>
               </div>
             </div>
           ))}
@@ -145,8 +146,11 @@ export default function SetupView({ onReady }: { onReady: () => void }) {
         )}
 
         <p className="mt-6 text-[11px] text-[var(--text-faint)] leading-relaxed">
-          Music and narration need extra environments and are installed
-          separately, the first time you open those tabs.
+          Packages arrive compressed and are expanded during installation.
+          Download size and installed space differ; cached packages can reduce
+          repeat downloads. macOS setup also installs two separate narration
+          environments. Music and other optional runtimes may need additional
+          downloads through their setup controls.
         </p>
       </div>
     </div>
