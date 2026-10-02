@@ -198,7 +198,9 @@ export default function App() {
   }
 
   return (
-    <CapabilityGate setup names={initialSetup ? "" : "tools"}>
+    <CapabilityGate setup
+      names={initialSetup ? "chat,image,video,transcribe,kokoro,quantize,computer,image_train,train,mlx,browser,tools" : "tools"}
+      optionalNames={initialSetup ? "music,realtime,quality,chatterbox" : ""}>
     <div className="h-screen w-screen flex bg-[var(--bg)]">
       {showRail && narrow && (
         <div className="rail-scrim" onClick={() => setDrawerOpen(false)} />

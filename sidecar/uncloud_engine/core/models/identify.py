@@ -704,10 +704,10 @@ def _bundle(identification: Identification, folder: Path) -> bool:
         identification.saw("files", f"Chatterbox weights: {found}" if found else
                            "t3, s3gen and ve weights together: the Chatterbox set")
         return True
-    if speech is not None and speech.engine == "kokoro":
+    if speech is not None and speech.engine in ("kokoro", "kokoro-mlx"):
         # A .pth and a voices folder: nothing a name-free reader could mistake.
         identification.layout = Layout.BUNDLE
-        identification.task, identification.family = Task.TEXT_TO_SPEECH, "kokoro"
+        identification.task, identification.family = Task.TEXT_TO_SPEECH, speech.engine
         identification.confidence = Confidence.INFERRED
         identification.saw("files", "kokoro weights with a voices folder")
         return True

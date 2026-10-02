@@ -1,22 +1,30 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { apiPost, getReadiness, installCapability, type CapabilityReady } from '../lib/sidecar';
 import { useWhenVisible } from './Panes';
 import ActivityOrb from './ActivityOrb';
 import StartupScreen from './StartupScreen';
 import { libraryChanged } from '../lib/library-changed';
 
-export default function CapabilityGate({ names = '', children, setup = false }: {
-  names?: string; children: ReactNode; setup?: boolean;
+export default function CapabilityGate({ names = '', children, setup = false, optionalNames = '' }: {
+  names?: string; children: ReactNode; setup?: boolean; optionalNames?: string;
 }) {
+  const [includeOptional, setIncludeOptional] = useState(false);
+  const selectedNames = includeOptional && optionalNames ? `${names},${optionalNames}` : names;
   const [rows, setRows] = useState<CapabilityReady[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [setupDone, setSetupDone] = useState(false);
   const [error, setError] = useState('');
   const [log, setLog] = useState<string[]>([]);
+  const checkSequence = useRef(0);
   const refresh = useCallback(async () => {
-    try { setRows(await getReadiness(names)); setError(''); }
-    catch (e) { setError(String(e)); }
-  }, [names]);
+    const sequence = ++checkSequence.current;
+    try {
+      const checked = await getReadiness(selectedNames);
+      if (sequence === checkSequence.current) { setRows(checked); setError(''); }
+    } catch (e) {
+      if (sequence === checkSequence.current) setError(String(e));
+    }
+  }, [selectedNames]);
   useEffect(() => { setRows(null); void refresh(); }, [refresh]);
   useWhenVisible(() => { void refresh(); });
   const missing = rows?.filter((row) => row.supported && !row.ready) ?? [];
@@ -44,6 +52,12 @@ export default function CapabilityGate({ names = '', children, setup = false }: 
       <strong className="text-sm">{row.label}</strong><p className="text-xs text-[var(--text-dim)]">{row.detail}</p>
     </div>)}
     {error && <p role="alert" className="text-sm text-rose-400 whitespace-pre-wrap">{error}</p>}
+    {setup && optionalNames && <label className="flex items-center gap-2 text-sm text-[var(--text-dim)]">
+      <input type="checkbox" checked={includeOptional} disabled={busy}
+        onChange={(e) => setIncludeOptional(e.target.checked)} />
+      Install advanced narration, music and voice cloning now
+    </label>}
+    {setup && optionalNames && <p className="text-xs text-[var(--text-faint)]">Optional engines remain available through their tabs. Their separate runtimes need additional downloads and disk space.</p>}
     {!!missing.length && <button disabled={busy} onClick={repair} className="btn-accent rounded-lg px-5 py-2 disabled:opacity-40">{busy ? 'Installing…' : 'Install / Repair required software'}</button>}
     {setup && rows && !busy && <button className="btn-accent rounded-lg px-5 py-2" onClick={async () => {
       try { await apiPost('/api/readiness/complete'); setSetupDone(true); }

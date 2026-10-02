@@ -74,6 +74,14 @@ ENGINES: dict[str, Engine] = {
         modules=("kokoro", "soundfile", "en_core_web_sm"),
         controls=(Control("speed", "Speed", 0.5, 2.0, 1.0, 0.05),),
     ),
+    "kokoro-mlx": Engine(
+        id="kokoro-mlx", label="Kokoro · Apple Silicon",
+        summary="Apple GPU synthesis with native MLX weights. Faster warm speech; "
+                "the first generation prepares GPU kernels.",
+        requirements=("mlx-audio==0.5.7", "misaki[en]", "soundfile"),
+        modules=("mlx_audio", "misaki.en", "soundfile"),
+        controls=(Control("speed", "Speed", 0.5, 2.0, 1.0, 0.05),),
+    ),
     "chatterbox": Engine(
         id="chatterbox", label="Chatterbox",
         summary="Expressive, and speaks in any voice from a short recording. "
@@ -146,6 +154,7 @@ class Recognised:
 
     def to_dict(self) -> dict:
         names = {"chatterbox": CHATTERBOX_LANGUAGES, "kokoro": KOKORO_LANGUAGES,
+                 "kokoro-mlx": KOKORO_LANGUAGES,
                  "bark": _BARK_LANGUAGES}.get(self.engine, {})
         return {"engine": self.engine, "converts": self.converts,
                 "variants": [{"id": v.id, "label": v.label,
@@ -205,6 +214,11 @@ def recognise(folder: Path) -> Recognised | None:
         return Recognised("chatterbox", variants, converts=converts)
     if "BarkModel" in _architectures(folder):
         return Recognised("bark", (Variant("bark", "Bark", tuple(_BARK_LANGUAGES)),))
+    if ((folder / "config.json").is_file()
+            and any(folder.glob("kokoro*.safetensors"))
+            and any((folder / "voices").glob("*.safetensors"))):
+        return Recognised("kokoro-mlx", (Variant("kokoro-mlx", "Kokoro MLX",
+                                                tuple(KOKORO_LANGUAGES)),))
     if (folder / "voices").is_dir() and any(folder.glob("kokoro*.pth")):
         return Recognised("kokoro", (Variant("kokoro", "Kokoro",
                                              tuple(KOKORO_LANGUAGES)),))
@@ -215,9 +229,10 @@ def presets(engine: str, folder: Path) -> list[Preset]:
     """The voices that ship with the weights. Read from the folder, so the list
     is what is actually on disk rather than what a model card once promised."""
     folder = Path(folder)
-    if engine == "kokoro":
+    if engine in ("kokoro", "kokoro-mlx"):
         out = []
-        for f in sorted((folder / "voices").glob("*.pt")):
+        for f in sorted((folder / "voices").glob(
+                "*.safetensors" if engine == "kokoro-mlx" else "*.pt")):
             lang, gender = f.stem[:1], f.stem[1:2]
             if lang not in KOKORO_LANGUAGES or "_" not in f.stem:
                 continue

@@ -189,6 +189,10 @@ def _model(engine: str, folder: Path, variant: str, device: str) -> dict:
     gc.collect()
     if engine == "kokoro":
         state = _load_kokoro(folder, device)
+    elif engine == "kokoro-mlx":
+        from mlx_audio.tts.utils import load_model
+
+        state = {"model": load_model(folder, model_type="kokoro"), "rate": 24000}
     elif engine == "bark":
         state = _load_bark(folder, device)
     elif engine == "chatterbox":
@@ -225,6 +229,25 @@ def _say_kokoro(state: dict, folder: Path, piece: str, request: dict):
     parts = [np.asarray(audio, dtype=np.float32)
              for _g, _p, audio in pipeline(piece, voice=str(path), speed=speed)
              if audio is not None]
+    return np.concatenate(parts) if parts else np.zeros(0, dtype=np.float32)
+
+
+def _say_kokoro_mlx(state: dict, folder: Path, piece: str, request: dict):
+    import mlx.core as mx
+    import numpy as np
+
+    voice = request.get("voice") or "af_heart"
+    if voice[:1] not in catalogue.KOKORO_LANGUAGES or Path(voice).name != voice:
+        raise ValueError("Choose a voice from this model's presets")
+    path = folder / "voices" / f"{voice}.safetensors"
+    if not path.is_file():
+        raise ValueError(f"The voice {voice!r} is not in this Kokoro folder")
+    parts = []
+    for result in state["model"].generate(
+            text=piece, voice=str(path), lang_code=voice[:1],
+            speed=float(request.get("controls", {}).get("speed", 1.0))):
+        mx.eval(result.audio)
+        parts.append(np.asarray(result.audio, dtype=np.float32).reshape(-1))
     return np.concatenate(parts) if parts else np.zeros(0, dtype=np.float32)
 
 
@@ -310,9 +333,12 @@ def speak(request: dict) -> dict:
         variant = found[0].id
 
     import numpy as np
-    import torch
+    if engine == "kokoro-mlx":
+        device = "mlx"
+    else:
+        import torch
 
-    device = request.get("device") or _device(torch, engine)
+        device = request.get("device") or _device(torch, engine)
     state = _model(engine, folder, variant, device)
     rate = state["rate"]
     silence = np.zeros(int(GAP * rate), dtype=np.float32)
@@ -320,6 +346,8 @@ def speak(request: dict) -> dict:
     for i, piece in enumerate(pieces):
         if engine == "kokoro":
             part = _say_kokoro(state, folder, piece, request)
+        elif engine == "kokoro-mlx":
+            part = _say_kokoro_mlx(state, folder, piece, request)
         elif engine == "bark":
             part = _say_bark(state, piece, request, device)
         else:
@@ -376,6 +404,8 @@ def handle(request: dict) -> dict:
     except (RuntimeError, NotImplementedError) as exc:
         # Some operations these models use have no Apple GPU kernel. Retried
         # once on the CPU: slower, and it finishes.
+        if request.get("engine") == "kokoro-mlx":
+            raise  # MLX has no Torch CPU fallback; preserve the actual failure.
         import torch
 
         engine = request.get("engine", "chatterbox") if op == "speak" else "chatterbox"

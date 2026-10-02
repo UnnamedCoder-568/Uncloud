@@ -20,6 +20,7 @@ const TABS: { id: Tab; label: string; hint: string }[] = [
  *  which reads a whole script in one pass. */
 const ENGINES: { id: string; label: string; hint: string }[] = [
   { id: 'kokoro', label: 'Kokoro', hint: 'Quick, natural preset voices' },
+  { id: 'kokoro-mlx', label: 'Kokoro · Apple Silicon', hint: 'Apple GPU speech; faster after warmup' },
   { id: 'chatterbox', label: 'Chatterbox', hint: 'Expressive; speaks in a recorded voice' },
   { id: 'bark', label: 'Bark', hint: 'Characterful, slow' },
   { id: 'vibevoice', label: 'VibeVoice', hint: 'Long-form narration in one pass' },

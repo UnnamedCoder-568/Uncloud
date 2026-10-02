@@ -1,7 +1,5 @@
-Uncloud 0.4.16 makes local training and creative workflows easier to navigate. Text adapters and image LoRAs have separate training panels; advanced image configuration remains accessible alongside engine-derived training controls. Chisel model selection is beside the goal field, creative options consistently sit on the right, and Settings are grouped by purpose.
+Uncloud 0.4.18 makes advanced narration, music and voice-cloning engines optional during first setup. They remain available from their feature tabs, and users can choose to install them during setup. Fresh Mac installs no longer automatically create both VibeVoice environments.
 
-Adds offline MFlux image LoRA jobs, local MLX text adapter fusion/export, cancellable staged quantization, and desktop computer-use tools. Workspace mode blocks shell commands, desktop input and app launches; full device access and action permissions are required for those tools.
+Adds Kokoro MLX for Apple Silicon, with local model recognition and downloadable model availability. Existing Kokoro remains the default. In one local resident-worker benchmark, warm speech requests fell from approximately 0.473 to 0.292 seconds; the MLX cold request was slower. These results are specific to the tested machine and phrase, not a cross-platform performance guarantee.
 
-Validation: 982 backend tests passed, one skipped; 121 frontend tests passed; production build passed. Native text LoRA training and 4-bit fusion/export were exercised. Full diffusion training, physical desktop input and GGUF quantization were not end-to-end validated on all platforms. API-teacher training is not included.
-
-Repairs the Python quality checks that blocked the preceding release from building and publishing its updater manifest.
+Includes a repeatable speech benchmark and SPEECH_RUNTIME_AUDIT.md with measurements and limitations. Validation: 985 backend tests passed, one skipped; 121 frontend tests and four desktop tests passed; production frontend build and source quality checks passed. Listening quality, microphone interaction and Windows/Linux performance were not validated by this pass.

@@ -43,3 +43,9 @@ def test_second_install_cannot_modify_a_busy_environment(monkeypatch):
 def test_unknown_capability_is_rejected():
     with pytest.raises(ValueError, match='Unknown capability'):
         readiness.install('arbitrary-package', lambda line: None)
+
+
+def test_native_speech_is_not_offered_on_non_apple_hardware(monkeypatch):
+    monkeypatch.setattr(readiness.sys, 'platform', 'linux')
+    monkeypatch.setattr(readiness.platform, 'machine', lambda: 'x86_64')
+    assert not readiness.check('kokoro-mlx')['supported']

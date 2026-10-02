@@ -589,6 +589,18 @@ CATALOG: list[CatalogEntry] = [
         tags=["recommended", "fast"],
     ),
     CatalogEntry(
+        id="kokoro-82m-mlx",
+        name="Kokoro 82M · Apple Silicon",
+        category="voice-tts", engine="kokoro-mlx",
+        repo="mlx-community/Kokoro-82M-bf16",
+        allow_patterns=["config.json", "kokoro*.safetensors", "voices/*.safetensors",
+                        "README.md", "VOICES.md"],
+        size_gb=0.4,
+        description="Native MLX speech for Apple Silicon. First generation warms the GPU; "
+                    "later replies reuse the loaded model.",
+        tags=["apple-silicon"],
+    ),
+    CatalogEntry(
         id="chatterbox-multilingual-v3",
         name="Chatterbox Multilingual V3",
         category="voice-tts", engine="chatterbox",
@@ -707,6 +719,8 @@ VERIFIED_TERMS: dict[str, Terms] = {
             "openai/whisper-large-v3-turbo", "mit", "MIT"),
            ("kokoro-82m",
             "hexgrad/Kokoro-82M", "apache-2.0", "Apache 2.0"),
+           ("kokoro-82m-mlx",
+            "mlx-community/Kokoro-82M-bf16", "apache-2.0", "Apache 2.0"),
            ("chatterbox-multilingual-v3",
             "ResembleAI/chatterbox", "mit", "MIT"),
            ("bark-small",
