@@ -716,15 +716,10 @@ export default function ChatView() {
         setMessages((m) => {
           const copy = [...m];
           const last = copy[copy.length - 1];
-          const message = `⚠ ${e instanceof Error ? e.message : String(e)}`;
-          // Replace the pending reply. Appending left an empty assistant row
-          // behind, which is the tiny vertical artifact seen when generation
-          // failed before producing its first token.
-          if (last?.role === 'assistant' && !last.content.trim()) {
-            copy[copy.length - 1] = { ...last, content: message };
-            return copy;
+          if (last?.role === 'assistant') {
+            copy[copy.length - 1] = { ...last, error: e instanceof Error ? e.message : String(e) };
           }
-          return [...copy, { role: 'assistant', content: message }];
+          return copy;
         });
       }
     } finally {
@@ -923,7 +918,7 @@ export default function ChatView() {
               {rawMode && <span className="text-xs">Direct-model diagnostic mode</span>}
               {activeModel && <label className="text-xs flex flex-col gap-1">
                 Temperature · this model
-                <input type="number" min="0" step="any" placeholder="Auto · model defaults"
+                <input className="input" type="number" min="0" step="any" placeholder="Auto · model defaults"
                   value={temperatures[activeModel.path] ?? ''}
                   onChange={(e) => {
                     const next = { ...temperatures, [activeModel.path]: e.target.value };
@@ -933,7 +928,7 @@ export default function ChatView() {
               </label>}
               {activeModel && <label className="text-xs flex flex-col gap-1">
                 Reply budget · tokens including reasoning
-                <input type="number" min="1" step="1" placeholder="Auto · model / runtime window"
+                <input className="input" type="number" min="1" step="1" placeholder="Auto · model / runtime window"
                   value={replyBudgets[activeModel.path] ?? ''}
                   onChange={(e) => {
                     const next = { ...replyBudgets, [activeModel.path]: e.target.value };
@@ -1304,6 +1299,7 @@ export default function ChatView() {
                     })()}
                   </div>
                 )}
+                {m.error && <p role="status" className="mt-2 px-1 text-xs text-[var(--text-dim)]">{m.error}</p>}
                 {m.role === 'assistant' && cleanReply(m.content).trim()
                   && !(i === messages.length - 1 && generating) && (
                   <div className="mt-2 flex items-center gap-1 px-1 text-[10px]

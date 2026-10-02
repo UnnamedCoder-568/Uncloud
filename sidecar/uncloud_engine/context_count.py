@@ -52,7 +52,7 @@ async def count(active, messages: list[dict]) -> int | None:
             json={"messages": messages})
         if response.is_success:
             data = response.json()
-            value = data.get("input_tokens") or data.get("tokens")
+            value = data.get("input_tokens", data.get("tokens"))
             if isinstance(value, int):
                 return value
             if isinstance(value, list):

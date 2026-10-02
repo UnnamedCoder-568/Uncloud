@@ -99,3 +99,26 @@ def test_output_budget_uses_metadata_then_runtime_window_with_user_override(tmp_
     profile['max_output_tokens'] = None
     active.context_limit = 32768
     assert model_payload(active, [])['max_tokens'] == 8192
+
+
+def test_gguf_automatic_budget_uses_native_eos_not_quarter_context():
+    active = SimpleNamespace(engine="gguf", inference_profile={}, context_limit=1024)
+    assert "max_tokens" not in model_payload(active, [{"role": "user", "content": "Hi"}])
+    assert model_payload(active, [], max_tokens=256)["max_tokens"] == 256
+
+
+def test_backend_rejection_preserves_actual_reason_without_httpx_url(monkeypatch):
+    from uncloud_engine import main
+
+    async def exercise():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(lambda request:
+            httpx.Response(400, json={"error": {"message": "Template requires alternating roles"}}))) as client:
+            monkeypatch.setattr(chat_transport, "client", lambda: client)
+            active = SimpleNamespace(engine="gguf", base_url="http://backend", inference_profile={})
+            run = main.ChatRun(id="rejection", owner="local")
+            await main._run_chat(run, main.ChatBody(messages=[{"role": "user", "content": "Hi"}]), active)
+            assert run.status == "error"
+            assert "Template requires alternating roles" in run.error
+            assert "http://backend" not in run.error
+            assert run.timings["backend_error"]["status"] == 400
+    asyncio.run(exercise())
