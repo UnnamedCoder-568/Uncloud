@@ -148,9 +148,8 @@ export default function SetupView({ onReady }: { onReady: () => void }) {
         <p className="mt-6 text-[11px] text-[var(--text-faint)] leading-relaxed">
           Packages arrive compressed and are expanded during installation.
           Download size and installed space differ; cached packages can reduce
-          repeat downloads. macOS setup also installs two separate narration
-          environments. Music and other optional runtimes may need additional
-          downloads through their setup controls.
+          repeat downloads. Advanced narration, music and voice cloning have optional runtimes.
+          Choose them during setup or install them from their tabs when needed.
         </p>
       </div>
     </div>

@@ -20,6 +20,7 @@ SPECS = {
     'video': ('Video', ['torch', 'diffusers', 'imageio_ffmpeg'], False, None),
     'transcribe': ('Transcription', ['faster_whisper'], False, None),
     'kokoro': ('Kokoro speech', ['kokoro', 'soundfile'], False, None),
+    'kokoro-mlx': ('Apple Silicon speech', ['mlx_audio', 'misaki.en', 'soundfile'], True, None),
     'bark': ('Bark speech', ['transformers', 'torch', 'soundfile'], False, None),
     'quantize': ('Image quantization', ['mflux', 'mlx.core'], True, None),
     'computer': ('Computer use', ['pyautogui'], False, None),

@@ -283,3 +283,27 @@ def _runner_module():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def test_native_kokoro_is_recognised_in_a_renamed_folder(tmp_path: Path) -> None:
+    from uncloud_engine.core.models import identify
+    from uncloud_engine.model_import import verdict
+
+    folder = tmp_path / "My narrator"
+    touch(folder / "config.json", b"{}")
+    touch(folder / "kokoro-v1_0.safetensors")
+    touch(folder / "voices" / "af_heart.safetensors")
+    found = engines.recognise(folder)
+    assert found.engine == "kokoro-mlx"
+    assert [p.id for p in engines.presets(found.engine, folder)] == ["af_heart"]
+    assert verdict(identify(folder)).engine == "kokoro-mlx"
+    assert verdict(identify(folder)).runnable
+
+
+def test_native_kokoro_requires_local_voice_weights(tmp_path: Path) -> None:
+    folder = tmp_path / "Kokoro"
+    touch(folder / "config.json", b"{}")
+    touch(folder / "kokoro-v1_0.safetensors")
+    assert engines.recognise(folder) is None
+    touch(folder / "voices" / "af_heart.pt")
+    assert engines.recognise(folder) is None

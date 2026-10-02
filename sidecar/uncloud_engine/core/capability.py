@@ -160,6 +160,7 @@ RUNTIMES: dict[str, RuntimeProfile] = {
         #: Whisper checkpoints in the transformers format, on the GPU.
         RuntimeProfile("transformers-whisper", "Whisper (transformers)"),
         RuntimeProfile("kokoro", "Kokoro"),
+        RuntimeProfile("kokoro-mlx", "Kokoro MLX", platforms=APPLE),
         #: Speech engines run in the speech worker (core/speech).
         RuntimeProfile("chatterbox", "Chatterbox"),
         RuntimeProfile("bark", "Bark"),
