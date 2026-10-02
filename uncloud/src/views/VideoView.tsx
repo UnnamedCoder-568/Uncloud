@@ -208,9 +208,9 @@ export default function VideoView() {
   }
 
   return (
-    <div className="h-full flex split">
+    <div className="h-full flex split creative-workspace">
       <SplitTabs split={split} labels={['Settings', 'Video']} />
-      <div className={`w-[320px] shrink-0 border-r border-[var(--border-soft)] overflow-y-auto p-4 flex flex-col gap-5 split-pane${split.on(0)}`}>
+      <div className={`creative-inspector w-[320px] shrink-0 border-r border-[var(--border-soft)] overflow-y-auto p-4 flex flex-col gap-5 split-pane${split.on(0)}`}>
         <div ref={pickerRef} className="relative">
           <label className="text-[10px] uppercase tracking-[0.18em] text-[var(--text-faint)]">Model</label>
           <button

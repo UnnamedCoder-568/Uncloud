@@ -702,6 +702,40 @@ def _active_profile():
     return getattr(active, "model_profile", None)
 
 
+class ImageTrainBody(BaseModel):
+    config: dict
+    name: str = ""
+
+
+@app.get("/api/training/image/template", dependencies=[Depends(require_token)])
+def image_training_template(model: str = 'z-image-turbo') -> dict:
+    from .training.image_jobs import template
+    from .training.jobs import Refused
+    try:
+        return template(model)
+    except (Refused, ImportError) as exc:
+        raise HTTPException(400, detail=str(exc)) from exc
+
+
+@app.post("/api/training/image/prepare", dependencies=[Depends(require_token)])
+def image_training_prepare(body: ImageTrainBody) -> dict:
+    from .training import image_jobs, jobs
+    try:
+        return image_jobs.prepare(body.config)
+    except (jobs.Refused, ImportError) as exc:
+        raise HTTPException(400, detail=str(exc)) from exc
+
+
+@app.post("/api/training/image/start", dependencies=[Depends(require_token)])
+async def image_training_start(body: ImageTrainBody) -> dict:
+    from .training import image_jobs, jobs
+    gated("train_image", Risk.TRAIN, "Train a local image LoRA adapter", preview={"model": body.config.get("model_path"), "data": body.config.get("data")}, origin="training")
+    try:
+        return (await image_jobs.start(body.config, body.name)).to_dict()
+    except (jobs.Refused, ImportError) as exc:
+        raise HTTPException(400, detail=str(exc)) from exc
+
+
 class TrainBody(BaseModel):
     model_path: str
     dataset_path: str
@@ -1755,7 +1789,9 @@ class QuantizeBody(BaseModel):
     base: str
     name: str
     transformer_bits: int = 8
-    encoder_bits: int = 4
+    encoder_bits: int = 8
+    kind: str = "image"
+    adapter_path: str | None = None
     dest_dir: str | None = None
     lora_paths: list[str] = []
     lora_scales: list[float] = []
@@ -1781,6 +1817,8 @@ def quantize_list() -> list[dict]:
 async def quantize_start(body: QuantizeBody) -> dict:
     from .quantize import quantize_manager
 
+    gated("quantize_model", Risk.WRITE, f"Build a {body.transformer_bits}-bit copy of {Path(body.source).name}",
+          preview={"source": body.source, "destination": body.dest_dir or str(settings.models_dir)}, origin="quantize")
     try:
         job = quantize_manager.start(
             source=body.source, base=body.base,
@@ -1788,6 +1826,7 @@ async def quantize_start(body: QuantizeBody) -> dict:
             name=body.name, transformer_bits=body.transformer_bits,
             encoder_bits=body.encoder_bits,
             lora_paths=body.lora_paths, lora_scales=body.lora_scales,
+            kind=body.kind, adapter_path=body.adapter_path,
         )
     except (ValueError, FileNotFoundError, RuntimeError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -1802,6 +1841,12 @@ def quantize_status(job_id: str) -> dict:
     if not job:
         raise HTTPException(status_code=404, detail="No such job")
     return job.to_dict()
+
+
+@app.post("/api/quantize/{job_id}/cancel", dependencies=[Depends(require_token)])
+def quantize_cancel(job_id: str) -> dict:
+    from .quantize import quantize_manager
+    return {"cancelled": quantize_manager.cancel(job_id)}
 
 
 class DownloadBody(BaseModel):
@@ -2155,7 +2200,7 @@ async def generate_image(body: ImageGenerateBody, request: Request) -> dict:
     return {**jobs[0].to_dict(), "batch": [j.to_dict() for j in jobs]}
 
 
-UPLOAD_DIR = Path.home() / ".uncloud" / "uploads"
+UPLOAD_DIR = CONFIG_DIR / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 CHAT_DOCUMENT_TYPES = {
