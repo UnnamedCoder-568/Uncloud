@@ -76,7 +76,7 @@ class QuantizeJob:
     dest: str
     kind: str = "image"
     adapter_path: str | None = None
-    status: str = "running"          # running | done | error
+    status: str = "running"  # running | done | error
     stage: str = "starting"
     error: str | None = None
     size_gb: float = 0.0
@@ -84,10 +84,16 @@ class QuantizeJob:
 
     def to_dict(self) -> dict:
         return {
-            "id": self.id, "name": self.name, "dest": self.dest,
-            "status": self.status, "stage": self.stage, "error": self.error,
-            "done": self.status in ("done", "error", "cancelled"), "kind": self.kind,
-            "size_gb": round(self.size_gb, 2), "log": self.log[-12:],
+            "id": self.id,
+            "name": self.name,
+            "dest": self.dest,
+            "status": self.status,
+            "stage": self.stage,
+            "error": self.error,
+            "done": self.status in ("done", "error", "cancelled"),
+            "kind": self.kind,
+            "size_gb": round(self.size_gb, 2),
+            "log": self.log[-12:],
         }
 
 
@@ -114,10 +120,18 @@ class QuantizeManager:
         return [j.to_dict() for j in self.jobs.values()]
 
     def start(
-        self, *, source: str, base: str, dest_dir: str, name: str,
-        transformer_bits: int, encoder_bits: int,
-        lora_paths: list[str] | None = None, lora_scales: list[float] | None = None,
-        kind: str = "image", adapter_path: str | None = None,
+        self,
+        *,
+        source: str,
+        base: str,
+        dest_dir: str,
+        name: str,
+        transformer_bits: int,
+        encoder_bits: int,
+        lora_paths: list[str] | None = None,
+        lora_scales: list[float] | None = None,
+        kind: str = "image",
+        adapter_path: str | None = None,
     ) -> QuantizeJob:
         if kind not in {"image", "text", "gguf"}:
             raise ValueError("Choose image, text MLX or GGUF quantization.")
@@ -145,15 +159,27 @@ class QuantizeManager:
             raise FileNotFoundError(f"No model at {source}")
 
         dest = Path(dest_dir) / name
-        if dest.exists() or any(j.dest == str(dest) and j.status == "running" for j in self.jobs.values()):
-            raise ValueError("That output already exists. Choose a new name; source files are never replaced.")
+        if dest.exists() or any(
+            j.dest == str(dest) and j.status == "running" for j in self.jobs.values()
+        ):
+            raise ValueError(
+                "That output already exists. Choose a new name; source files are never replaced."
+            )
         job = QuantizeJob(id=uuid.uuid4().hex[:12], name=name, dest=str(dest), kind=kind)
         job.adapter_path = adapter_path
         self.jobs[job.id] = job
-        task = asyncio.create_task(self._run(
-            job, source, base, dest, transformer_bits, encoder_bits,
-            lora_paths or [], lora_scales or [],
-        ))
+        task = asyncio.create_task(
+            self._run(
+                job,
+                source,
+                base,
+                dest,
+                transformer_bits,
+                encoder_bits,
+                lora_paths or [],
+                lora_scales or [],
+            )
+        )
         self._by_id[job.id] = task
         self._tasks.add(task)
         task.add_done_callback(self._tasks.discard)
@@ -170,9 +196,15 @@ class QuantizeManager:
         return True
 
     async def _run(
-        self, job: QuantizeJob, source: str, base: str, dest: Path,
-        transformer_bits: int, encoder_bits: int,
-        lora_paths: list[str], lora_scales: list[float],
+        self,
+        job: QuantizeJob,
+        source: str,
+        base: str,
+        dest: Path,
+        transformer_bits: int,
+        encoder_bits: int,
+        lora_paths: list[str],
+        lora_scales: list[float],
     ) -> None:
         from .power import keep_awake
 
@@ -185,23 +217,32 @@ class QuantizeManager:
                 job.stage = f"quantising at {transformer_bits}-bit"
                 dest_tmp = staging / "final"
                 if job.kind == "image":
-                    await self._mflux_save(job, source, base, dest_tmp,
-                                           transformer_bits, lora_paths, lora_scales)
+                    await self._mflux_save(
+                        job, source, base, dest_tmp, transformer_bits, lora_paths, lora_scales
+                    )
                 else:
                     await self._text_save(job, source, dest_tmp, transformer_bits, staging)
 
                 if job.kind == "image":
-                    (dest_tmp / MLX_MARKER).write_text(json.dumps({
-                    "schemaVersion": 1,
-                    "name": job.name,
-                    "base_model": base,
-                    "quantize": transformer_bits,
-                    "source": source,
-                    "lora_paths": lora_paths,
-                }, indent=2) + "\n")
+                    (dest_tmp / MLX_MARKER).write_text(
+                        json.dumps(
+                            {
+                                "schemaVersion": 1,
+                                "name": job.name,
+                                "base_model": base,
+                                "quantize": transformer_bits,
+                                "source": source,
+                                "lora_paths": lora_paths,
+                            },
+                            indent=2,
+                        )
+                        + "\n"
+                    )
 
                 if dest.exists():
-                    raise RuntimeError("The destination appeared during the build; it was preserved.")
+                    raise RuntimeError(
+                        "The destination appeared during the build; it was preserved."
+                    )
                 shutil.move(str(dest_tmp), str(dest))
 
                 from .library import _dir_size_gb  # noqa: PLC0415
@@ -224,19 +265,31 @@ class QuantizeManager:
                 proc.terminate()
                 try:
                     await asyncio.wait_for(proc.wait(), 5)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     proc.kill()
                     await proc.wait()
             shutil.rmtree(staging, ignore_errors=True)
 
     async def _mflux_save(
-        self, job: QuantizeJob, source: str, base: str, out: Path, bits: int,
-        lora_paths: list[str], lora_scales: list[float],
+        self,
+        job: QuantizeJob,
+        source: str,
+        base: str,
+        out: Path,
+        bits: int,
+        lora_paths: list[str],
+        lora_scales: list[float],
     ) -> None:
         cmd = [
-            str(_mflux_save_bin()), "--model", source,
-            "--base-model", base.replace("_", "-"),
-            "--path", str(out), "--quantize", str(bits),
+            str(_mflux_save_bin()),
+            "--model",
+            source,
+            "--base-model",
+            base.replace("_", "-"),
+            "--path",
+            str(out),
+            "--quantize",
+            str(bits),
         ]
         if lora_paths:
             cmd += ["--lora-paths", *lora_paths]
@@ -248,13 +301,27 @@ class QuantizeManager:
 
     async def _text_save(self, job, source, out, bits, staging):
         import sys
+
         if job.kind == "gguf":
             from .native_chat import server_path
+
             server = server_path()
-            executable = Path(server).with_name("llama-quantize.exe" if sys.platform == "win32" else "llama-quantize") if server else None
-            found = str(executable) if executable and executable.is_file() else shutil.which("llama-quantize")
+            executable = (
+                Path(server).with_name(
+                    "llama-quantize.exe" if sys.platform == "win32" else "llama-quantize"
+                )
+                if server
+                else None
+            )
+            found = (
+                str(executable)
+                if executable and executable.is_file()
+                else shutil.which("llama-quantize")
+            )
             if not found:
-                raise RuntimeError("The GGUF quantizer is missing. Install the llama.cpp runtime before building.")
+                raise RuntimeError(
+                    "The GGUF quantizer is missing. Install the llama.cpp runtime before building."
+                )
             types = {3: "Q3_K_M", 4: "Q4_K_M", 5: "Q5_K_M", 6: "Q6_K", 8: "Q8_0"}
             out.mkdir()
             await self._command(job, [found, source, str(out / "model.gguf"), types[bits]])
@@ -263,17 +330,47 @@ class QuantizeManager:
         if adapter:
             fused = staging / "fused"
             job.stage = "Merging the text adapter"
-            await self._command(job, [sys.executable, "-m", "mlx_lm.fuse", "--model", source,
-                "--adapter-path", adapter, "--save-path", str(fused), "--dequantize"])
+            await self._command(
+                job,
+                [
+                    sys.executable,
+                    "-m",
+                    "mlx_lm.fuse",
+                    "--model",
+                    source,
+                    "--adapter-path",
+                    adapter,
+                    "--save-path",
+                    str(fused),
+                    "--dequantize",
+                ],
+            )
             source = str(fused)
         job.stage = f"Building {bits}-bit text weights"
-        await self._command(job, [sys.executable, "-m", "mlx_lm.convert", "--hf-path", source,
-            "--mlx-path", str(out), "-q", "--q-bits", str(bits), "--q-group-size", "64"])
+        await self._command(
+            job,
+            [
+                sys.executable,
+                "-m",
+                "mlx_lm.convert",
+                "--hf-path",
+                source,
+                "--mlx-path",
+                str(out),
+                "-q",
+                "--q-bits",
+                str(bits),
+                "--q-group-size",
+                "64",
+            ],
+        )
 
     async def _command(self, job, cmd):
         proc = await asyncio.create_subprocess_exec(
-            *cmd, env={**os.environ, "HF_HUB_OFFLINE": "1", "TRANSFORMERS_OFFLINE": "1"},
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
+            *cmd,
+            env={**os.environ, "HF_HUB_OFFLINE": "1", "TRANSFORMERS_OFFLINE": "1"},
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
         )
         self._processes[job.id] = proc
         assert proc.stdout
@@ -295,10 +392,7 @@ class QuantizeManager:
         if await proc.wait() != 0:
             from .output_check import summarise_traceback
 
-            raise RuntimeError(
-                "Model build failed: "
-                f"{summarise_traceback(chr(10).join(tail))}"
-            )
+            raise RuntimeError(f"Model build failed: {summarise_traceback(chr(10).join(tail))}")
 
 
 quantize_manager = QuantizeManager()

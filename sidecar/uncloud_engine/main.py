@@ -67,7 +67,8 @@ app.add_middleware(
         "http://localhost:1420",
         "http://127.0.0.1:1420",
     ],
-    allow_methods=["*"], allow_headers=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
@@ -75,15 +76,20 @@ app.add_middleware(
 # and None means none of it exists: no routes, no listener, no cookie accepted.
 _lan: Any = None
 _job_owners: dict[str, dict[str, str]] = {
-    "image": {}, "video": {}, "music": {}, "narration": {}, "speech": {},
+    "image": {},
+    "video": {},
+    "music": {},
+    "narration": {},
+    "speech": {},
 }
 
 
 def _same(given: str, expected: str) -> bool:
     """Constant-time, and safe on input that is not ASCII. `compare_digest` on
     str raises for non-ASCII, which turned a malformed header into a 500."""
-    return secrets.compare_digest(given.encode("utf-8", "surrogateescape"),
-                                  expected.encode("utf-8"))
+    return secrets.compare_digest(
+        given.encode("utf-8", "surrogateescape"), expected.encode("utf-8")
+    )
 
 
 def authorised(request: Any) -> bool:
@@ -143,8 +149,9 @@ def require_desktop(request: Request) -> None:
     is not a boundary.
     """
     if not _same(request.headers.get("authorization") or "", f"Bearer {settings.token}"):
-        raise HTTPException(status_code=403,
-                            detail="This is only available on the computer running Uncloud.")
+        raise HTTPException(
+            status_code=403, detail="This is only available on the computer running Uncloud."
+        )
 
 
 def require_token_ws(websocket: WebSocket) -> bool:
@@ -188,6 +195,7 @@ gate = Gate(
 )
 agent_tools.install_gate(gate)
 
+
 async def _approve_integration_action(request: PermissionRequest):
     """Decide an integration action, or turn it into a 428.
 
@@ -196,8 +204,13 @@ async def _approve_integration_action(request: PermissionRequest):
     the call. An integration-specific approval system is exactly what the
     architecture rules forbid.
     """
-    gated(request.action, request.category, request.summary,
-          preview=request.preview, origin=request.origin)
+    gated(
+        request.action,
+        request.category,
+        request.summary,
+        preview=request.preview,
+        origin=request.origin,
+    )
     return None
 
 
@@ -215,8 +228,10 @@ _http_once: dict[str, float] = {}
 
 
 def _approval_key(request: PermissionRequest) -> str:
-    return json.dumps([request.action, request.category.value, request.summary,
-                       request.preview, request.origin], sort_keys=True)
+    return json.dumps(
+        [request.action, request.category.value, request.summary, request.preview, request.origin],
+        sort_keys=True,
+    )
 
 
 class NeedsApproval(HTTPException):
@@ -235,20 +250,25 @@ class NeedsApproval(HTTPException):
                 _http_pending.pop(key, None)
         request_id = secrets.token_urlsafe(24)
         _http_pending[request_id] = (now, request)
-        super().__init__(status_code=428, detail={
-            "approval": {
-                "request_id": request_id,
-                "action": request.action,
-                "category": request.category.value,
-                "summary": request.summary,
-                "preview": request.preview,
-                "origin": request.origin,
-                "mode": gate.mode_for(request.category).value,
-            }})
+        super().__init__(
+            status_code=428,
+            detail={
+                "approval": {
+                    "request_id": request_id,
+                    "action": request.action,
+                    "category": request.category.value,
+                    "summary": request.summary,
+                    "preview": request.preview,
+                    "origin": request.origin,
+                    "mode": gate.mode_for(request.category).value,
+                }
+            },
+        )
 
 
-def gated(action: str, category: Risk, summary: str, *, preview: dict | None = None,
-          origin: str = "chat") -> None:
+def gated(
+    action: str, category: Risk, summary: str, *, preview: dict | None = None, origin: str = "chat"
+) -> None:
     """Decide an HTTP-triggered action, or ask the client to ask.
 
     Synchronous and non-blocking: the gate is consulted from policy alone, and
@@ -256,8 +276,9 @@ def gated(action: str, category: Risk, summary: str, *, preview: dict | None = N
     An HTTP handler that blocks on a human is a handler that holds a connection
     open for as long as somebody leaves the window.
     """
-    request = PermissionRequest(action=action, category=category, summary=summary,
-                                preview=preview or {}, origin=origin)
+    request = PermissionRequest(
+        action=action, category=category, summary=summary, preview=preview or {}, origin=origin
+    )
     settled = gate.check(request)
     expiry = _http_once.pop(_approval_key(request), 0)
     if settled is None and expiry > time.monotonic():
@@ -272,10 +293,16 @@ def gated(action: str, category: Risk, summary: str, *, preview: dict | None = N
         # A decision the user already made, reported as one. 403 rather than
         # 428: nothing is pending, and asking again would be pestering them
         # about something they settled.
-        raise HTTPException(status_code=403, detail={
-            "denied": {"action": request.action,
-                       "category": request.category.value,
-                       "reason": exc.reason}}) from exc
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "denied": {
+                    "action": request.action,
+                    "category": request.category.value,
+                    "reason": exc.reason,
+                }
+            },
+        ) from exc
 
 
 @app.get("/health")
@@ -418,8 +445,9 @@ def system_resident() -> dict:
 
 
 @app.get("/api/system/budget", dependencies=[Depends(require_token)])
-def system_budget(frames: int = 0, width: int = 0, height: int = 0,
-                  weights_gb: float = 0.0, model_path: str = "") -> dict:
+def system_budget(
+    frames: int = 0, width: int = 0, height: int = 0, weights_gb: float = 0.0, model_path: str = ""
+) -> dict:
     """What this machine can give, and what the requested job would take.
 
     Asked before starting rather than discovered during: on macOS an oversized
@@ -473,6 +501,7 @@ async def system_stop_all() -> dict:
 @app.get("/api/settings", dependencies=[Depends(require_token)])
 def get_settings() -> dict:
     from .power import is_held
+
     return {
         "models_dir": str(settings.models_dir),
         "onboarded": settings.onboarded,
@@ -541,12 +570,12 @@ def agent_tools() -> dict:
 
     active = engine_manager.active
     configured = settings.agent_tool_groups
-    resolved = configured if configured is not None else auto_groups(
-        active.model_path if active else None
+    resolved = (
+        configured if configured is not None else auto_groups(active.model_path if active else None)
     )
     return {
         "groups": group_summary(),
-        "configured": configured,      # None means automatic
+        "configured": configured,  # None means automatic
         "resolved": resolved,
         "active_count": len(_active_tool_specs()),
     }
@@ -708,9 +737,10 @@ class ImageTrainBody(BaseModel):
 
 
 @app.get("/api/training/image/template", dependencies=[Depends(require_token)])
-def image_training_template(model: str = 'z-image-turbo') -> dict:
+def image_training_template(model: str = "z-image-turbo") -> dict:
     from .training.image_jobs import template
     from .training.jobs import Refused
+
     try:
         return template(model)
     except (Refused, ImportError) as exc:
@@ -720,6 +750,7 @@ def image_training_template(model: str = 'z-image-turbo') -> dict:
 @app.post("/api/training/image/prepare", dependencies=[Depends(require_token)])
 def image_training_prepare(body: ImageTrainBody) -> dict:
     from .training import image_jobs, jobs
+
     try:
         return image_jobs.prepare(body.config)
     except (jobs.Refused, ImportError) as exc:
@@ -729,7 +760,14 @@ def image_training_prepare(body: ImageTrainBody) -> dict:
 @app.post("/api/training/image/start", dependencies=[Depends(require_token)])
 async def image_training_start(body: ImageTrainBody) -> dict:
     from .training import image_jobs, jobs
-    gated("train_image", Risk.TRAIN, "Train a local image LoRA adapter", preview={"model": body.config.get("model_path"), "data": body.config.get("data")}, origin="training")
+
+    gated(
+        "train_image",
+        Risk.TRAIN,
+        "Train a local image LoRA adapter",
+        preview={"model": body.config.get("model_path"), "data": body.config.get("data")},
+        origin="training",
+    )
     try:
         return (await image_jobs.start(body.config, body.name)).to_dict()
     except (jobs.Refused, ImportError) as exc:
@@ -769,8 +807,13 @@ def training_prepare(body: TrainBody) -> dict:
     from .training import jobs as training
 
     try:
-        return training.prepare(body.model_path, body.dataset_path, body.preset,
-                                batch_size=body.batch_size, overrides=body.options)
+        return training.prepare(
+            body.model_path,
+            body.dataset_path,
+            body.preset,
+            batch_size=body.batch_size,
+            overrides=body.options,
+        )
     except training.Refused as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -780,16 +823,28 @@ async def training_start(body: TrainBody) -> dict:
     """Start a run. Refuses before spawning anything if it will not work."""
     from .training import jobs as training
 
-    gated("train", Risk.TRAIN,
-          f"Fine-tune {Path(body.model_path).name} on "
-          f"{Path(body.dataset_path).name}",
-          preview={"model": body.model_path, "dataset": body.dataset_path,
-                   "preset": body.preset, "options": body.options, "batch_size": body.batch_size},
-          origin="training")
+    gated(
+        "train",
+        Risk.TRAIN,
+        f"Fine-tune {Path(body.model_path).name} on {Path(body.dataset_path).name}",
+        preview={
+            "model": body.model_path,
+            "dataset": body.dataset_path,
+            "preset": body.preset,
+            "options": body.options,
+            "batch_size": body.batch_size,
+        },
+        origin="training",
+    )
     try:
-        job = await training.start(body.model_path, body.dataset_path, body.preset,
-                                   batch_size=body.batch_size, name=body.name,
-                                   overrides=body.options)
+        job = await training.start(
+            body.model_path,
+            body.dataset_path,
+            body.preset,
+            batch_size=body.batch_size,
+            name=body.name,
+            overrides=body.options,
+        )
     except training.Refused as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return job.to_dict()
@@ -836,8 +891,7 @@ def list_adapters() -> list[dict]:
 def delete_adapter(name: str) -> dict:
     from .training import jobs as training
 
-    gated("delete_adapter", Risk.DELETE, f"Delete the adapter {name}",
-          origin="training")
+    gated("delete_adapter", Risk.DELETE, f"Delete the adapter {name}", origin="training")
     if not training.forget(name):
         raise HTTPException(status_code=404, detail="No such adapter")
     return {"deleted": True}
@@ -863,12 +917,15 @@ def list_skills() -> list[dict]:
     available = {spec["id"] for spec in tools_for(groups)}
 
     profile = _active_profile()
-    return [entry.to_dict() for entry in discover(
-        tools=available,
-        capabilities=set(profile.capabilities) if profile else None,
-        memory_gb=memory_budget().get("budget_gb", 0.0),
-        gate=gate,
-    )]
+    return [
+        entry.to_dict()
+        for entry in discover(
+            tools=available,
+            capabilities=set(profile.capabilities) if profile else None,
+            memory_gb=memory_budget().get("budget_gb", 0.0),
+            gate=gate,
+        )
+    ]
 
 
 @app.delete("/api/skills/{slug}", dependencies=[Depends(require_token)])
@@ -890,8 +947,7 @@ def effort_levels() -> dict:
     """
     from .core import describe as describe_effort
 
-    return {"selected": settings.effort,
-            "levels": describe_effort(_active_profile())}
+    return {"selected": settings.effort, "levels": describe_effort(_active_profile())}
 
 
 @app.post("/api/effort", dependencies=[Depends(require_token)])
@@ -922,8 +978,7 @@ def set_permission(body: PolicyBody) -> dict:
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     applied = gate.set_mode(category, mode)
-    return {**gate.describe(), "applied": applied.value,
-            "clamped": applied is not mode}
+    return {**gate.describe(), "applied": applied.value, "clamped": applied is not mode}
 
 
 @app.post("/api/permissions/forget", dependencies=[Depends(require_token)])
@@ -953,8 +1008,9 @@ def answer_approval(body: AnswerBody) -> dict:
         if request.action != body.action or request.category != category:
             raise HTTPException(status_code=400, detail="Confirmation does not match the action.")
     else:
-        request = PermissionRequest(action=body.action, category=category,
-                                    summary=body.summary, origin="chat")
+        request = PermissionRequest(
+            action=body.action, category=category, summary=body.summary, origin="chat"
+        )
     decision = gate.answer(request, body.answer)
     if body.request_id and decision.allowed and gate.check(request) is None:
         _http_once[_approval_key(request)] = time.monotonic() + 30
@@ -1036,8 +1092,8 @@ def release_readiness() -> dict:
             "needs_credentials": needs_credentials,
             "connected": connected,
             "note": "These need an OAuth client registered with the provider. "
-                    "Uncloud does not own credentials belonging to them, and "
-                    "shipping invented ones would not work.",
+            "Uncloud does not own credentials belonging to them, and "
+            "shipping invented ones would not work.",
         },
     }
 
@@ -1062,8 +1118,7 @@ def third_party_notices(text: bool = False) -> dict:
     from .core.legal import load_notices, summarise
 
     entries = load_notices()
-    return {"summary": summarise(entries),
-            "notices": [n.to_dict(text=text) for n in entries]}
+    return {"summary": summarise(entries), "notices": [n.to_dict(text=text) for n in entries]}
 
 
 @app.get("/api/legal/{document_id}", dependencies=[Depends(require_token)])
@@ -1077,8 +1132,7 @@ def legal_document(document_id: str) -> dict:
     if document is None:
         raise HTTPException(status_code=404, detail="no such document")
     accepted = reg.store.accepted(document_id)
-    return {**document.to_dict(body=True),
-            "accepted": accepted.to_dict() if accepted else None}
+    return {**document.to_dict(body=True), "accepted": accepted.to_dict() if accepted else None}
 
 
 @app.post("/api/legal/accept", dependencies=[Depends(require_token)])
@@ -1113,8 +1167,7 @@ def model_licence(model_id: str) -> dict:
     if profile is None:
         raise HTTPException(status_code=404, detail="no such model")
     shown = describe(profile)
-    return {**shown.to_dict(),
-            "needs_acknowledgement": ledger(settings).needed(profile)}
+    return {**shown.to_dict(), "needs_acknowledgement": ledger(settings).needed(profile)}
 
 
 @app.post("/api/models/licence/acknowledge", dependencies=[Depends(require_token)])
@@ -1171,32 +1224,27 @@ def integrations_connect(body: ConnectBody) -> dict:
     if integration is None:
         raise HTTPException(status_code=404, detail="no such integration")
     if not integration.available:
-        raise HTTPException(status_code=400,
-                            detail=integration.needs or "not available here")
+        raise HTTPException(status_code=400, detail=integration.needs or "not available here")
 
     if integration.auth_kind is AuthKind.NONE:
         if not body.label:
-            raise HTTPException(status_code=400,
-                                detail=f"{integration.name} needs a folder")
+            raise HTTPException(status_code=400, detail=f"{integration.name} needs a folder")
         # A folder is not a credential: it goes in the readable index so a
         # settings screen needs no unlock prompt to draw a list.
         broker.remember_path(body.integration_id, body.label)
         return integrations_list()
 
     if not body.secret:
-        raise HTTPException(status_code=400,
-                            detail=f"{integration.name} needs a token")
+        raise HTTPException(status_code=400, detail=f"{integration.name} needs a token")
     account = body.label
-    connect_with_token(body.integration_id, body.secret,
-                       account=account or body.integration_id)
+    connect_with_token(body.integration_id, body.secret, account=account or body.integration_id)
     # Ask the provider who this is, now that there is something to ask with.
     # Failure is not fatal: the connection works, the label is just less useful.
     if not account and hasattr(integration, "whoami"):
         try:
             discovered = integration.whoami()
             if discovered:
-                connect_with_token(body.integration_id, body.secret,
-                                   account=discovered)
+                connect_with_token(body.integration_id, body.secret, account=discovered)
         except Exception:  # noqa: BLE001 - a label is not worth failing over
             pass
     return integrations_list()
@@ -1216,8 +1264,7 @@ def integrations_configure(body: ProviderConfigBody) -> dict:
 
     integration = get(body.integration_id)
     if integration is None or integration.defaults is None:
-        raise HTTPException(status_code=404,
-                            detail="that integration does not use OAuth")
+        raise HTTPException(status_code=404, detail="that integration does not use OAuth")
     defaults = integration.defaults
     configure_provider(
         ProviderConfig(
@@ -1227,8 +1274,10 @@ def integrations_configure(body: ProviderConfigBody) -> dict:
             authorize_url=body.authorize_url.strip() or defaults.authorize_url,
             token_url=body.token_url.strip() or defaults.token_url,
             revoke_url=defaults.revoke_url,
-            extra_authorize=dict(defaults.extra_authorize)),
-        client_secret=body.client_secret)
+            extra_authorize=dict(defaults.extra_authorize),
+        ),
+        client_secret=body.client_secret,
+    )
     return integrations_list()
 
 
@@ -1248,14 +1297,12 @@ async def integrations_authorize(body: ScopeChoiceBody) -> dict:
 
     integration = get(body.integration_id)
     if integration is None or integration.defaults is None:
-        raise HTTPException(status_code=404,
-                            detail="that integration does not use OAuth")
+        raise HTTPException(status_code=404, detail="that integration does not use OAuth")
 
     from .core.auth import provider_config
 
     config = provider_config(body.integration_id, integration.defaults)
-    wanted = tuple(body.scopes) or tuple(
-        s.id for s in integration.scopes if s.required)
+    wanted = tuple(body.scopes) or tuple(s.id for s in integration.scopes if s.required)
     try:
         flow = Flow(config, wanted)
         attempt = flow.begin()
@@ -1268,7 +1315,8 @@ async def integrations_authorize(body: ScopeChoiceBody) -> dict:
         # the engine stays responsive while somebody signs in.
         code = await asyncio.to_thread(flow.await_redirect, attempt)
         tokens = await asyncio.to_thread(
-            lambda: flow.exchange(attempt, code, client=_http_client()))
+            lambda: flow.exchange(attempt, code, client=_http_client())
+        )
     except AuthError as exc:
         raise HTTPException(status_code=400, detail=exc.to_dict()) from exc
 
@@ -1296,8 +1344,11 @@ def integrations_disconnect(body: ConnectBody) -> dict:
     from .core.integrations import get
 
     integration = get(body.integration_id)
-    defaults = (integration.defaults if integration and integration.defaults
-                else ProviderConfig(provider=body.integration_id))
+    defaults = (
+        integration.defaults
+        if integration and integration.defaults
+        else ProviderConfig(provider=body.integration_id)
+    )
     disconnect(body.integration_id, defaults, client=_http_client())
     broker.forget(body.integration_id)
     if body.label == "forget-configuration":
@@ -1347,9 +1398,12 @@ def recipe_create(body: RecipeBody) -> dict:
 
     try:
         return workflows.create(
-            name=body.name, description=body.description,
-            subject=body.subject, steps=body.steps,
-            parameters=body.parameters).to_dict()
+            name=body.name,
+            description=body.description,
+            subject=body.subject,
+            steps=body.steps,
+            parameters=body.parameters,
+        ).to_dict()
     except workflows.RecipeError as exc:
         raise HTTPException(status_code=400, detail=exc.to_dict()) from exc
 
@@ -1426,13 +1480,23 @@ def mcp_servers() -> list[dict]:
 def mcp_add(body: McpServerBody) -> list[dict]:
     from .core import mcp
 
-    gated("mcp_configure", Risk.SETTINGS,
-          f"Add the MCP server {body.label or body.id}",
-          preview={"command": body.command, "args": " ".join(body.args)},
-          origin="settings")
-    mcp.configure(mcp.ServerConfig(
-        id=body.id, command=body.command, args=tuple(body.args),
-        cwd=body.cwd, label=body.label, env=dict(body.env)))
+    gated(
+        "mcp_configure",
+        Risk.SETTINGS,
+        f"Add the MCP server {body.label or body.id}",
+        preview={"command": body.command, "args": " ".join(body.args)},
+        origin="settings",
+    )
+    mcp.configure(
+        mcp.ServerConfig(
+            id=body.id,
+            command=body.command,
+            args=tuple(body.args),
+            cwd=body.cwd,
+            label=body.label,
+            env=dict(body.env),
+        )
+    )
     return mcp.describe()
 
 
@@ -1448,9 +1512,13 @@ def mcp_connect(server_id: str) -> dict:
     server = mcp.get(server_id)
     if server is None:
         raise HTTPException(status_code=404, detail="no such server")
-    gated("mcp_start", Risk.SETTINGS,
-          f"Start the MCP server {server.name}",
-          preview={"command": server.config.command}, origin="settings")
+    gated(
+        "mcp_start",
+        Risk.SETTINGS,
+        f"Start the MCP server {server.name}",
+        preview={"command": server.config.command},
+        origin="settings",
+    )
     try:
         return mcp.connect(server_id).to_dict()
     except mcp.McpError as exc:
@@ -1477,10 +1545,13 @@ def mcp_classify(server_id: str, body: McpRiskBody) -> dict:
         raise HTTPException(status_code=404, detail="no such server")
 
     if not body.risk:
-        gated("mcp_classify", Risk.SETTINGS,
-              f"Let Uncloud classify {body.tool} again",
-              preview={"server": server.name, "tool": body.tool},
-              origin="settings")
+        gated(
+            "mcp_classify",
+            Risk.SETTINGS,
+            f"Let Uncloud classify {body.tool} again",
+            preview={"server": server.name, "tool": body.tool},
+            origin="settings",
+        )
         mcp.clear_override(server_id, body.tool)
         return server.to_dict()
 
@@ -1490,14 +1561,21 @@ def mcp_classify(server_id: str, body: McpRiskBody) -> dict:
         raise HTTPException(
             status_code=400,
             detail=f"{body.risk!r} is not a risk category. Known: "
-                   + ", ".join(sorted(r.value for r in Risk))) from exc
+            + ", ".join(sorted(r.value for r in Risk)),
+        ) from exc
 
-    gated("mcp_classify", Risk.SETTINGS,
-          f"Govern {body.tool} as {category.value}",
-          preview={"server": server.name, "tool": body.tool,
-                   "was": server.classification(body.tool).risk.value,
-                   "becomes": category.value},
-          origin="settings")
+    gated(
+        "mcp_classify",
+        Risk.SETTINGS,
+        f"Govern {body.tool} as {category.value}",
+        preview={
+            "server": server.name,
+            "tool": body.tool,
+            "was": server.classification(body.tool).risk.value,
+            "becomes": category.value,
+        },
+        origin="settings",
+    )
     mcp.set_override(server_id, body.tool, category)
     return server.to_dict()
 
@@ -1526,12 +1604,11 @@ def catalog() -> list[dict]:
     # chosen models folder. A protected Downloads folder, a disconnected drive
     # or one malformed file must not make every downloadable model disappear.
     try:
-        installed = {
-            m.catalog_id for m in scan_library_cached(settings.models_dir) if m.catalog_id
-        }
+        installed = {m.catalog_id for m in scan_library_cached(settings.models_dir) if m.catalog_id}
     except Exception as exc:  # noqa: BLE001 - filesystem/model probes are untrusted input
-        logger.warning("Could not scan %s while building the catalogue: %s",
-                       settings.models_dir, exc)
+        logger.warning(
+            "Could not scan %s while building the catalogue: %s", settings.models_dir, exc
+        )
         installed = set()
     out = []
     for entry in get_catalog():
@@ -1584,9 +1661,11 @@ def library() -> list[dict]:
         logger.warning("Could not scan models folder %s: %s", settings.models_dir, exc)
         raise HTTPException(
             status_code=503,
-            detail=(f"Uncloud could not read the models folder ({settings.models_dir}). "
-                    "Choose a dedicated folder such as ~/Uncloud/models in Models or "
-                    "Settings, then retry."),
+            detail=(
+                f"Uncloud could not read the models folder ({settings.models_dir}). "
+                "Choose a dedicated folder such as ~/Uncloud/models in Models or "
+                "Settings, then retry."
+            ),
         ) from exc
 
 
@@ -1635,18 +1714,30 @@ def import_model_route(body: ImportModelBody) -> dict:
     files.append("uncloud-model.json")
     # Writing into somebody's folder is a write, whoever asked for it: the same
     # gate as everything else that changes what is on disk.
-    gated("import_model", Risk.WRITE,
-          f"Add {path.name} to the library, writing {', '.join(files)} beside it",
-          preview={"path": str(path), "files": files}, origin="models")
+    gated(
+        "import_model",
+        Risk.WRITE,
+        f"Add {path.name} to the library, writing {', '.join(files)} beside it",
+        preview={"path": str(path), "files": files},
+        origin="models",
+    )
     if body.online:
-        gated("model_lookup", Risk.NETWORK,
-              f"Look up missing configuration for {path.name} on huggingface.co",
-              preview={"host": "huggingface.co", "files": "JSON configuration only"},
-              origin="models")
+        gated(
+            "model_lookup",
+            Risk.NETWORK,
+            f"Look up missing configuration for {path.name} on huggingface.co",
+            preview={"host": "huggingface.co", "files": "JSON configuration only"},
+            origin="models",
+        )
 
-    result = import_model(str(path), name=body.name.strip()[:120], family=body.family,
-                          online=body.online, licence=(body.licence or "unknown")[:80],
-                          token=os.environ.get("HF_TOKEN") if body.online else None)
+    result = import_model(
+        str(path),
+        name=body.name.strip()[:120],
+        family=body.family,
+        online=body.online,
+        licence=(body.licence or "unknown")[:80],
+        token=os.environ.get("HF_TOKEN") if body.online else None,
+    )
     model_path = Path(result["identification"]["path"])
     settings.show_model(str(model_path))
     try:
@@ -1664,8 +1755,11 @@ class ImageDefaultsBody(ModelPathBody):
 @app.post("/api/models/image-defaults", dependencies=[Depends(require_desktop)])
 def save_image_defaults(body: ImageDefaultsBody) -> dict:
     from .image_defaults import validated
-    if not any(m.path == body.path and m.category == "image"
-               for m in scan_library_cached(settings.models_dir)):
+
+    if not any(
+        m.path == body.path and m.category == "image"
+        for m in scan_library_cached(settings.models_dir)
+    ):
         raise HTTPException(status_code=404, detail="Image model not found")
     values = validated(body.values)
     if len(values) != len(body.values):
@@ -1691,27 +1785,43 @@ def remove_model(body: RemoveModelBody) -> dict:
     path = Path(model.path)
     if body.delete_files:
         from .lifecycle import resident
+
         if any(resident().values()):
-            raise HTTPException(status_code=409,
-                                detail="Unload models in Settings before deleting model files.")
+            raise HTTPException(
+                status_code=409, detail="Unload models in Settings before deleting model files."
+            )
         root = path.resolve()
-        if root in {Path.home().resolve(), settings.models_dir.resolve(), Path('/').resolve()}:
+        if root in {Path.home().resolve(), settings.models_dir.resolve(), Path("/").resolve()}:
             raise HTTPException(status_code=400, detail="Cannot delete a shared models folder.")
         from .library import _scan_library
-        if path.is_dir() and any(Path(m.path).resolve().is_relative_to(root)
-                                for m in _scan_library(settings.models_dir)
-                                if m.path != model.path):
-            raise HTTPException(status_code=409,
-                                detail="This folder contains other models. Remove them separately.")
-        if any(d.status in {"pending", "downloading", "paused"} and d.dest
-               and (Path(d.dest).resolve() == root or root.is_relative_to(Path(d.dest).resolve()))
-               for d in download_manager.downloads.values()):
-            raise HTTPException(status_code=409,
-                                detail="A download uses these files. Complete it before deleting.")
-        gated("delete_model", Risk.DELETE, f"Permanently delete {model.name} from this device",
-              preview={"path": str(path),
-                       "warning": "This cannot be undone; all files in this folder are deleted."},
-              origin="models")
+
+        if path.is_dir() and any(
+            Path(m.path).resolve().is_relative_to(root)
+            for m in _scan_library(settings.models_dir)
+            if m.path != model.path
+        ):
+            raise HTTPException(
+                status_code=409, detail="This folder contains other models. Remove them separately."
+            )
+        if any(
+            d.status in {"pending", "downloading", "paused"}
+            and d.dest
+            and (Path(d.dest).resolve() == root or root.is_relative_to(Path(d.dest).resolve()))
+            for d in download_manager.downloads.values()
+        ):
+            raise HTTPException(
+                status_code=409, detail="A download uses these files. Complete it before deleting."
+            )
+        gated(
+            "delete_model",
+            Risk.DELETE,
+            f"Permanently delete {model.name} from this device",
+            preview={
+                "path": str(path),
+                "warning": "This cannot be undone; all files in this folder are deleted.",
+            },
+            origin="models",
+        )
         if path.is_symlink() or path.is_file():
             path.unlink()
         elif path.is_dir():
@@ -1817,16 +1927,25 @@ def quantize_list() -> list[dict]:
 async def quantize_start(body: QuantizeBody) -> dict:
     from .quantize import quantize_manager
 
-    gated("quantize_model", Risk.WRITE, f"Build a {body.transformer_bits}-bit copy of {Path(body.source).name}",
-          preview={"source": body.source, "destination": body.dest_dir or str(settings.models_dir)}, origin="quantize")
+    gated(
+        "quantize_model",
+        Risk.WRITE,
+        f"Build a {body.transformer_bits}-bit copy of {Path(body.source).name}",
+        preview={"source": body.source, "destination": body.dest_dir or str(settings.models_dir)},
+        origin="quantize",
+    )
     try:
         job = quantize_manager.start(
-            source=body.source, base=body.base,
+            source=body.source,
+            base=body.base,
             dest_dir=body.dest_dir or str(settings.models_dir),
-            name=body.name, transformer_bits=body.transformer_bits,
+            name=body.name,
+            transformer_bits=body.transformer_bits,
             encoder_bits=body.encoder_bits,
-            lora_paths=body.lora_paths, lora_scales=body.lora_scales,
-            kind=body.kind, adapter_path=body.adapter_path,
+            lora_paths=body.lora_paths,
+            lora_scales=body.lora_scales,
+            kind=body.kind,
+            adapter_path=body.adapter_path,
         )
     except (ValueError, FileNotFoundError, RuntimeError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -1846,6 +1965,7 @@ def quantize_status(job_id: str) -> dict:
 @app.post("/api/quantize/{job_id}/cancel", dependencies=[Depends(require_token)])
 def quantize_cancel(job_id: str) -> dict:
     from .quantize import quantize_manager
+
     return {"cancelled": quantize_manager.cancel(job_id)}
 
 
@@ -1899,10 +2019,12 @@ async def start_engine(body: EngineStartBody) -> dict:
             if body.engine != "mlx" or not any(
                 card["path"] == body.adapter_path
                 and card["base_model"] == body.model_path
-                and card["ready"] for card in training.adapters()
+                and card["ready"]
+                for card in training.adapters()
             ):
-                raise HTTPException(status_code=400,
-                                    detail="This adapter is not ready for the selected MLX model.")
+                raise HTTPException(
+                    status_code=400, detail="This adapter is not ready for the selected MLX model."
+                )
         active = await engine_manager.start(body.model_path, body.engine, body.adapter_path)
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
@@ -1976,9 +2098,14 @@ class ChatRun:
 
     def public(self, cursor: int = 0) -> dict:
         start = max(0, min(cursor, len(self.frames)))
-        return {"id": self.id, "status": self.status,
-                "frames": self.frames[start:], "cursor": len(self.frames),
-                "error": self.error, "timings": self.timings}
+        return {
+            "id": self.id,
+            "status": self.status,
+            "frames": self.frames[start:],
+            "cursor": len(self.frames),
+            "error": self.error,
+            "timings": self.timings,
+        }
 
 
 _chat_runs: dict[str, ChatRun] = {}
@@ -2003,19 +2130,28 @@ async def _run_chat(run: ChatRun, body: ChatBody, active=None) -> None:
         if active is None:
             raise RuntimeError("The text model was unloaded before this reply started.")
         build_start = time.perf_counter()
-        payload = model_payload(active, body.messages,
-            overrides={**body.sampling, **({"temperature": body.temperature}
-                if body.temperature is not None else {})}, max_tokens=body.max_tokens,
-            effort=body.effort or settings.effort)
+        payload = model_payload(
+            active,
+            body.messages,
+            overrides={
+                **body.sampling,
+                **({"temperature": body.temperature} if body.temperature is not None else {}),
+            },
+            max_tokens=body.max_tokens,
+            effort=body.effort or settings.effort,
+        )
         run.timings["prompt_build_ms"] = (time.perf_counter() - build_start) * 1000
         run.timings["dispatch_ms"] = (time.perf_counter() - run.started) * 1000
-        run.timings["sampling"] = {k: v for k, v in payload.items()
-                                   if k not in {"messages", "stream", "stream_options"}}
+        run.timings["sampling"] = {
+            k: v for k, v in payload.items() if k not in {"messages", "stream", "stream_options"}
+        }
         from .chat_transport import client as chat_client
 
         client = chat_client()
         async with client.stream(
-            "POST", f"{active.base_url}/v1/chat/completions", json=payload,
+            "POST",
+            f"{active.base_url}/v1/chat/completions",
+            json=payload,
         ) as response:
             if response.is_error:
                 await response.aread()
@@ -2024,10 +2160,18 @@ async def _run_chat(run: ChatRun, body: ChatBody, active=None) -> None:
                     detail = detail.get("message", "") if isinstance(detail, dict) else str(detail)
                 except (ValueError, AttributeError):
                     detail = ""
-                run.timings["backend_error"] = {"status": response.status_code,
-                    "body": response.text[:4096]}
-                raise RuntimeError(f"The model could not start this reply (HTTP {response.status_code}). "
-                    + (detail[:1000] if detail else "Check the model runtime in Settings and try again."))
+                run.timings["backend_error"] = {
+                    "status": response.status_code,
+                    "body": response.text[:4096],
+                }
+                raise RuntimeError(
+                    f"The model could not start this reply (HTTP {response.status_code}). "
+                    + (
+                        detail[:1000]
+                        if detail
+                        else "Check the model runtime in Settings and try again."
+                    )
+                )
             run.timings["backend_headers_ms"] = (time.perf_counter() - run.started) * 1000
             async for line in response.aiter_lines():
                 if line.startswith("data: "):
@@ -2038,8 +2182,9 @@ async def _run_chat(run: ChatRun, body: ChatBody, active=None) -> None:
                         frame = json.loads(data)
                         delta = (frame.get("choices") or [{}])[0].get("delta", {})
                         if any(delta.get(k) for k in ("content", "reasoning", "reasoning_content")):
-                            run.timings.setdefault("first_token_ms", (
-                                time.perf_counter() - run.started) * 1000)
+                            run.timings.setdefault(
+                                "first_token_ms", (time.perf_counter() - run.started) * 1000
+                            )
                         if frame.get("usage"):
                             run.timings["usage"] = frame["usage"]
                         if frame.get("timings"):
@@ -2061,9 +2206,14 @@ async def _run_chat(run: ChatRun, body: ChatBody, active=None) -> None:
 @app.post("/api/chat/runs", dependencies=[Depends(require_token)])
 async def start_chat_run(body: ChatBody, request: Request) -> dict:
     active = engine_manager.active
-    if (not active or active.process.poll() is not None or
-            (body.model_path and (body.model_path != active.model_path or
-                                 body.adapter_path != active.adapter_path))):
+    if (
+        not active
+        or active.process.poll() is not None
+        or (
+            body.model_path
+            and (body.model_path != active.model_path or body.adapter_path != active.adapter_path)
+        )
+    ):
         raise HTTPException(status_code=409, detail="Load the selected text model to continue.")
     # Finished runs are useful for a reconnect, but not forever.
     cutoff = time.time() - 3600
@@ -2077,8 +2227,9 @@ async def start_chat_run(body: ChatBody, request: Request) -> dict:
 
 
 @app.get("/api/chat/runs/{run_id}", dependencies=[Depends(require_token)])
-async def chat_run_status(run_id: str, request: Request, cursor: int = 0,
-                          wait: bool = False) -> dict:
+async def chat_run_status(
+    run_id: str, request: Request, cursor: int = 0, wait: bool = False
+) -> dict:
     run = _chat_run(run_id, principal_of(request))
     if wait and cursor >= len(run.frames) and run.status == "running":
         run.changed.clear()
@@ -2100,9 +2251,14 @@ def cancel_chat_run(run_id: str, request: Request) -> dict:
 def chat_diagnostics(request: Request) -> dict:
     """On-demand diagnostics; no prompts, replies or filesystem scans."""
     owner = principal_of(request)
-    return {"engine": engine_manager.status(), "runs": [
-        {"id": run.id, "status": run.status, "timings": run.timings}
-        for run in list(_chat_runs.values())[-20:] if run.owner == owner]}
+    return {
+        "engine": engine_manager.status(),
+        "runs": [
+            {"id": run.id, "status": run.status, "timings": run.timings}
+            for run in list(_chat_runs.values())[-20:]
+            if run.owner == owner
+        ],
+    }
 
 
 @app.post("/api/chat", dependencies=[Depends(require_token)])
@@ -2114,16 +2270,24 @@ async def chat(body: ChatBody) -> StreamingResponse:
 
     async def relay() -> Any:
         async with httpx.AsyncClient(timeout=None) as client:
-            payload = model_payload(engine_manager.active, body.messages,
-                overrides={**body.sampling, **({"temperature": body.temperature}
-                    if body.temperature is not None else {})}, max_tokens=body.max_tokens,
-                effort=body.effort or settings.effort)
+            payload = model_payload(
+                engine_manager.active,
+                body.messages,
+                overrides={
+                    **body.sampling,
+                    **({"temperature": body.temperature} if body.temperature is not None else {}),
+                },
+                max_tokens=body.max_tokens,
+                effort=body.effort or settings.effort,
+            )
             # Plain Chat is a direct-answer surface. Thinking-capable GGUF
             # templates otherwise default to an unlimited private-reasoning
             # pass, and small Qwen variants can loop there without ever
             # emitting an answer. Agent planning remains a separate endpoint.
             async with client.stream(
-                "POST", f"{engine_manager.active.base_url}/v1/chat/completions", json=payload,
+                "POST",
+                f"{engine_manager.active.base_url}/v1/chat/completions",
+                json=payload,
             ) as resp:
                 resp.raise_for_status()
                 async for chunk in resp.aiter_bytes():
@@ -2170,8 +2334,9 @@ def _batch_seeds(seed: int | None, count: int) -> list[int]:
     import secrets
 
     if not 1 <= count <= MAX_BATCH:
-        raise HTTPException(status_code=400,
-                            detail=f"Generate between 1 and {MAX_BATCH} images at a time")
+        raise HTTPException(
+            status_code=400, detail=f"Generate between 1 and {MAX_BATCH} images at a time"
+        )
     base = seed if seed is not None else secrets.randbelow(2**31 - MAX_BATCH)
     return [base + i for i in range(count)]
 
@@ -2181,21 +2346,35 @@ async def generate_image(body: ImageGenerateBody, request: Request) -> dict:
     """Start one image or a batch. Returns the first job, with every job in
     the batch under `batch`. Approved once for the whole batch."""
     seeds = _batch_seeds(body.seed, body.count)
-    gated("generate_image", Risk.GENERATE,
-          (f"Generate {body.count} images: " if body.count > 1 else "Generate an image: ")
-          + body.prompt[:160],
-          preview={"prompt": body.prompt, "count": body.count}, origin="image")
+    gated(
+        "generate_image",
+        Risk.GENERATE,
+        (f"Generate {body.count} images: " if body.count > 1 else "Generate an image: ")
+        + body.prompt[:160],
+        preview={"prompt": body.prompt, "count": body.count},
+        origin="image",
+    )
     entry = get_entry(body.catalog_id) if body.catalog_id else None
-    jobs = [image_engine.start(
-        body.model_path, body.engine, body.prompt, negative_prompt=body.negative_prompt,
-        steps=body.steps, guidance=body.guidance, width=body.width,
-        height=body.height, seed=seed,
-        mflux_cli=body.mflux_cli or (entry.mflux_cli if entry else "mflux-generate"),
-        mflux_base=body.mflux_base or (entry.mflux_base if entry else None),
-        lora_paths=body.lora_paths, lora_scales=body.lora_scales,
-        text_encoder_path=body.text_encoder_path,
-        label=f"{i + 1} of {body.count}" if body.count > 1 else None,
-    ) for i, seed in enumerate(seeds)]
+    jobs = [
+        image_engine.start(
+            body.model_path,
+            body.engine,
+            body.prompt,
+            negative_prompt=body.negative_prompt,
+            steps=body.steps,
+            guidance=body.guidance,
+            width=body.width,
+            height=body.height,
+            seed=seed,
+            mflux_cli=body.mflux_cli or (entry.mflux_cli if entry else "mflux-generate"),
+            mflux_base=body.mflux_base or (entry.mflux_base if entry else None),
+            lora_paths=body.lora_paths,
+            lora_scales=body.lora_scales,
+            text_encoder_path=body.text_encoder_path,
+            label=f"{i + 1} of {body.count}" if body.count > 1 else None,
+        )
+        for i, seed in enumerate(seeds)
+    ]
     claim_jobs("image", [job.id for job in jobs], request)
     return {**jobs[0].to_dict(), "batch": [j.to_dict() for j in jobs]}
 
@@ -2204,10 +2383,35 @@ UPLOAD_DIR = CONFIG_DIR / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 CHAT_DOCUMENT_TYPES = {
-    ".txt", ".md", ".markdown", ".csv", ".tsv", ".json", ".yaml", ".yml",
-    ".py", ".js", ".jsx", ".ts", ".tsx", ".css", ".html", ".xml", ".toml",
-    ".ini", ".log", ".sql", ".rs", ".go", ".java", ".c", ".h", ".cpp",
-    ".docx", ".xlsx", ".pptx",
+    ".txt",
+    ".md",
+    ".markdown",
+    ".csv",
+    ".tsv",
+    ".json",
+    ".yaml",
+    ".yml",
+    ".py",
+    ".js",
+    ".jsx",
+    ".ts",
+    ".tsx",
+    ".css",
+    ".html",
+    ".xml",
+    ".toml",
+    ".ini",
+    ".log",
+    ".sql",
+    ".rs",
+    ".go",
+    ".java",
+    ".c",
+    ".h",
+    ".cpp",
+    ".docx",
+    ".xlsx",
+    ".pptx",
 }
 MAX_CHAT_DOCUMENT_BYTES = 10 * 1024 * 1024
 MAX_CHAT_DOCUMENT_CHARS = 120_000
@@ -2223,8 +2427,11 @@ async def upload_chat_attachment(file: UploadFile = File(...)) -> dict:
     if suffix not in CHAT_DOCUMENT_TYPES:
         raise HTTPException(
             status_code=400,
-            detail=(f"{suffix or 'That file type'} cannot be read in Chat yet. "
-                    "Use text, source code, Word, Excel, or PowerPoint."))
+            detail=(
+                f"{suffix or 'That file type'} cannot be read in Chat yet. "
+                "Use text, source code, Word, Excel, or PowerPoint."
+            ),
+        )
     raw = await file.read(MAX_CHAT_DOCUMENT_BYTES + 1)
     if len(raw) > MAX_CHAT_DOCUMENT_BYTES:
         raise HTTPException(status_code=413, detail="That file is larger than 10 MB")
@@ -2240,8 +2447,12 @@ async def upload_chat_attachment(file: UploadFile = File(...)) -> dict:
     if not text:
         raise HTTPException(status_code=400, detail=f"{name} contains no readable text")
     clipped = len(text) > MAX_CHAT_DOCUMENT_CHARS
-    return {"name": name, "type": file.content_type or "application/octet-stream",
-            "text": text[:MAX_CHAT_DOCUMENT_CHARS], "clipped": clipped}
+    return {
+        "name": name,
+        "type": file.content_type or "application/octet-stream",
+        "text": text[:MAX_CHAT_DOCUMENT_CHARS],
+        "clipped": clipped,
+    }
 
 
 @app.post("/api/image/upload", dependencies=[Depends(require_token)])
@@ -2273,13 +2484,22 @@ class ImageEditBody(BaseModel):
 async def edit_image(body: ImageEditBody, request: Request) -> dict:
     seeds = _batch_seeds(body.seed, body.count)
     entry = get_entry(body.catalog_id) if body.catalog_id else None
-    jobs = [image_engine.start_edit(
-        body.model_path, body.prompt, body.reference_path,
-        steps=body.steps, guidance=body.guidance, width=body.width, height=body.height,
-        seed=seed, strength=body.strength,
-        mflux_cli=entry.mflux_cli if entry else "mflux-generate-kontext",
-        label=f"{i + 1} of {body.count}" if body.count > 1 else None,
-    ) for i, seed in enumerate(seeds)]
+    jobs = [
+        image_engine.start_edit(
+            body.model_path,
+            body.prompt,
+            body.reference_path,
+            steps=body.steps,
+            guidance=body.guidance,
+            width=body.width,
+            height=body.height,
+            seed=seed,
+            strength=body.strength,
+            mflux_cli=entry.mflux_cli if entry else "mflux-generate-kontext",
+            label=f"{i + 1} of {body.count}" if body.count > 1 else None,
+        )
+        for i, seed in enumerate(seeds)
+    ]
     claim_jobs("image", [job.id for job in jobs], request)
     return {**jobs[0].to_dict(), "batch": [j.to_dict() for j in jobs]}
 
@@ -2317,7 +2537,8 @@ async def product_generate(body: ProductGenerateBody, request: Request) -> list[
     for shot_id in body.shots:
         try:
             instruction = product_studio.build_instruction(
-                body.category, shot_id,
+                body.category,
+                shot_id,
                 model_description=body.model_description,
                 background=body.background,
                 extra=body.extra,
@@ -2326,12 +2547,19 @@ async def product_generate(body: ProductGenerateBody, request: Request) -> list[
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         shot = product_studio.get_shot(body.category, shot_id)
         width, height = product_studio.ASPECT_SIZES.get(
-            shot.aspect if shot else "portrait", (768, 1024))
+            shot.aspect if shot else "portrait", (768, 1024)
+        )
         job = image_engine.start_edit(
-            body.model_path, instruction, body.reference_path,
-            steps=body.steps, guidance=body.guidance,
-            width=width, height=height, seed=body.seed,
-            mflux_cli=cli, label=shot.name if shot else shot_id,
+            body.model_path,
+            instruction,
+            body.reference_path,
+            steps=body.steps,
+            guidance=body.guidance,
+            width=width,
+            height=height,
+            seed=body.seed,
+            mflux_cli=cli,
+            label=shot.name if shot else shot_id,
         )
         jobs.append(job.to_dict())
         claim_jobs("image", [job.id], request)
@@ -2356,7 +2584,11 @@ class CharacterBody(BaseModel):
 def save_char(body: CharacterBody) -> dict:
     try:
         char = characters.save_character(
-            body.name, body.description, body.tags, body.reference_path, body.slug,
+            body.name,
+            body.description,
+            body.tags,
+            body.reference_path,
+            body.slug,
         )
     except FileNotFoundError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -2415,8 +2647,11 @@ def export_images(body: ExportBody, request: Request) -> dict:
 @app.get("/api/image/jobs", dependencies=[Depends(require_token)])
 def list_image_jobs(request: Request) -> list[dict]:
     owner = principal_of(request)
-    return [job.to_dict() for job in image_engine.jobs.values()
-            if _job_owners["image"].get(job.id, "desktop") == owner]
+    return [
+        job.to_dict()
+        for job in image_engine.jobs.values()
+        if _job_owners["image"].get(job.id, "desktop") == owner
+    ]
 
 
 @app.get("/api/image/jobs/{job_id}", dependencies=[Depends(require_token)])
@@ -2481,9 +2716,16 @@ async def video_generate(body: VideoGenerateBody, request: Request) -> dict:
     from .video_engine import video_engine
 
     job = video_engine.start(
-        body.model_path, body.prompt, negative_prompt=body.negative_prompt,
-        frames=body.frames, fps=body.fps, width=body.width, height=body.height,
-        steps=body.steps, guidance=body.guidance, seed=body.seed,
+        body.model_path,
+        body.prompt,
+        negative_prompt=body.negative_prompt,
+        frames=body.frames,
+        fps=body.fps,
+        width=body.width,
+        height=body.height,
+        steps=body.steps,
+        guidance=body.guidance,
+        seed=body.seed,
     )
     claim_jobs("video", [job.id], request)
     return job.to_dict()
@@ -2555,7 +2797,7 @@ async def music_install() -> StreamingResponse:
                 yield 'data: {"done": true}\n\n'
                 break
             if line.startswith("__error__"):
-                yield f"data: {json.dumps({'error': line[len('__error__'):]})}\n\n"
+                yield f"data: {json.dumps({'error': line[len('__error__') :]})}\n\n"
                 break
             yield f"data: {json.dumps({'line': line})}\n\n"
         await task
@@ -2584,17 +2826,26 @@ class MusicGenerateBody(BaseModel):
 async def generate_music_track(body: MusicGenerateBody, request: Request) -> dict:
     if body.sample_rate not in music_engine_mod.SAMPLE_RATES:
         raise HTTPException(
-            status_code=400,
-            detail=f"sample_rate must be one of {music_engine_mod.SAMPLE_RATES}")
+            status_code=400, detail=f"sample_rate must be one of {music_engine_mod.SAMPLE_RATES}"
+        )
     if body.bit_depth not in music_engine_mod.BIT_DEPTHS:
         raise HTTPException(
-            status_code=400,
-            detail=f"bit_depth must be one of {music_engine_mod.BIT_DEPTHS}")
+            status_code=400, detail=f"bit_depth must be one of {music_engine_mod.BIT_DEPTHS}"
+        )
     job = music_engine.start(
-        body.model_dir, body.prompt, lyrics=body.lyrics, instrumental=body.instrumental,
-        duration=body.duration, bpm=body.bpm, keyscale=body.keyscale, steps=body.steps,
-        guidance=body.guidance, seed=body.seed, sample_rate=body.sample_rate,
-        bit_depth=body.bit_depth, separate_stems=body.separate_stems,
+        body.model_dir,
+        body.prompt,
+        lyrics=body.lyrics,
+        instrumental=body.instrumental,
+        duration=body.duration,
+        bpm=body.bpm,
+        keyscale=body.keyscale,
+        steps=body.steps,
+        guidance=body.guidance,
+        seed=body.seed,
+        sample_rate=body.sample_rate,
+        bit_depth=body.bit_depth,
+        separate_stems=body.separate_stems,
         audio_format=body.audio_format,
     )
     claim_jobs("music", [job.id], request)
@@ -2604,8 +2855,11 @@ async def generate_music_track(body: MusicGenerateBody, request: Request) -> dic
 @app.get("/api/music/jobs", dependencies=[Depends(require_token)])
 def list_music_jobs(request: Request) -> list[dict]:
     owner = principal_of(request)
-    return [job.to_dict() for job in music_engine.jobs.values()
-            if _job_owners["music"].get(job.id, "desktop") == owner]
+    return [
+        job.to_dict()
+        for job in music_engine.jobs.values()
+        if _job_owners["music"].get(job.id, "desktop") == owner
+    ]
 
 
 @app.get("/api/music/jobs/{job_id}", dependencies=[Depends(require_token)])
@@ -2618,8 +2872,7 @@ def get_music_job(job_id: str, request: Request) -> dict:
 
 
 @app.get("/api/music/audio/{job_id}", dependencies=[Depends(require_token)])
-def get_music_audio(job_id: str, request: Request,
-                    stem: str = Query(default="")) -> FileResponse:
+def get_music_audio(job_id: str, request: Request, stem: str = Query(default="")) -> FileResponse:
     """Return the mixdown, or one separated stem when `stem` is given."""
     require_job("music", job_id, request)
     job = music_engine.jobs.get(job_id)
@@ -2683,7 +2936,7 @@ async def narration_install(body: NarrationInstallBody) -> StreamingResponse:
                 yield 'data: {"done": true}\n\n'
                 break
             if line.startswith("__error__"):
-                yield f"data: {json.dumps({'error': line[len('__error__'):]})}\n\n"
+                yield f"data: {json.dumps({'error': line[len('__error__') :]})}\n\n"
                 break
             yield f"data: {json.dumps({'line': line})}\n\n"
         await task
@@ -2708,9 +2961,15 @@ async def generate_narration(body: NarrationBody, request: Request) -> dict:
     if not body.text.strip():
         raise HTTPException(status_code=400, detail="text is required")
     job = narration_engine.start(
-        body.model_dir, body.text, voice_slug=body.voice_slug,
-        sample_rate=body.sample_rate, bit_depth=body.bit_depth, cfg_scale=body.cfg_scale,
-        ddpm_steps=body.ddpm_steps, audio_format=body.audio_format, engine=body.engine,
+        body.model_dir,
+        body.text,
+        voice_slug=body.voice_slug,
+        sample_rate=body.sample_rate,
+        bit_depth=body.bit_depth,
+        cfg_scale=body.cfg_scale,
+        ddpm_steps=body.ddpm_steps,
+        audio_format=body.audio_format,
+        engine=body.engine,
     )
     claim_jobs("narration", [job.id], request)
     return job.to_dict()
@@ -2731,8 +2990,9 @@ def get_narration_audio(job_id: str, request: Request) -> FileResponse:
     job = narration_engine.jobs.get(job_id)
     if not job or not job.output_path or not Path(job.output_path).exists():
         raise HTTPException(status_code=404, detail="Audio not ready")
-    return FileResponse(job.output_path, media_type="audio/wav",
-                        filename=Path(job.output_path).name)
+    return FileResponse(
+        job.output_path, media_type="audio/wav", filename=Path(job.output_path).name
+    )
 
 
 class VoiceBody(BaseModel):
@@ -2803,8 +3063,9 @@ async def speak_text(body: SpeakBody) -> FileResponse:
         if body.saved_voice:
             clip = await asyncio.to_thread(speech.speak_reply, body.text, body.saved_voice)
         else:
-            out_path = await asyncio.to_thread(voice_engine.speak, body.text, body.voice,
-                                               body.speed)
+            out_path = await asyncio.to_thread(
+                voice_engine.speak, body.text, body.voice, body.speed
+            )
             clip = speech.record_reply(out_path, body.text, body.voice)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -2890,10 +3151,18 @@ class SpeechVoiceBody(BaseModel):
 @app.post("/api/speech/voices", dependencies=[Depends(require_token)])
 async def speech_save_voice(body: SpeechVoiceBody) -> dict:
     voice = await asyncio.to_thread(
-        _speech_call, speech.save_voice, name=body.name, engine=body.engine,
-        model_path=body.model_path, variant=body.variant, preset=body.preset,
-        language=body.language, controls=body.controls, notes=body.notes,
-        recording_path=body.recording_path)
+        _speech_call,
+        speech.save_voice,
+        name=body.name,
+        engine=body.engine,
+        model_path=body.model_path,
+        variant=body.variant,
+        preset=body.preset,
+        language=body.language,
+        controls=body.controls,
+        notes=body.notes,
+        recording_path=body.recording_path,
+    )
     return voice.to_dict()
 
 
@@ -2929,8 +3198,9 @@ async def speech_upload_recording(file: UploadFile = File(...)) -> dict:
         dest, seconds = await asyncio.to_thread(to_wav)
     except Exception as exc:  # noqa: BLE001 - an unreadable file is the user's to fix
         raw.unlink(missing_ok=True)
-        raise HTTPException(status_code=400,
-                            detail=f"Could not read that recording: {exc}") from exc
+        raise HTTPException(
+            status_code=400, detail=f"Could not read that recording: {exc}"
+        ) from exc
     return {"path": str(dest), "seconds": round(seconds, 1)}
 
 
@@ -2952,10 +3222,20 @@ class SpeechBody(BaseModel):
 @app.post("/api/speech/speak", dependencies=[Depends(require_token)])
 def speech_speak(body: SpeechBody) -> dict:
     job = _speech_call(
-        speech.start_speech, text=body.text, engine=body.engine, model_path=body.model_path,
-        voice=body.voice, saved=body.saved_voice, recording_path=body.recording_path,
-        language=body.language, variant=body.variant, controls=body.controls,
-        audio_format=body.format, sample_rate=body.sample_rate, bit_depth=body.bit_depth)
+        speech.start_speech,
+        text=body.text,
+        engine=body.engine,
+        model_path=body.model_path,
+        voice=body.voice,
+        saved=body.saved_voice,
+        recording_path=body.recording_path,
+        language=body.language,
+        variant=body.variant,
+        controls=body.controls,
+        audio_format=body.format,
+        sample_rate=body.sample_rate,
+        bit_depth=body.bit_depth,
+    )
     return job.to_dict()
 
 
@@ -2968,9 +3248,13 @@ class SpeechConvertBody(BaseModel):
 
 @app.post("/api/speech/convert", dependencies=[Depends(require_token)])
 def speech_convert(body: SpeechConvertBody) -> dict:
-    job = _speech_call(speech.start_conversion, model_path=body.model_path,
-                       source_path=body.source_path, saved=body.saved_voice,
-                       recording_path=body.recording_path)
+    job = _speech_call(
+        speech.start_conversion,
+        model_path=body.model_path,
+        source_path=body.source_path,
+        saved=body.saved_voice,
+        recording_path=body.recording_path,
+    )
     return job.to_dict()
 
 
@@ -3032,15 +3316,18 @@ async def web_search(body: SearchBody) -> dict:
     which is what makes it fit an application that is otherwise offline: the
     request goes out only when the user's question needs it.
     """
-    gated("web_search", Risk.NETWORK,
-          f"Search the web for: {body.query}", preview={"query": body.query})
+    gated(
+        "web_search",
+        Risk.NETWORK,
+        f"Search the web for: {body.query}",
+        preview={"query": body.query},
+    )
     from .agent.tools import _web_search
 
     try:
         return {"results": await _web_search(body.query.strip())}
     except Exception as exc:  # noqa: BLE001 - a failed lookup is not a crash
-        raise HTTPException(status_code=502,
-                            detail=f"The search did not work: {exc}") from exc
+        raise HTTPException(status_code=502, detail=f"The search did not work: {exc}") from exc
 
 
 @app.post("/api/web/images", dependencies=[Depends(require_token)])
@@ -3055,9 +3342,12 @@ async def web_images(body: SearchBody) -> dict:
     rather than by the origin site, so displaying one does not announce the
     user to whichever site happens to host the picture.
     """
-    gated("web_images", Risk.NETWORK,
-          f"Search the web for pictures of: {body.query}",
-          preview={"query": body.query})
+    gated(
+        "web_images",
+        Risk.NETWORK,
+        f"Search the web for pictures of: {body.query}",
+        preview={"query": body.query},
+    )
     import re
     from urllib.parse import quote
 
@@ -3069,34 +3359,44 @@ async def web_images(body: SearchBody) -> dict:
 
     headers = {"User-Agent": "Mozilla/5.0 (compatible; Uncloud/0.1)"}
     try:
-        async with httpx.AsyncClient(follow_redirects=True, timeout=25,
-                                     headers=headers) as client:
-            page = await client.get(f"https://duckduckgo.com/?q={quote(query)}&iax=images&ia=images")
+        async with httpx.AsyncClient(follow_redirects=True, timeout=25, headers=headers) as client:
+            page = await client.get(
+                f"https://duckduckgo.com/?q={quote(query)}&iax=images&ia=images"
+            )
             token = re.search(r"vqd=[\"']?([\d-]+)", page.text)
             if not token:
                 return {"images": []}
             resp = await client.get(
                 "https://duckduckgo.com/i.js",
-                params={"l": "us-en", "o": "json", "q": query,
-                        "vqd": token.group(1), "f": ",,,", "p": "1"},
+                params={
+                    "l": "us-en",
+                    "o": "json",
+                    "q": query,
+                    "vqd": token.group(1),
+                    "f": ",,,",
+                    "p": "1",
+                },
                 headers={**headers, "Referer": "https://duckduckgo.com/"},
             )
             resp.raise_for_status()
             payload = resp.json()
     except Exception as exc:  # noqa: BLE001 - a failed lookup is not a crash
-        raise HTTPException(status_code=502,
-                            detail=f"The image search did not work: {exc}") from exc
+        raise HTTPException(
+            status_code=502, detail=f"The image search did not work: {exc}"
+        ) from exc
 
     images = []
     for item in (payload.get("results") or [])[:8]:
         thumbnail = item.get("thumbnail")
         if not thumbnail:
             continue
-        images.append({
-            "thumbnail": thumbnail,
-            "source": item.get("url") or item.get("image") or "",
-            "title": (item.get("title") or "").strip(),
-        })
+        images.append(
+            {
+                "thumbnail": thumbnail,
+                "source": item.get("url") or item.get("image") or "",
+                "title": (item.get("title") or "").strip(),
+            }
+        )
     return {"images": images}
 
 
@@ -3107,15 +3407,13 @@ async def web_read(body: ReadBody) -> dict:
     Extracted rather than raw: HTML markup would burn most of a local model's
     context window on things it cannot use.
     """
-    gated("web_read", Risk.NETWORK, f"Read this page: {body.url}",
-          preview={"url": body.url})
+    gated("web_read", Risk.NETWORK, f"Read this page: {body.url}", preview={"url": body.url})
     from .agent.tools import _web_read
 
     try:
         return {"text": await _web_read(body.url.strip())}
     except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=502,
-                            detail=f"That page could not be read: {exc}") from exc
+        raise HTTPException(status_code=502, detail=f"That page could not be read: {exc}") from exc
 
 
 # ----------------------------------------------------------- conversations
@@ -3140,39 +3438,42 @@ def list_conversations(request: Request) -> dict:  # noqa: D401
         result = conversations_store.listing(owner=principal_of(request))
     except conversations_store.EncryptionUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
-    return {"conversations": result.conversations, "unreadable": result.unreadable,
-            "secure": result.secure, "backend": result.backend}
+    return {
+        "conversations": result.conversations,
+        "unreadable": result.unreadable,
+        "secure": result.secure,
+        "backend": result.backend,
+    }
 
 
 @app.post("/api/conversations", dependencies=[Depends(require_token)])
 def create_conversation(body: ConversationBody, request: Request) -> dict:
     conversation = conversations_store.create(
-        body.messages, body.model_path, owner=principal_of(request))
+        body.messages, body.model_path, owner=principal_of(request)
+    )
     if body.title:
         conversation.title = body.title
     conversation.compact_summary = body.compact_summary or ""
-    conversation.compacted_through = min(
-            len(body.messages), max(0, body.compacted_through or 0))
+    conversation.compacted_through = min(len(body.messages), max(0, body.compacted_through or 0))
     return conversations_store.save(conversation).to_dict()
 
 
 @app.get("/api/conversations/{conversation_id}", dependencies=[Depends(require_token)])
 def read_conversation(conversation_id: str, request: Request) -> dict:
     try:
-        conversation = conversations_store.load(
-            conversation_id, owner=principal_of(request))
+        conversation = conversations_store.load(conversation_id, owner=principal_of(request))
     except ValueError:
         # `from None`, unlike everywhere else here: a malformed id is a
         # validation failure whose original exception says nothing the message
         # does not, and chaining it puts a parser traceback in the log for
         # somebody mistyping a URL.
-        raise HTTPException(status_code=400,
-                            detail="Not a conversation id") from None
+        raise HTTPException(status_code=400, detail="Not a conversation id") from None
     except Exception as exc:  # noqa: BLE001 - a damaged file is not a crash
         raise HTTPException(
             status_code=422,
             detail="This conversation could not be decrypted. It was written "
-                   "with a different key, or the file has been altered.") from exc
+            "with a different key, or the file has been altered.",
+        ) from exc
     if conversation is None:
         raise HTTPException(status_code=404, detail="No such conversation")
     return conversation.to_dict()
@@ -3194,8 +3495,7 @@ def write_conversation(conversation_id: str, body: ConversationBody, request: Re
         # validation failure whose original exception says nothing the message
         # does not, and chaining it puts a parser traceback in the log for
         # somebody mistyping a URL.
-        raise HTTPException(status_code=400,
-                            detail="Not a conversation id") from None
+        raise HTTPException(status_code=400, detail="Not a conversation id") from None
     except Exception:  # noqa: BLE001 - handled below as occupied, never overwritten
         existing = None
 
@@ -3205,12 +3505,18 @@ def write_conversation(conversation_id: str, body: ConversationBody, request: Re
             # upsert into a cross-device overwrite oracle.
             raise HTTPException(status_code=404, detail="No such conversation")
         conversation = conversations_store.Conversation(
-            id=conversation_id, title=body.title or "",
-            created=time.time(), updated=time.time(),
-            messages=body.messages, model_path=body.model_path, owner=owner)
+            id=conversation_id,
+            title=body.title or "",
+            created=time.time(),
+            updated=time.time(),
+            messages=body.messages,
+            model_path=body.model_path,
+            owner=owner,
+        )
         conversation.compact_summary = body.compact_summary or ""
         conversation.compacted_through = min(
-            len(body.messages), max(0, body.compacted_through or 0))
+            len(body.messages), max(0, body.compacted_through or 0)
+        )
     else:
         existing.messages = body.messages
         existing.model_path = body.model_path or existing.model_path
@@ -3227,15 +3533,13 @@ def write_conversation(conversation_id: str, body: ConversationBody, request: Re
 @app.delete("/api/conversations/{conversation_id}", dependencies=[Depends(require_token)])
 def remove_conversation(conversation_id: str, request: Request) -> dict:
     try:
-        return {"deleted": conversations_store.delete(
-            conversation_id, owner=principal_of(request))}
+        return {"deleted": conversations_store.delete(conversation_id, owner=principal_of(request))}
     except ValueError:
         # `from None`, unlike everywhere else here: a malformed id is a
         # validation failure whose original exception says nothing the message
         # does not, and chaining it puts a parser traceback in the log for
         # somebody mistyping a URL.
-        raise HTTPException(status_code=400,
-                            detail="Not a conversation id") from None
+        raise HTTPException(status_code=400, detail="Not a conversation id") from None
 
 
 # ------------------------------------------------------------------- agent
@@ -3304,6 +3608,7 @@ async def agent_ws(websocket: WebSocket) -> None:
             return
 
         from .power import keep_awake
+
         wake_lock = keep_awake("agent")
         wake_lock.__enter__()
 
@@ -3322,11 +3627,18 @@ async def agent_ws(websocket: WebSocket) -> None:
             than a job that sits in progress for ever.
             """
             nonlocal connected
-            offered = await send({"type": "approval", "request": {
-                "action": request.action, "category": request.category.value,
-                "summary": request.summary, "preview": request.preview,
-                "mode": gate.mode_for(request.category).value,
-            }})
+            offered = await send(
+                {
+                    "type": "approval",
+                    "request": {
+                        "action": request.action,
+                        "category": request.category.value,
+                        "summary": request.summary,
+                        "preview": request.preview,
+                        "mode": gate.mode_for(request.category).value,
+                    },
+                }
+            )
             if not offered:
                 return "no"
             try:
@@ -3346,8 +3658,7 @@ async def agent_ws(websocket: WebSocket) -> None:
                     task.status = "failed"
                     task.error = "Stopped by the user"
         with contextlib.suppress(Exception):
-            await send({"type": "cancelled",
-                        "graph": graph.to_dict() if graph else None})
+            await send({"type": "cancelled", "graph": graph.to_dict() if graph else None})
     except WebSocketDisconnect:
         pass
     except Exception as exc:  # noqa: BLE001 - report any planner/tool failure to the client
@@ -3371,8 +3682,10 @@ def _web_dist() -> Path | None:
     """
     import os
 
-    for candidate in (os.environ.get("UNCLOUD_WEB_DIST"),
-                      Path(__file__).resolve().parents[2] / "uncloud" / "dist"):
+    for candidate in (
+        os.environ.get("UNCLOUD_WEB_DIST"),
+        Path(__file__).resolve().parents[2] / "uncloud" / "dist",
+    ):
         if candidate and (Path(candidate) / "index.html").is_file():
             return Path(candidate)
     return None
@@ -3407,10 +3720,15 @@ def main() -> None:
         from .core.lan import candidates
 
         found = candidates()
-        _lan = Lan(product="Uncloud", slug="uncloud", config_dir=CONFIG_DIR,
-                   port=lan_run.lan_port("uncloud", lan_run.option(argv, "lan-port"),
-                                         [i.address for i in found]),
-                   chosen=found)
+        _lan = Lan(
+            product="Uncloud",
+            slug="uncloud",
+            config_dir=CONFIG_DIR,
+            port=lan_run.lan_port(
+                "uncloud", lan_run.option(argv, "lan-port"), [i.address for i in found]
+            ),
+            chosen=found,
+        )
         app.include_router(lan_web.router(_lan, authorised))
         dist = _web_dist()
         if dist is not None:
@@ -3427,38 +3745,46 @@ def main() -> None:
         if sys.stderr.isatty():
             print(_lan.banner(offer), file=sys.stderr, flush=True)
         else:
-            print("Uncloud is on the local network. Run `pair` in a terminal, or "
-                  "open Settings > Devices, for a pairing code.", file=sys.stderr, flush=True)
+            print(
+                "Uncloud is on the local network. Run `pair` in a terminal, or "
+                "open Settings > Devices, for a pairing code.",
+                file=sys.stderr,
+                flush=True,
+            )
         if _web_dist() is None:
-            print("No built frontend was found, so paired devices get the API only. "
-                  "Build it with `npm run build` in uncloud/.", file=sys.stderr, flush=True)
+            print(
+                "No built frontend was found, so paired devices get the API only. "
+                "Build it with `npm run build` in uncloud/.",
+                file=sys.stderr,
+                flush=True,
+            )
 
     lan_run.serve(app, port=port, lan=_lan)
 
 
-
-
-@app.post('/api/readiness/complete', dependencies=[Depends(require_token)])
+@app.post("/api/readiness/complete", dependencies=[Depends(require_token)])
 def readiness_complete() -> dict:
-    settings._data['runtime_setup_complete'] = True
+    settings._data["runtime_setup_complete"] = True
     settings._save()
-    return {'ok': True}
+    return {"ok": True}
 
 
-@app.get('/api/readiness', dependencies=[Depends(require_token)])
-def readiness_status(names: str = '') -> list[dict]:
+@app.get("/api/readiness", dependencies=[Depends(require_token)])
+def readiness_status(names: str = "") -> list[dict]:
     from .readiness import SPECS, inventory
-    selected = names.split(',') if names else None
+
+    selected = names.split(",") if names else None
     if selected and any(name not in SPECS for name in selected):
-        raise HTTPException(status_code=400, detail='Unknown capability')
+        raise HTTPException(status_code=400, detail="Unknown capability")
     return inventory(selected)
 
 
-@app.post('/api/readiness/{name}/install', dependencies=[Depends(require_token)])
+@app.post("/api/readiness/{name}/install", dependencies=[Depends(require_token)])
 async def readiness_install(name: str) -> StreamingResponse:
     from .readiness import SPECS, install
+
     if name not in SPECS:
-        raise HTTPException(status_code=404, detail='Unknown capability')
+        raise HTTPException(status_code=404, detail="Unknown capability")
     queue: asyncio.Queue = asyncio.Queue()
     loop = asyncio.get_running_loop()
 
@@ -3467,20 +3793,21 @@ async def readiness_install(name: str) -> StreamingResponse:
 
     def run():
         try:
-            install(name, lambda line: emit({'line': line}))
-            emit({'done': True})
+            install(name, lambda line: emit({"line": line}))
+            emit({"done": True})
         except Exception as exc:  # noqa: BLE001
-            emit({'error': str(exc)})
+            emit({"error": str(exc)})
 
     async def stream():
         task = loop.run_in_executor(None, run)
         while True:
             event = await queue.get()
-            yield f'data: {json.dumps(event)}\n\n'
-            if event.get('done') or event.get('error'):
+            yield f"data: {json.dumps(event)}\n\n"
+            if event.get("done") or event.get("error"):
                 break
         await task
-    return StreamingResponse(stream(), media_type='text/event-stream')
+
+    return StreamingResponse(stream(), media_type="text/event-stream")
 
 
 if __name__ == "__main__":

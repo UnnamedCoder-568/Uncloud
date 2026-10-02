@@ -57,17 +57,13 @@ TOOL_RISK: dict[str, Risk] = {
     "computer_type": Risk.DEVICE,
     "computer_key": Risk.DEVICE,
     "computer_scroll": Risk.DEVICE,
-
-
     "integrations": Risk.READ,
-
     "fs_read": Risk.READ,
     "fs_list": Risk.READ,
     "fs_glob": Risk.READ,
     "fs_grep": Risk.READ,
     "fs_write": Risk.WRITE,
     "fs_edit": Risk.WRITE,
-
     "http_fetch": Risk.NETWORK,
     "web_read": Risk.NETWORK,
     "web_search": Risk.NETWORK,
@@ -84,21 +80,17 @@ TOOL_RISK: dict[str, Risk] = {
     "browser_click_at": Risk.WRITE,
     "browser_drag": Risk.WRITE,
     "browser_scroll_at": Risk.WRITE,
-
     "video_info": Risk.READ,
     "video_frames": Risk.WRITE,
     "see_image": Risk.READ,
-
     "skill_list": Risk.READ,
     "skill_read": Risk.READ,
     "skill_save": Risk.WRITE,
-
     "plan_set": Risk.READ,
     "plan_show": Risk.READ,
     "plan_update": Risk.READ,
     "note_save": Risk.READ,
     "note_recall": Risk.READ,
-
     "generate_image": Risk.GENERATE,
 }
 
@@ -126,7 +118,8 @@ def current_gate() -> Gate:
         raise Ungoverned(
             "No approval gate is installed. Every tool call has to be decided by one; a tool layer "
             "without it is not a smaller feature, it is an "
-            "ungoverned one.")
+            "ungoverned one."
+        )
     return _gate
 
 
@@ -137,6 +130,7 @@ def _summarise(tool_id: str, args: dict[str, Any]) -> tuple[str, dict]:
     anybody can make; "run `rm -rf build`" is. The most dangerous tool gets the
     most literal summary.
     """
+
     def first(*names: str) -> str:
         for name in names:
             value = args.get(name)
@@ -152,17 +146,20 @@ def _summarise(tool_id: str, args: dict[str, Any]) -> tuple[str, dict]:
     if tool_id in ("fs_write", "fs_edit"):
         path = first("path")
         body = str(args.get("content") or args.get("new") or "")
-        return (f"{'Write' if tool_id == 'fs_write' else 'Edit'} {path}",
-                {"path": path, "bytes": len(body), "preview": body[:600]})
+        return (
+            f"{'Write' if tool_id == 'fs_write' else 'Edit'} {path}",
+            {"path": path, "bytes": len(body), "preview": body[:600]},
+        )
     if tool_id == "app_open":
         target = first("target", "app")
         return f"Open {target} on this Mac", {"target": target}
     if tool_id == "screen_capture":
-        return ("Take a screenshot of the whole screen, including anything "
-                "else that is open", {})
+        return ("Take a screenshot of the whole screen, including anything else that is open", {})
     if tool_id in ("browser_type",):
-        return (f"Type into {first('target')} on the current page",
-                {"target": first("target"), "text": first("text")[:200]})
+        return (
+            f"Type into {first('target')} on the current page",
+            {"target": first("target"), "text": first("text")[:200]},
+        )
     if tool_id in ("browser_click", "browser_click_at"):
         return f"Click {first('target') or 'in the page'}", dict(args)
     if tool_id == "browser_eval":
@@ -177,146 +174,179 @@ def _summarise(tool_id: str, args: dict[str, Any]) -> tuple[str, dict]:
         return f"Extract frames from {first('path')}", {"path": first("path")}
     return f"{tool_id} {first('path', 'target', 'query', 'url', 'name')}".strip(), {}
 
+
 TOOL_SPECS = [
     {"id": "shell", "name": "Shell", "description": "Run a shell command.", "args": ["command"]},
     {
-        "id": "capability", "name": "Use a Capability",
+        "id": "capability",
+        "name": "Use a Capability",
         "description": "Do something through whichever connected integration "
-                       "can. Give a capability such as email.send, spreadsheet.read or "
-                       "code.issue.create, and the arguments that capability takes. Name a "
-                       "provider only if the user asked for a specific one.",
+        "can. Give a capability such as email.send, spreadsheet.read or "
+        "code.issue.create, and the arguments that capability takes. Name a "
+        "provider only if the user asked for a specific one.",
         "args": ["capability", "arguments", "provider"],
     },
-    {"id": "integrations", "name": "Integrations",
-     "description": "List what this computer is connected to — document folders, "
-                    "accounts — and which actions each one offers. Use the action ids it returns "
-                    "to actually do something.",
-     "args": []},
-    {"id": "fs_read", "name": "Read File", "description": "Read a text file.", "args": ["path"]},
-    {"id": "fs_write", "name": "Write File", "description": "Write a text file.",
-     "args": ["path", "content"]},
-    {"id": "fs_list", "name": "List Directory",
-     "description": "List a directory's contents.", "args": ["path"]},
-    {"id": "http_fetch", "name": "Fetch URL",
-     "description": "GET a URL and return the raw body. Prefer web_read for web pages.",
-     "args": ["url"]},
     {
-        "id": "web_read", "name": "Read Web Page",
-        "description": "Fetch a web page and return its main content as clean readable text, "
-                       "without navigation or markup.",
+        "id": "integrations",
+        "name": "Integrations",
+        "description": "List what this computer is connected to — document folders, "
+        "accounts — and which actions each one offers. Use the action ids it returns "
+        "to actually do something.",
+        "args": [],
+    },
+    {"id": "fs_read", "name": "Read File", "description": "Read a text file.", "args": ["path"]},
+    {
+        "id": "fs_write",
+        "name": "Write File",
+        "description": "Write a text file.",
+        "args": ["path", "content"],
+    },
+    {
+        "id": "fs_list",
+        "name": "List Directory",
+        "description": "List a directory's contents.",
+        "args": ["path"],
+    },
+    {
+        "id": "http_fetch",
+        "name": "Fetch URL",
+        "description": "GET a URL and return the raw body. Prefer web_read for web pages.",
         "args": ["url"],
     },
     {
-        "id": "web_search", "name": "Web Search",
+        "id": "web_read",
+        "name": "Read Web Page",
+        "description": "Fetch a web page and return its main content as clean readable text, "
+        "without navigation or markup.",
+        "args": ["url"],
+    },
+    {
+        "id": "web_search",
+        "name": "Web Search",
         "description": "Search the web and return the top results with titles, URLs and snippets.",
         "args": ["query"],
     },
     {
-        "id": "video_info", "name": "Video Info",
+        "id": "video_info",
+        "name": "Video Info",
         "description": "Duration, resolution and frame rate of a video file. Check this before "
-                       "pulling frames so you know where to look.",
+        "pulling frames so you know where to look.",
         "args": ["path"],
     },
     {
-        "id": "video_frames", "name": "Extract Video Frames",
-        "description":
-            "Pull still frames from a video and save them as images, then use see_image to look at "
-            "them. This is how to watch a video: sample frames across it, or densely around one "
-            "moment. 'start' and 'duration' are seconds; 'count' is how many frames to take.",
+        "id": "video_frames",
+        "name": "Extract Video Frames",
+        "description": "Pull still frames from a video and save them as images, "
+        "then use see_image to look at "
+        "them. This is how to watch a video: sample frames across it, or densely around one "
+        "moment. 'start' and 'duration' are seconds; 'count' is how many frames to take.",
         "args": ["path", "start", "duration", "count"],
     },
     {
-        "id": "skill_list", "name": "List Skills",
-        "description":
-            "List the skills available — saved procedures for tasks this user does often. Check "
-            "this first when a goal sounds like something that might already have a "
-            "written method.",
+        "id": "skill_list",
+        "name": "List Skills",
+        "description": "List the skills available — saved procedures for tasks this "
+        "user does often. Check "
+        "this first when a goal sounds like something that might already have a "
+        "written method.",
         "args": [],
     },
     {
-        "id": "skill_read", "name": "Read Skill",
+        "id": "skill_read",
+        "name": "Read Skill",
         "description": "Read a skill's full instructions by name, then follow them. Skills are "
-                       "guidance, not commands — carry them out with the normal tools.",
+        "guidance, not commands — carry them out with the normal tools.",
         "args": ["name"],
     },
     {
-        "id": "skill_save", "name": "Save Skill",
-        "description":
-            "Write down a procedure as a reusable skill, when the user asks you to remember how "
-            "something is done. Save instructions a person could follow, never code to run. "
-            "'tools' optionally lists the tool ids it expects to use, so it can be offered only "
-            "where they are available.",
+        "id": "skill_save",
+        "name": "Save Skill",
+        "description": "Write down a procedure as a reusable skill, when the user "
+        "asks you to remember how "
+        "something is done. Save instructions a person could follow, never code to run. "
+        "'tools' optionally lists the tool ids it expects to use, so it can be offered only "
+        "where they are available.",
         "args": ["name", "description", "instructions", "tools (optional)"],
     },
     {
-        "id": "browser_console", "name": "Read Browser Console",
-        "description":
-            "Read the browser console: JavaScript errors, warnings and logs from the current page. "
-            "Use to debug a page that misbehaves. 'level' optionally filters to error, warning or "
-            "log.",
+        "id": "browser_console",
+        "name": "Read Browser Console",
+        "description": "Read the browser console: JavaScript errors, warnings and "
+        "logs from the current page. "
+        "Use to debug a page that misbehaves. 'level' optionally filters to error, warning or "
+        "log.",
         "args": ["level"],
     },
     {
-        "id": "browser_network", "name": "Read Network Requests",
+        "id": "browser_network",
+        "name": "Read Network Requests",
         "description": "List the network requests the page made, with status codes and failures. "
-                       "'contains' optionally filters by URL substring.",
+        "'contains' optionally filters by URL substring.",
         "args": ["contains"],
     },
     {
-        "id": "browser_eval", "name": "Run JavaScript",
-        "description":
-            "Run JavaScript in the current page and return the result, e.g. "
-            "'document.title' or 'document.querySelectorAll(\'a\').length'. Use for "
-            "things the page does not show as text.",
+        "id": "browser_eval",
+        "name": "Run JavaScript",
+        "description": "Run JavaScript in the current page and return the result, e.g. "
+        "'document.title' or 'document.querySelectorAll('a').length'. Use for "
+        "things the page does not show as text.",
         "args": ["code"],
     },
     {
-        "id": "browser_move", "name": "Move Pointer",
-        "description":
-            "Move the browser's pointer to pixel coordinates. This is the agent's own pointer "
-            "inside the page, not the machine's mouse, so it never fights the user for control. "
-            "Pair with screenshot_page and see_image to work visually.",
+        "id": "browser_move",
+        "name": "Move Pointer",
+        "description": "Move the browser's pointer to pixel coordinates. This is "
+        "the agent's own pointer "
+        "inside the page, not the machine's mouse, so it never fights the user for control. "
+        "Pair with screenshot_page and see_image to work visually.",
         "args": ["x", "y"],
     },
     {
-        "id": "browser_click_at", "name": "Click At Coordinates",
-        "description":
-            "Click at pixel coordinates in the page. Use when an element has no usable text or "
-            "selector — read a screenshot first to find the position. Prefer browser_click when "
-            "the target has a visible label.",
+        "id": "browser_click_at",
+        "name": "Click At Coordinates",
+        "description": "Click at pixel coordinates in the page. Use when an element "
+        "has no usable text or "
+        "selector — read a screenshot first to find the position. Prefer browser_click when "
+        "the target has a visible label.",
         "args": ["x", "y", "button", "clicks"],
     },
     {
-        "id": "browser_drag", "name": "Drag Pointer",
+        "id": "browser_drag",
+        "name": "Drag Pointer",
         "description": "Press at one point, drag to another and release. For sliders, canvases and "
-                       "drag-and-drop.",
+        "drag-and-drop.",
         "args": ["x1", "y1", "x2", "y2"],
     },
     {
-        "id": "browser_scroll_at", "name": "Scroll At",
+        "id": "browser_scroll_at",
+        "name": "Scroll At",
         "description": "Scroll the page by a pixel amount at a position. Positive dy scrolls down. "
-                       "Use for panes that scroll independently.",
+        "Use for panes that scroll independently.",
         "args": ["x", "y", "dy"],
     },
     {
-        "id": "fs_edit", "name": "Edit File",
+        "id": "fs_edit",
+        "name": "Edit File",
         "description": "Replace an exact string in a file. Use to change part of a file without "
-                       "rewriting all of it.",
+        "rewriting all of it.",
         "args": ["path", "old", "new"],
     },
     {
-        "id": "fs_glob", "name": "Find Files",
+        "id": "fs_glob",
+        "name": "Find Files",
         "description": "Find files matching a glob pattern, e.g. '**/*.tsx'.",
         "args": ["pattern", "path (optional)"],
     },
     {
-        "id": "fs_grep", "name": "Search In Files",
+        "id": "fs_grep",
+        "name": "Search In Files",
         "description": "Search file contents for a regular expression and return matching lines "
-                       "with their file and line number.",
+        "with their file and line number.",
         "args": ["pattern", "path (optional)", "glob (optional)"],
     },
     {
-        "id": "app_open", "name": "Open On This Mac",
+        "id": "app_open",
+        "name": "Open On This Mac",
         "description": (
             "Open a URL or a file in the user's own default browser or app, or launch an "
             "application by name. Use this when asked to open something on their machine — Safari, "
@@ -326,97 +356,166 @@ TOOL_SPECS = [
         "args": ["target", "app"],
     },
     {
-        "id": "browser_open", "name": "Open In Browser",
-        "description":
-            "Open a URL in a real browser session and return the page's visible text. Use instead "
-            "of web_read when the page needs JavaScript, or when you intend to click or type next.",
+        "id": "browser_open",
+        "name": "Open In Browser",
+        "description": "Open a URL in a real browser session and return the page's "
+        "visible text. Use instead "
+        "of web_read when the page needs JavaScript, or when you intend to click or type next.",
         "args": ["url"],
     },
     {
-        "id": "browser_read", "name": "Read Current Page",
+        "id": "browser_read",
+        "name": "Read Current Page",
         "description": "Return the visible text of the page currently open in the browser.",
         "args": [],
     },
     {
-        "id": "browser_links", "name": "List Page Links",
+        "id": "browser_links",
+        "name": "List Page Links",
         "description": "List the visible links on the current page with their URLs, to choose "
-                       "where to go next.",
+        "where to go next.",
         "args": [],
     },
     {
-        "id": "browser_click", "name": "Click In Browser",
+        "id": "browser_click",
+        "name": "Click In Browser",
         "description": "Click something on the current page. 'target' can be visible text (e.g. "
-                       "'Sign in') or a CSS selector.",
+        "'Sign in') or a CSS selector.",
         "args": ["target"],
     },
     {
-        "id": "browser_type", "name": "Type In Browser",
-        "description":
-            "Type into a field on the current page. 'target' can be the field's label, placeholder "
-            "or a CSS selector. Set submit to true to press Enter afterwards.",
+        "id": "browser_type",
+        "name": "Type In Browser",
+        "description": "Type into a field on the current page. 'target' can be the "
+        "field's label, placeholder "
+        "or a CSS selector. Set submit to true to press Enter afterwards.",
         "args": ["target", "text", "submit (optional)"],
     },
     {
-        "id": "browser_screenshot", "name": "Screenshot Page",
+        "id": "browser_screenshot",
+        "name": "Screenshot Page",
         "description": "Save a PNG screenshot of the current page and return its path.",
         "args": ["full_page (optional)"],
     },
     {
-        "id": "plan_set", "name": "Write Plan",
+        "id": "plan_set",
+        "name": "Write Plan",
         "description": "Write down the plan before starting work: the overall goal and an ordered "
-                       "list of steps. Do this first on any task with more than two steps.",
+        "list of steps. Do this first on any task with more than two steps.",
         "args": ["goal", "steps (list of strings)"],
     },
     {
-        "id": "plan_show", "name": "Check Plan",
+        "id": "plan_show",
+        "name": "Check Plan",
         "description": "Re-read the saved plan and see which steps are done, in progress, or still "
-                       "outstanding. Use this whenever you lose track of where you are.",
+        "outstanding. Use this whenever you lose track of where you are.",
         "args": [],
     },
     {
-        "id": "plan_update", "name": "Update Plan",
+        "id": "plan_update",
+        "name": "Update Plan",
         "description": "Mark a step's status: todo, doing, done or blocked. Add a note explaining "
-                       "what happened. Do this after finishing each step.",
+        "what happened. Do this after finishing each step.",
         "args": ["n", "status", "note (optional)"],
     },
     {
-        "id": "note_save", "name": "Remember Fact",
+        "id": "note_save",
+        "name": "Remember Fact",
         "description": "Save a fact worth not re-deriving later — a file path, an ID, a finding. "
-                       "Give it a short key.",
+        "Give it a short key.",
         "args": ["key", "value"],
     },
     {
-        "id": "note_recall", "name": "Recall Facts",
+        "id": "note_recall",
+        "name": "Recall Facts",
         "description": "Read back saved facts. Omit the key to list everything remembered.",
         "args": ["key (optional)"],
     },
     {
-        "id": "see_image", "name": "Look At Image",
-        "description":
-            "Look at an image file and answer a question about it. Works on screenshots, photos "
-            "and generated images. Requires a vision-capable model to be loaded.",
+        "id": "see_image",
+        "name": "Look At Image",
+        "description": "Look at an image file and answer a question about it. Works "
+        "on screenshots, photos "
+        "and generated images. Requires a vision-capable model to be loaded.",
         "args": ["path", "question (optional)"],
     },
     {
-        "id": "screen_capture", "name": "Capture Screen",
+        "id": "screen_capture",
+        "name": "Capture Screen",
         "description": "Take a screenshot of the whole screen and return its path. Pair with "
-                       "see_image to look at it.",
+        "see_image to look at it.",
         "args": [],
     },
     {
-        "id": "generate_image", "name": "Generate Image",
+        "id": "generate_image",
+        "name": "Generate Image",
         "description": (
             "Invoke a locally installed image diffusion model to generate a picture. 'model' is "
             "optional — a name or catalog id (e.g. 'krea', 'pony'); omit to use whichever image "
             "model is installed. Saves a PNG and returns its path."
         ),
-        "args": ["prompt", "model (optional)", "negative_prompt (optional)", "steps (optional)",
-                  "guidance (optional)", "width (optional)", "height (optional)",
-                  "seed (optional)"],
+        "args": [
+            "prompt",
+            "model (optional)",
+            "negative_prompt (optional)",
+            "steps (optional)",
+            "guidance (optional)",
+            "width (optional)",
+            "height (optional)",
+            "seed (optional)",
+        ],
     },
 ]
-TOOL_SPECS.extend([{'id': 'computer_read', 'name': 'Read desktop geometry', 'description': 'Return current screen dimensions and pointer position.', 'args': []}, {'id': 'computer_move', 'name': 'Move desktop pointer', 'description': 'Move the physical pointer to screenshot pixel coordinates. Capture screen first.', 'args': ['x', 'y']}, {'id': 'computer_click', 'name': 'Click desktop', 'description': 'Click the focused desktop application at screenshot coordinates; verify with screen_capture.', 'args': ['x', 'y', 'button']}, {'id': 'computer_drag', 'name': 'Drag desktop', 'description': 'Drag from the current pointer position to screenshot coordinates.', 'args': ['x', 'y']}, {'id': 'computer_type', 'name': 'Type in application', 'description': 'Type ASCII text into the currently focused app. Never type credentials or secrets.', 'args': ['text']}, {'id': 'computer_key', 'name': 'Press desktop keys', 'description': 'Press a key or shortcut in the focused app, for example ctrl+l or enter.', 'args': ['keys']}, {'id': 'computer_scroll', 'name': 'Scroll application', 'description': 'Scroll the focused app; positive amount scrolls up, negative down.', 'args': ['amount']}])
-
+TOOL_SPECS.extend(
+    [
+        {
+            "id": "computer_read",
+            "name": "Read desktop geometry",
+            "description": "Return current screen dimensions and pointer position.",
+            "args": [],
+        },
+        {
+            "id": "computer_move",
+            "name": "Move desktop pointer",
+            "description": "Move the physical pointer to screenshot pixel coordinates. "
+            "Capture screen first.",
+            "args": ["x", "y"],
+        },
+        {
+            "id": "computer_click",
+            "name": "Click desktop",
+            "description": "Click the focused desktop application at screenshot "
+            "coordinates; verify with screen_capture.",
+            "args": ["x", "y", "button"],
+        },
+        {
+            "id": "computer_drag",
+            "name": "Drag desktop",
+            "description": "Drag from the current pointer position to screenshot coordinates.",
+            "args": ["x", "y"],
+        },
+        {
+            "id": "computer_type",
+            "name": "Type in application",
+            "description": "Type ASCII text into the currently focused app. Never type "
+            "credentials or secrets.",
+            "args": ["text"],
+        },
+        {
+            "id": "computer_key",
+            "name": "Press desktop keys",
+            "description": "Press a key or shortcut in the focused app, for example "
+            "ctrl+l or enter.",
+            "args": ["keys"],
+        },
+        {
+            "id": "computer_scroll",
+            "name": "Scroll application",
+            "description": "Scroll the focused app; positive amount scrolls up, negative down.",
+            "args": ["amount"],
+        },
+    ]
+)
 
 
 def _resolve_image_model(name: str | None):
@@ -427,8 +526,11 @@ def _resolve_image_model(name: str | None):
         return models[0]
     needle = name.strip().lower()
     for m in models:
-        if (needle == m.id.lower() or needle == (m.catalog_id or "").lower()
-                or needle in m.name.lower()):
+        if (
+            needle == m.id.lower()
+            or needle == (m.catalog_id or "").lower()
+            or needle in m.name.lower()
+        ):
             return m
     installed = ", ".join(m.name for m in models)
     raise RuntimeError(f"No installed image model matches '{name}'. Installed: {installed}")
@@ -439,13 +541,15 @@ def _resolve_path(raw: str) -> Path:
     if not p.is_absolute():
         p = WORKSPACE_DIR / p
     p = p.resolve()
-    if (not settings.agent_device_access
-            and WORKSPACE_DIR.resolve() not in p.parents
-            and p != WORKSPACE_DIR.resolve()):
+    if (
+        not settings.agent_device_access
+        and WORKSPACE_DIR.resolve() not in p.parents
+        and p != WORKSPACE_DIR.resolve()
+    ):
         raise PermissionError(
-                f"'{raw}' is outside the agent workspace. Enable full device access in "
-                "Settings to let Agent Mode touch the rest of the filesystem."
-            )
+            f"'{raw}' is outside the agent workspace. Enable full device access in "
+            "Settings to let Agent Mode touch the rest of the filesystem."
+        )
     return p
 
 
@@ -481,19 +585,22 @@ async def run_tool(tool_id: str, args: dict[str, Any], *, origin: str = "") -> s
             capability = Capability(wanted)
         except ValueError:
             known = ", ".join(sorted(c.value for c in Capability))
-            raise ValueError(
-                f"{wanted!r} is not a capability. Known: {known}") from None
+            raise ValueError(f"{wanted!r} is not a capability. Known: {known}") from None
         return await perform_capability(
-            capability, args.get("arguments") or {},
+            capability,
+            args.get("arguments") or {},
             provider=str(args.get("provider", "")),
-            origin=origin or "agent")
+            origin=origin or "agent",
+        )
 
     risk = TOOL_RISK.get(tool_id)
     if risk is None:
         raise ValueError(
-            f"Unknown tool: {tool_id}" if tool_id not in {t["id"] for t in TOOL_SPECS}
+            f"Unknown tool: {tool_id}"
+            if tool_id not in {t["id"] for t in TOOL_SPECS}
             else f"{tool_id} has no risk category. Add one to TOOL_RISK — a tool "
-                 f"nobody has classified cannot be governed.")
+            f"nobody has classified cannot be governed."
+        )
 
     summary, preview = _summarise(tool_id, args)
     from .approval import decide
@@ -508,11 +615,19 @@ async def run_tool(tool_id: str, args: dict[str, Any], *, origin: str = "") -> s
             "isolate arbitrary commands or desktop input, so the action was blocked."
         )
 
-    await decide(Request(action=tool_id, category=risk, summary=summary,
-                         preview=preview, origin=origin or "agent"))
+    await decide(
+        Request(
+            action=tool_id,
+            category=risk,
+            summary=summary,
+            preview=preview,
+            origin=origin or "agent",
+        )
+    )
 
     if tool_id.startswith("computer_"):
         from .computer import execute
+
         return await asyncio.to_thread(execute, tool_id, args)
     if tool_id == "shell":
         return await _shell(args.get("command", ""))
@@ -577,24 +692,31 @@ async def run_tool(tool_id: str, args: dict[str, Any], *, origin: str = "") -> s
             return await browser.mouse_move(_num_arg(args, "x"), _num_arg(args, "y"))
         if tool_id == "browser_click_at":
             return await browser.mouse_click(
-                _num_arg(args, "x"), _num_arg(args, "y"),
+                _num_arg(args, "x"),
+                _num_arg(args, "y"),
                 str(args.get("button", "left") or "left"),
                 int(_num_arg(args, "clicks", 1)),
             )
         if tool_id == "browser_drag":
             return await browser.mouse_drag(
-                _num_arg(args, "x1"), _num_arg(args, "y1"),
-                _num_arg(args, "x2"), _num_arg(args, "y2"),
+                _num_arg(args, "x1"),
+                _num_arg(args, "y1"),
+                _num_arg(args, "x2"),
+                _num_arg(args, "y2"),
             )
         if tool_id == "browser_scroll_at":
             return await browser.scroll_at(
-                _num_arg(args, "x"), _num_arg(args, "y"), _num_arg(args, "dy", 600),
+                _num_arg(args, "x"),
+                _num_arg(args, "y"),
+                _num_arg(args, "dy", 600),
             )
         if tool_id == "browser_click":
             return await browser.click(args.get("target", ""))
         if tool_id == "browser_type":
             return await browser.type_text(
-                args.get("target", ""), args.get("text", ""), _truthy(args.get("submit")),
+                args.get("target", ""),
+                args.get("text", ""),
+                _truthy(args.get("submit")),
             )
         if tool_id == "browser_screenshot":
             return await browser.screenshot(_truthy(args.get("full_page")))
@@ -611,7 +733,8 @@ async def run_tool(tool_id: str, args: dict[str, Any], *, origin: str = "") -> s
             return memory.plan_show()
         if tool_id == "plan_update":
             return memory.plan_update(
-                int(args.get("n", 0)), str(args.get("status", "")).strip().lower(),
+                int(args.get("n", 0)),
+                str(args.get("status", "")).strip().lower(),
                 args.get("note", ""),
             )
         if tool_id == "note_save":
@@ -633,15 +756,22 @@ async def _screen_capture() -> str:
     out = Path.home() / ".uncloud" / "outputs" / f"screen-{uuid.uuid4().hex[:10]}.png"
     out.parent.mkdir(parents=True, exist_ok=True)
     import sys
+
     if sys.platform != "darwin":
+
         def capture():
             import pyautogui
+
             pyautogui.screenshot().save(out)
+
         await asyncio.to_thread(capture)
         return str(out)
     proc = await asyncio.create_subprocess_exec(
-        "screencapture", "-x", str(out),
-        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
+        "screencapture",
+        "-x",
+        str(out),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.STDOUT,
     )
     stdout, _ = await proc.communicate()
     if proc.returncode != 0 or not out.exists():
@@ -679,14 +809,18 @@ async def _see_image(path: str, question: str) -> str:
         resp = await client.post(
             f"{engine_manager.active.base_url}/v1/chat/completions",
             json={
-                "messages": [{
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": question or "Describe this image in detail."},
-                        {"type": "image_url",
-                         "image_url": {"url": f"data:image/{mime};base64,{b64}"}},
-                    ],
-                }],
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": question or "Describe this image in detail."},
+                            {
+                                "type": "image_url",
+                                "image_url": {"url": f"data:image/{mime};base64,{b64}"},
+                            },
+                        ],
+                    }
+                ],
                 "max_tokens": 1024,
                 "stream": False,
             },
@@ -720,7 +854,10 @@ async def _shell(command: str) -> str:
         )
     cwd = str(Path.home()) if settings.agent_device_access else str(WORKSPACE_DIR)
     proc = await asyncio.create_subprocess_shell(
-        command, cwd=cwd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
+        command,
+        cwd=cwd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.STDOUT,
     )
     try:
         stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=120)
@@ -770,7 +907,8 @@ async def _web_read(url: str) -> str:
 
     async with httpx.AsyncClient(follow_redirects=True, timeout=25) as client:
         resp = await client.get(
-            url, headers={"User-Agent": "Mozilla/5.0 (compatible; Uncloud/0.1)"})
+            url, headers={"User-Agent": "Mozilla/5.0 (compatible; Uncloud/0.1)"}
+        )
         resp.raise_for_status()
         html = resp.text
 
@@ -797,8 +935,7 @@ async def _search_snippets(query: str) -> str:
         ),
         "Accept-Language": "en-US,en;q=0.9",
     }
-    async with httpx.AsyncClient(follow_redirects=True, timeout=15,
-                                 headers=headers) as client:
+    async with httpx.AsyncClient(follow_redirects=True, timeout=15, headers=headers) as client:
         attempts = [
             ("https://lite.duckduckgo.com/lite/", {"q": query}, _parse_web_search),
             ("https://www.bing.com/search", {"format": "rss", "q": query}, _parse_bing_rss),
@@ -808,16 +945,25 @@ async def _search_snippets(query: str) -> str:
         topic = _search_terms(query)
         compact = " ".join(topic)
         if compact and compact.casefold() != query.strip().casefold():
-            attempts.append(("https://www.bing.com/search",
-                             {"format": "rss", "q": compact}, _parse_bing_rss))
+            attempts.append(
+                ("https://www.bing.com/search", {"format": "rss", "q": compact}, _parse_bing_rss)
+            )
         if len(topic) >= 2:
-            attempts.append(("https://www.bing.com/search", {
-                "format": "rss", "q": ' '.join(f'"{word}"' for word in topic)
-            }, _parse_bing_rss))
+            attempts.append(
+                (
+                    "https://www.bing.com/search",
+                    {"format": "rss", "q": " ".join(f'"{word}"' for word in topic)},
+                    _parse_bing_rss,
+                )
+            )
         if len(topic) >= 3:
-            attempts.append(("https://www.bing.com/search", {
-                "format": "rss", "q": f'"{topic[0]} {topic[1]}" {topic[2]}'
-            }, _parse_bing_rss))
+            attempts.append(
+                (
+                    "https://www.bing.com/search",
+                    {"format": "rss", "q": f'"{topic[0]} {topic[1]}" {topic[2]}'},
+                    _parse_bing_rss,
+                )
+            )
         failures = []
         for url, params, parse in attempts:
             try:
@@ -849,10 +995,14 @@ async def _web_search(query: str) -> str:
             return hit + f"\nSearch snippet only; could not read page ({type(exc).__name__})."
 
     pages = await asyncio.gather(*(read(hit) for hit in hits))
-    return ("Retrieved sources (excerpts, not exhaustive coverage). Cite their URLs. "
-            "If a requested detail is absent, read a linked page or refine the search; "
-            "do not invent it.\n\n" + "\n\n".join(pages)
-            + "\n\nAdditional search leads:\n" + "\n\n".join(snippets.split("\n\n")[4:]))
+    return (
+        "Retrieved sources (excerpts, not exhaustive coverage). Cite their URLs. "
+        "If a requested detail is absent, read a linked page or refine the search; "
+        "do not invent it.\n\n"
+        + "\n\n".join(pages)
+        + "\n\nAdditional search leads:\n"
+        + "\n\n".join(snippets.split("\n\n")[4:])
+    )
 
 
 def _page_excerpts(query: str, page: str, budget: int = 3200) -> str:
@@ -860,12 +1010,18 @@ def _page_excerpts(query: str, page: str, budget: int = 3200) -> str:
     if len(page) <= budget:
         return page
     terms = _search_terms(query)
-    chunks = [page[i:i + 600] for i in range(0, len(page), 600)]
-    weights = {term: 1 / max(1, sum(term in chunk.casefold() for chunk in chunks))
-               for term in terms}
-    ranked = sorted(range(len(chunks)), key=lambda i: (
-        sum(weight for term, weight in weights.items() if term in chunks[i].casefold()), -i),
-        reverse=True)
+    chunks = [page[i : i + 600] for i in range(0, len(page), 600)]
+    weights = {
+        term: 1 / max(1, sum(term in chunk.casefold() for chunk in chunks)) for term in terms
+    }
+    ranked = sorted(
+        range(len(chunks)),
+        key=lambda i: (
+            sum(weight for term, weight in weights.items() if term in chunks[i].casefold()),
+            -i,
+        ),
+        reverse=True,
+    )
     selected = sorted({0, *ranked[:4]})
     return "\n[…]\n".join(chunks[i] for i in selected)[:budget]
 
@@ -875,22 +1031,105 @@ def _search_query(query: str) -> str:
     text = query.replace("’", "'")
     text = re.sub(r"\b(what|where|when|how|it|let)'s\b", r"\1", text, flags=re.I)
     text = re.sub(r"^.*?\b(?:check|search for|look up|find out)\s+", "", text, flags=re.I)
-    noise = {'alrighty', 'alright', 'okay', 'ok', 'let', 'lets', 'try', 'one', 'more',
-             'time', 'again', 'please', 'for', 'me', 'what', 'is', 'the', 'and', 'its',
-             'it', 'can', 'you', 'tell', 'about'}
+    noise = {
+        "alrighty",
+        "alright",
+        "okay",
+        "ok",
+        "let",
+        "lets",
+        "try",
+        "one",
+        "more",
+        "time",
+        "again",
+        "please",
+        "for",
+        "me",
+        "what",
+        "is",
+        "the",
+        "and",
+        "its",
+        "it",
+        "can",
+        "you",
+        "tell",
+        "about",
+    }
     words = re.findall(r"[\w.-]+", text)
-    return ' '.join(word for word in words if word.casefold() not in noise)[:500] or query[:500]
+    return " ".join(word for word in words if word.casefold() not in noise)[:500] or query[:500]
 
 
 def _search_terms(query: str) -> list[str]:
     ignored = {
-        'the', 'a', 'an', 'is', 'are', 'was', 'were', 'of', 'for', 'to', 'in', 'on', 'and',
-        'or', 'with', 'what', 'which', 'when', 'where', 'how', 'please', 'can', 'you', 'me',
-        'check', 'search', 'online', 'internet', 'web', 'look', 'up', 'latest', 'current',
-        'recent', 'today', 'new', 'specs', 'specifications', 'details', 'information',
-        'release', 'released', 'alrighty', 'alright', 'okay', 'ok', 'let', 'lets',
-        'try', 'one', 'more', 'time', 'again', 'tell', 'about', 's', 'it', 'its',
-        'i', 'want', 'need', 'would', 'could', 'do', 'does', 'give', 'find',
+        "the",
+        "a",
+        "an",
+        "is",
+        "are",
+        "was",
+        "were",
+        "of",
+        "for",
+        "to",
+        "in",
+        "on",
+        "and",
+        "or",
+        "with",
+        "what",
+        "which",
+        "when",
+        "where",
+        "how",
+        "please",
+        "can",
+        "you",
+        "me",
+        "check",
+        "search",
+        "online",
+        "internet",
+        "web",
+        "look",
+        "up",
+        "latest",
+        "current",
+        "recent",
+        "today",
+        "new",
+        "specs",
+        "specifications",
+        "details",
+        "information",
+        "release",
+        "released",
+        "alrighty",
+        "alright",
+        "okay",
+        "ok",
+        "let",
+        "lets",
+        "try",
+        "one",
+        "more",
+        "time",
+        "again",
+        "tell",
+        "about",
+        "s",
+        "it",
+        "its",
+        "i",
+        "want",
+        "need",
+        "would",
+        "could",
+        "do",
+        "does",
+        "give",
+        "find",
     }
     return [word for word in re.findall(r"[\w-]+", query.casefold()) if word not in ignored]
 
@@ -901,9 +1140,15 @@ def _relevant_search_results(query: str, results: str) -> str:
         return results
     # Keep only hits that mention a topic word in their title, URL or snippet.
     minimum = min(3, max(1, (len(set(anchors)) + 1) // 2))
-    hits = [hit for hit in results.split("\n\n")
-            if sum(bool(re.search(r"(?<!\w)" + re.escape(word) + r"(?!\w)", hit.casefold()))
-                   for word in set(anchors)) >= minimum]
+    hits = [
+        hit
+        for hit in results.split("\n\n")
+        if sum(
+            bool(re.search(r"(?<!\w)" + re.escape(word) + r"(?!\w)", hit.casefold()))
+            for word in set(anchors)
+        )
+        >= minimum
+    ]
     if not hits:
         raise RuntimeError("The search provider returned unrelated results.")
     return "\n\n".join(hits)
@@ -917,7 +1162,7 @@ def _parse_web_search(html: str) -> str:
         r'<a[^>]*class=["\'](?:result__a|result-link)["\'][^>]*href=["\']'
         r'(?P<url>[^"\']+)["\'][^>]*>(?P<title>.*?)</a>'
         r'.*?class=["\'](?:result__snippet|result-snippet)["\'][^>]*>'
-        r'(?P<snippet>.*?)(?:</a>|</td>)',
+        r"(?P<snippet>.*?)(?:</a>|</td>)",
         re.DOTALL | re.IGNORECASE,
     )
     tag = re.compile(r"<[^>]+>")
@@ -1029,10 +1274,14 @@ async def _generate_image(args: dict[str, Any]) -> str:
         return cast(val) if val is not None and val != "" else None
 
     job = image_engine.start(
-        model.path, model.engine, prompt,
+        model.path,
+        model.engine,
+        prompt,
         negative_prompt=args.get("negative_prompt", ""),
-        steps=_num("steps", int), guidance=_num("guidance", float),
-        width=_num("width", int) or 1024, height=_num("height", int) or 1024,
+        steps=_num("steps", int),
+        guidance=_num("guidance", float),
+        width=_num("width", int) or 1024,
+        height=_num("height", int) or 1024,
         seed=_num("seed", int),
         mflux_cli=entry.mflux_cli if entry else "mflux-generate",
     )
@@ -1048,6 +1297,7 @@ async def _generate_image(args: dict[str, Any]) -> str:
 
 
 # ---------------------------------------------------------------- tool sets
+
 
 # Every tool description goes into the planner's prompt on every call, so the
 # full set is a real cost, not just a capability. A 27B copes with 31 options;
@@ -1098,7 +1348,20 @@ def _app_open(target: str, app: str = "") -> str:
 
 
 TOOL_GROUPS: dict[str, dict] = {
-    "computer": {"label": "Computer use", "note": "Control desktop apps with keyboard and pointer. Device approval required; use screenshots to verify actions.", "ids": {'computer_scroll', 'computer_read', 'computer_type', 'computer_drag', 'computer_click', 'computer_move', 'computer_key'}},
+    "computer": {
+        "label": "Computer use",
+        "note": "Control desktop apps with keyboard and pointer. Device "
+        "approval required; use screenshots to verify actions.",
+        "ids": {
+            "computer_scroll",
+            "computer_read",
+            "computer_type",
+            "computer_drag",
+            "computer_click",
+            "computer_move",
+            "computer_key",
+        },
+    },
     "files": {
         "label": "Files",
         "note": "Read, write, edit, list, glob and grep.",
@@ -1122,8 +1385,14 @@ TOOL_GROUPS: dict[str, dict] = {
     "browser": {
         "label": "Browser",
         "note": "Drive a real browser by visible text: open, click, type, screenshot.",
-        "ids": {"browser_open", "browser_read", "browser_links",
-                "browser_click", "browser_type", "browser_screenshot"},
+        "ids": {
+            "browser_open",
+            "browser_read",
+            "browser_links",
+            "browser_click",
+            "browser_type",
+            "browser_screenshot",
+        },
     },
     "devtools": {
         "label": "Developer tools",
@@ -1210,10 +1479,16 @@ def group_summary() -> list[dict]:
 
 async def _ffprobe(path: str) -> dict:
     proc = await asyncio.create_subprocess_exec(
-        "ffprobe", "-v", "error", "-show_entries",
+        "ffprobe",
+        "-v",
+        "error",
+        "-show_entries",
         "format=duration:stream=width,height,r_frame_rate,codec_type",
-        "-of", "json", path,
-        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        "-of",
+        "json",
+        path,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
     )
     out, err = await proc.communicate()
     if proc.returncode != 0:
@@ -1266,11 +1541,23 @@ async def _video_frames(args: dict[str, Any]) -> str:
     fps = count / duration if duration > 0 else 1.0
 
     proc = await asyncio.create_subprocess_exec(
-        "ffmpeg", "-y", "-v", "error",
-        "-ss", f"{start:.3f}", "-t", f"{duration:.3f}", "-i", str(p),
-        "-vf", f"fps={fps:.4f},scale=768:-1", "-frames:v", str(count),
+        "ffmpeg",
+        "-y",
+        "-v",
+        "error",
+        "-ss",
+        f"{start:.3f}",
+        "-t",
+        f"{duration:.3f}",
+        "-i",
+        str(p),
+        "-vf",
+        f"fps={fps:.4f},scale=768:-1",
+        "-frames:v",
+        str(count),
         str(out_dir / "f%03d.png"),
-        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.STDOUT,
     )
     out, _ = await proc.communicate()
     if proc.returncode != 0:
@@ -1302,8 +1589,9 @@ def _integrations() -> str:
     lines = []
     routable = capability_map()
     if routable:
-        lines.append("Capabilities available right now — use the `capability` "
-                     "tool with any of these:")
+        lines.append(
+            "Capabilities available right now — use the `capability` tool with any of these:"
+        )
         for capability, providers in sorted(routable.items()):
             lines.append(f"    {capability}  (via {', '.join(providers)})")
         lines.append("")
@@ -1314,27 +1602,34 @@ def _integrations() -> str:
             where = f" ({connection.account})" if connection.account else ""
             lines.append(f"{integration.name}{where} — connected.")
             for action in integration.actions:
-                arguments = ", ".join(f"{k}: {v}"
-                                      for k, v in action.parameters.items())
-                lines.append(f"    {action.id}({arguments})"
-                             f"  [{action.capability.value}] — {action.summary}")
+                arguments = ", ".join(f"{k}: {v}" for k, v in action.parameters.items())
+                lines.append(
+                    f"    {action.id}({arguments})  [{action.capability.value}] — {action.summary}"
+                )
             continue
 
         # The state matters to the model, because the remedies differ and it
         # will otherwise tell somebody to sign in to a provider that has no
         # OAuth client registered yet.
         if connection.state.value == "not_configured":
-            lines.append(f"{integration.name} — needs configuring before it can "
-                         f"be connected. {integration.needs}")
+            lines.append(
+                f"{integration.name} — needs configuring before it can "
+                f"be connected. {integration.needs}"
+            )
         elif connection.state.value == "authentication_required":
-            lines.append(f"{integration.name} — was connected; the sign-in has "
-                         f"expired and needs doing again in Settings.")
+            lines.append(
+                f"{integration.name} — was connected; the sign-in has "
+                f"expired and needs doing again in Settings."
+            )
         elif not integration.available:
-            lines.append(f"{integration.name} — not available in this build. "
-                         f"{integration.needs}")
+            lines.append(f"{integration.name} — not available in this build. {integration.needs}")
         else:
-            lines.append(f"{integration.name} — not connected. The user can "
-                         + ("choose a folder for it in Settings."
-                            if not integration.needs_credential
-                            else "connect it in Settings."))
+            lines.append(
+                f"{integration.name} — not connected. The user can "
+                + (
+                    "choose a folder for it in Settings."
+                    if not integration.needs_credential
+                    else "connect it in Settings."
+                )
+            )
     return "\n".join(lines)
