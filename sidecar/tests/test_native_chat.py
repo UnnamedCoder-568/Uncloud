@@ -53,3 +53,13 @@ def test_missing_windows_server_is_repairable(monkeypatch):
     row = readiness.check('chat')
     assert row['supported'] and not row['ready']
     assert 'repair' in row['detail']
+
+
+def test_native_chat_has_one_slot_so_context_is_not_split(monkeypatch):
+    from uncloud_engine import engines
+    monkeypatch.setattr(engines, 'LLAMA_SERVER_BIN', '/native/llama-server')
+    commands = []
+    monkeypatch.setattr(engines.subprocess, 'Popen', lambda command, **kwargs: commands.append(command))
+    engines.EngineManager()._spawn_llama_cpp('model.gguf', 8080, 8192)
+    assert commands[0][-2:] == ['--parallel', '1']
+    assert commands[0][commands[0].index('-c') + 1] == '8192'

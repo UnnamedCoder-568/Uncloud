@@ -83,6 +83,18 @@ class EngineManager:
             threading.Thread(target=self._drain_logs, args=(active,), daemon=True).start()
             try:
                 await self._wait_healthy(active)
+                if engine == "gguf":
+                    # The native server may cap the usable per-slot context.
+                    # Read it once at startup, never on the send-to-token path.
+                    try:
+                        async with httpx.AsyncClient(timeout=5) as client:
+                            response = await client.get(f"{active.base_url}/props")
+                            response.raise_for_status()
+                            effective = response.json().get("default_generation_settings", {}).get("n_ctx")
+                            if isinstance(effective, int) and effective > 0:
+                                active.context_limit = min(active.context_limit, effective)
+                    except (httpx.HTTPError, ValueError, AttributeError):
+                        pass  # Python and older native servers need not expose props.
             except BaseException:
                 self._stop_process(active)
                 raise
@@ -94,7 +106,7 @@ class EngineManager:
         native = LLAMA_SERVER_BIN or server_path()
         if native:
             command = [native, "-m", model_path, "--port", str(port),
-                       "--host", "127.0.0.1", "-ngl", "999", "-c", str(context_limit)]
+                       "--host", "127.0.0.1", "-ngl", "999", "-c", str(context_limit), "--parallel", "1"]
         else:
             try:
                 import llama_cpp  # noqa: F401

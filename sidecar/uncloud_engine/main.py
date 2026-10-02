@@ -1972,7 +1972,17 @@ async def _run_chat(run: ChatRun, body: ChatBody, active=None) -> None:
         async with client.stream(
             "POST", f"{active.base_url}/v1/chat/completions", json=payload,
         ) as response:
-            response.raise_for_status()
+            if response.is_error:
+                await response.aread()
+                try:
+                    detail = response.json().get("error", {})
+                    detail = detail.get("message", "") if isinstance(detail, dict) else str(detail)
+                except (ValueError, AttributeError):
+                    detail = ""
+                run.timings["backend_error"] = {"status": response.status_code,
+                    "body": response.text[:4096]}
+                raise RuntimeError(f"The model could not start this reply (HTTP {response.status_code}). "
+                    + (detail[:1000] if detail else "Check the model runtime in Settings and try again."))
             run.timings["backend_headers_ms"] = (time.perf_counter() - run.started) * 1000
             async for line in response.aiter_lines():
                 if line.startswith("data: "):

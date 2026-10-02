@@ -257,6 +257,8 @@ export interface ChatMessage {
   content: string;
   /** A reasoning model's working, streamed before the answer. */
   reasoning?: string;
+  /** Application status; never part of the model conversation. */
+  error?: string;
   /** Pictures attached to this turn, as data URLs. Held beside the text
    *  rather than inside it so the conversation stays readable, the thumbnails
    *  can be shown, and the wire format is built at send time. */

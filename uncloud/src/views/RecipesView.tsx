@@ -56,9 +56,9 @@ export default function RecipesView() {
             </h1>
             <p className="text-[11px] text-[var(--text-faint)] mt-1 leading-relaxed
                           max-w-[60ch]">
-              Something you do often, written down once. Each step runs through the
-              same permissions as if you had typed it — a recipe is a shortcut for
-              your fingers, never a way around being asked.
+              Save reusable workflows: choose actions, add inputs, and run the steps again.
+              Each action uses your existing access and approval settings.
+              Recipes automate tasks; model training and adapters live in Models → Train.
             </p>
           </div>
           <button onClick={() => setComposing(!composing)}

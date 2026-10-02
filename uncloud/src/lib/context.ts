@@ -3,9 +3,21 @@ import type { ChatMessage } from './sidecar';
 /** One assembly path for both inference and the context meter. */
 export function contextMessages(messages: ChatMessage[], system: string,
   summary = '', through = 0, raw = false): ChatMessage[] {
-  if (raw) return messages;
+  // Failed requests remain inspectable in the transcript, but their user turn
+  // and application error must not become a malformed model conversation.
+  const failed = new Set<number>();
+  messages.forEach((message, index) => {
+    if (message.role === 'assistant' && message.error && !message.content.trim()) {
+      failed.add(index);
+      if (messages[index - 1]?.role === 'user') failed.add(index - 1);
+    }
+  });
+  const turns = failed.size ? messages.filter((_, index) => !failed.has(index)) : messages;
+  if (raw) return turns;
   const content = system + (summary ? `\n\nEarlier conversation, compacted for continuity:\n${summary}` : '');
-  return [{ role: 'system', content }, ...messages.slice(summary ? through : 0)];
+  const start = summary ? through : 0;
+  const tail = messages.slice(start).filter((_, index) => !failed.has(index + start));
+  return [{ role: 'system', content }, ...tail];
 }
 
 export function compactAvailable(used: number | null, limit: number | null): boolean {
