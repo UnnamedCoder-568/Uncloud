@@ -26,7 +26,7 @@ const SECTIONS: Section[] = [
       'A conversation with a model running on your machine.',
     points: [
       { term: 'Pick a model first', body: 'Use the model selector beside the message field. First load can take longer; later messages reuse the loaded model.' },
-      { term: 'History and navigation', body: 'Your conversations appear in the left sidebar. Collapse it to keep navigation icons visible while hiding names and history; expand it to bring them back.' },
+      { term: 'History and navigation', body: 'Open Saved conversations in the Chat header to browse history in a temporary left panel. Choose a conversation, click outside or press Escape to close it. The navigation sidebar stays separate.' },
       { term: 'Context and Compact', body: 'The counter below the composer shows conversation usage against the selected model’s effective context window. Near 75%, Compact becomes available: it preserves a summary and recent turns so the same conversation can continue. You can inspect the saved summary.' },
       { term: 'Talk to it', body: 'If a speech-to-text model is installed, the mic button records and transcribes. The speaker icon reads replies aloud.' },
       { term: 'Vision', body: 'Models such as Gemma 4 and Qwen3.8 can look at images as well as read text.' },

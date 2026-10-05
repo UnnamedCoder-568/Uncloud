@@ -86,9 +86,3 @@ export default function TitleBar({ inset = false, children, actions }: {
     </div>
   );
 }
-
-export const HistoryContext = createContext<HTMLElement | null>(null);
-export function HistoryPortal({ children }: { children: ReactNode }) {
-  const slot = useContext(HistoryContext);
-  return slot ? createPortal(children, slot) : null;
-}
