@@ -12,6 +12,7 @@ import ApprovalPrompt from './components/ApprovalPrompt';
 import ChatView from './views/ChatView';
 import ModelsView from './views/ModelsView';
 import ChiselView from './views/ChiselView';
+import AutomationsView from './views/AutomationsView';
 import SettingsView from './views/SettingsView';
 import RecipesView from './views/RecipesView';
 import ImageView from './views/ImageView';
@@ -32,6 +33,7 @@ import { AddFromDiskHost } from './components/AddFromDisk';
 const PANES: { id: View; render: () => React.ReactElement }[] = [
   { id: 'chat', render: () => <CapabilityGate names="chat"><ChatView /></CapabilityGate> },
   { id: 'models', render: () => <ModelsView /> },
+  { id: 'automations', render: () => <AutomationsView /> },
   { id: 'chisel', render: () => <CapabilityGate names="chat,tools,browser"><ChiselView /></CapabilityGate> },
   { id: 'image', render: () => <CapabilityGate names="image"><ImageView /></CapabilityGate> },
   { id: 'video', render: () => <CapabilityGate names="video"><VideoView /></CapabilityGate> },

@@ -1,17 +1,15 @@
 import { useEffect, useState } from 'react';
-import { Clock } from 'lucide-react';
 import { api, apiPost, getLibrary } from '../lib/sidecar';
 import type { LocalModel } from '../lib/sidecar';
 type Graph = { tasks?: Record<string, { description: string; status: string; output?: string; error?: string }> };
 type Agent = { id: string; goal: string; status: string; paused: boolean; next_run: number; message: string; progress?: Graph; history: { started: number; status: string; graph?: Graph }[] };
 const files = ['fs_read', 'fs_list', 'fs_glob', 'fs_grep', 'plan_show', 'note_recall', 'skill_list', 'skill_read'];
 export default function AutomationsPanel() {
-  const [open, setOpen] = useState(false), [items, setItems] = useState<Agent[]>([]), [models, setModels] = useState<LocalModel[]>([]);
+  const [items, setItems] = useState<Agent[]>([]), [models, setModels] = useState<LocalModel[]>([]);
   const [firstRun, setFirstRun] = useState('');
   const [goal, setGoal] = useState(''), [path, setPath] = useState(''), [interval, setPeriod] = useState(0), [web, setWeb] = useState(false), [error, setError] = useState(''), [busy, setBusy] = useState(false);
   async function refresh() { const r = await api<{ items: Agent[]; error: string }>('/api/automations'); setItems(r.items); setError(r.error); }
   useEffect(() => {
-    if (!open) return;
     let alive = true;
     const poll = async () => {
       if (document.hidden || document.querySelector('[data-automations-panel]')?.closest('[hidden]')) return;
@@ -19,11 +17,10 @@ export default function AutomationsPanel() {
     };
     void poll(); void getLibrary().then(ms => { if (alive) setModels(ms.filter(m => m.category === 'text' && m.ready)); }).catch(e => { if (alive) setError(String(e)); });
     const timer = window.setInterval(poll, 3000); return () => { alive = false; clearInterval(timer); };
-  }, [open]);
+  }, []);
   async function act(id: string, action: string) { setBusy(true); try { await apiPost(`/api/automations/${id}/${action}`); await refresh(); } catch (e) { setError(String(e)); } finally { setBusy(false); } }
   return <div data-automations-panel className="mt-3">
-    <button className="pill h-8 px-3 text-xs" aria-expanded={open} onClick={() => setOpen(!open)}><Clock size={14} /> Saved agents & schedules</button>
-    {open && <section className="mt-3 rounded-xl border border-[var(--border-soft)] bg-[var(--bg-inset)] p-4 max-h-[55vh] overflow-y-auto space-y-4">
+    <section className="rounded-xl border border-[var(--border-soft)] bg-[var(--bg-inset)] p-5 space-y-4">
       <p className="text-xs text-[var(--text-faint)]">Runs while Uncloud is open, one agent at a time. File access stays inside the Uncloud workspace. Writes and device control need interactive Chisel.</p>
       <form className="space-y-3" onSubmit={async e => {
         e.preventDefault(); const model = models.find(m => m.path === path); if (!model) return; setBusy(true);
@@ -47,6 +44,6 @@ export default function AutomationsPanel() {
         <div className="flex gap-2"><button className="pill h-7 px-2 text-xs" disabled={busy} onClick={() => void act(item.id, item.paused ? 'resume' : 'pause')}>{item.paused ? 'Resume' : 'Pause'}</button><button className="pill h-7 px-2 text-xs" disabled={busy || item.status === 'running'} onClick={() => void act(item.id, 'run')}>Run fresh</button><button className="pill h-7 px-2 text-xs" disabled={busy} onClick={() => { if (window.confirm('Delete this saved agent and its history?')) void act(item.id, 'delete'); }}>Delete</button></div>
         <details className="text-xs"><summary className="cursor-pointer text-[var(--text-faint)]">Progress & run history ({item.history.length})</summary>{[...(item.progress ? [{ started: 0, status: 'Current progress', graph: item.progress }] : []), ...item.history.slice().reverse()].map((run, i) => <div key={i} className="mt-2 space-y-1"><p>{run.started ? new Date(run.started * 1000).toLocaleString() : ''} · {run.status}</p>{Object.entries(run.graph?.tasks ?? {}).map(([id, task]) => <details key={id} className="pl-2"><summary>{task.status} · {task.description}</summary><pre className="whitespace-pre-wrap break-words max-h-48 overflow-y-auto">{task.error || task.output || 'No result yet'}</pre></details>)}</div>)}</details>
       </article>)}
-    </section>}
+    </section>
   </div>;
 }
