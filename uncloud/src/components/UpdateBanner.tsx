@@ -30,9 +30,12 @@ export default function UpdateBanner() {
   const check = useCallback(async () => {
     try {
       const settings = await getSettings();
-      const report = await getNotices();
-      setNotices(report.items.filter((n) => n.severity !== 'optional' && !n.is_application_update));
-      if (settings.check_updates) setApp(await checkAppUpdate());
+      if (!settings.check_updates) { setApp(null); setNotices([]); return; }
+      await Promise.allSettled([
+        checkAppUpdate().then(setApp),
+        getNotices().then(report => setNotices(report.items.filter(
+          n => n.severity !== 'optional' && !n.is_application_update))),
+      ]);
     } catch {
       // An update check that cannot run has found nothing wrong with the app.
     }
@@ -40,9 +43,25 @@ export default function UpdateBanner() {
 
   useEffect(() => {
     if (!inDesktop()) return;
-    check();
-    const timer = setInterval(check, RECHECK_MS);
-    return () => clearInterval(timer);
+    let checking = false;
+    const refresh = async () => {
+      if (checking || document.visibilityState === 'hidden') return;
+      checking = true;
+      try { await check(); } finally { checking = false; }
+    };
+    void refresh();
+    const timer = setInterval(refresh, RECHECK_MS);
+    const retry = setTimeout(refresh, 60_000);
+    window.addEventListener('online', refresh);
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refresh);
+    return () => {
+      clearInterval(timer);
+      clearTimeout(retry);
+      window.removeEventListener('online', refresh);
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', refresh);
+    };
   }, [check]);
 
   async function install() {

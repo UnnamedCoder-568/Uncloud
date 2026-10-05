@@ -1150,6 +1150,11 @@ export default function ChatView() {
           </button>
         </div>
       </div>
+      {(loadingModel || generating || compacting) && <div role="status" className="flex items-center gap-2 px-3 pt-2 text-xs text-[var(--text-faint)]">
+        <ActivityOrb size={20} state={loadingModel ? 'connecting' : compacting ? 'shaping' : 'solving'}
+          label={loadingModel ? 'Loading model' : compacting ? 'Compacting context' : 'Model responding'} />
+        <span>{loadingModel ? 'Loading model…' : compacting ? 'Compacting context…' : messages.at(-1)?.content ? 'Generating reply…' : 'Waiting for the model…'}</span>
+      </div>}
       {activeModel && (contextUsage?.limit || compactSummary) && (
         <div className="chat-context-footer">
           {compactSummary && <details className="chat-context-memory">
