@@ -82,8 +82,13 @@ export default function TitleBar({ inset = false, children, actions }: {
   return (
     <div className={inset ? 'titlebar titlebar-pad' : 'titlebar'}>
       {children}
-      <div style={{ flex: 1 }} />
-      {actions}
+      {actions && <div className="titlebar-actions">{actions}</div>}
     </div>
   );
+}
+
+export const HistoryContext = createContext<HTMLElement | null>(null);
+export function HistoryPortal({ children }: { children: ReactNode }) {
+  const slot = useContext(HistoryContext);
+  return slot ? createPortal(children, slot) : null;
 }

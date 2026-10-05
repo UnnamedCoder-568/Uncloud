@@ -1,11 +1,11 @@
 import AutoGrowTextarea from "../components/AutoGrowTextarea";
 import { useDismiss } from '../lib/useDismiss';
 import ActivityOrb from '../components/ActivityOrb';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { ChevronDown, ArrowUp, Square, Mic, Volume2, VolumeX, Hammer, ImagePlus, PanelRight, Plus, X, Globe,
   Image as ImageIcon, ImageOff, GlobeLock, AudioLines, MessagesSquare,
   Settings2, Paperclip, FileText, Copy, Check, NotebookPen } from 'lucide-react';
-import { TitleBarPortal } from '../components/TitleBar';
+import { TitleBarPortal, HistoryContext, HistoryPortal } from '../components/TitleBar';
 import { Mark } from '../components/Wordmark';
 import Markdown from '../components/Markdown';
 import { fromConversation, sendToChisel } from '../lib/handoff';
@@ -64,6 +64,7 @@ export default function ChatView() {
   //  arrival, so opening Chat and changing your mind does not litter the list
   //  with empty conversations.
   const [conversationId, setConversationId] = useState<string | null>(null);
+  const historySlot = useContext(HistoryContext);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [notesOpen, setNotesOpen] = useState(false);
   const [notes, setNotes] = useState<SavedNote[]>([]);
@@ -1184,7 +1185,7 @@ export default function ChatView() {
                 aria-label="New conversation">
           <Plus size={15} />
         </button>
-        <button className="tb-btn" onClick={() => setDrawerOpen(true)}
+        <button className="tb-btn" onClick={() => historySlot ? historySlot.scrollIntoView({ block: "nearest" }) : setDrawerOpen(true)}
                 title="Saved conversations" aria-label="Saved conversations">
           <PanelRight size={15} />
         </button>
@@ -1499,8 +1500,9 @@ export default function ChatView() {
         </div>
       )}
 
+      <HistoryPortal><Conversations embedded open onClose={() => {}} list={saved} activeId={conversationId} onOpen={openSaved} onNew={startNew} onDelete={removeSaved} /></HistoryPortal>
       <Conversations
-        open={drawerOpen}
+        open={drawerOpen && !historySlot}
         onClose={() => setDrawerOpen(false)}
         list={saved}
         activeId={conversationId}

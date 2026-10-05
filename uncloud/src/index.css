@@ -376,18 +376,16 @@ body {
 .view-tabs { display: flex; align-items: center; gap: var(--space-1); padding: 0 var(--space-6); height: 48px; flex-shrink: 0; overflow-x: auto; border-bottom: 1px solid var(--border); }
 .view-tabs > button { flex-shrink: 0; min-height: 32px; font-size: var(--text-sm); }
 
-/* A short message starts on one line. Drafts and attachments make room above
-   the actions, without bright rectangles inside the composer. */
-.chat-composer { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 4px 8px; padding: 10px 12px; }
-.chat-composer .composer-input { grid-column: 1; grid-row: 1; padding: 6px 8px; min-height: 33px; }
-.chat-composer .composer-actions { grid-column: 2; grid-row: 1; align-items: center; margin: 0; gap: 4px; flex-wrap: nowrap; }
-.chat-composer .composer-send { flex-shrink: 0; }
-.chat-composer:has(.composer-input[data-expanded="true"]),
-.chat-composer:has(.composer-attachments) { grid-template-columns: minmax(0, 1fr); border-radius: 22px; }
-.chat-composer:has(.composer-input[data-expanded="true"]) .composer-input,
-.chat-composer:has(.composer-attachments) .composer-input { grid-column: 1; grid-row: 2; }
-.chat-composer:has(.composer-input[data-expanded="true"]) .composer-actions,
-.chat-composer:has(.composer-attachments) .composer-actions { grid-column: 1; grid-row: 3; }
+/* Keep the draft above a quiet, consistently placed toolbar. */
+.titlebar-actions { display: flex; align-items: center; gap: 4px; margin-left: auto; }
+.chat-composer { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 14px 14px 10px; border-radius: 24px; border-color: var(--border-soft); }
+.chat-composer:focus-within { border-color: var(--border); }
+.chat-composer .composer-input { grid-column: 1; grid-row: 2; padding: 6px 8px; min-height: 36px; }
+.chat-composer .composer-actions { grid-column: 1; grid-row: 3; align-items: center; margin: 0; gap: 6px; flex-wrap: nowrap; }
+.chat-composer .composer-actions > button { order: 3; }
+.chat-composer .composer-actions > .composer-spacer { order: 1; }
+.chat-composer .composer-actions > div:not(.composer-spacer) { order: 2; }
+.chat-composer .composer-actions > .composer-send { order: 4; flex-shrink: 0; }
 .composer-attachments { grid-column: 1 / -1; grid-row: 1; max-height: 24vh; overflow-y: auto; padding-top: 4px; }
 .composer-menu { width: 280px; max-width: calc(100vw - 32px); max-height: min(520px, 60vh); overflow-y: auto; box-shadow: var(--shadow-lg); }
 .composer-menu > .pill { width: 100%; justify-content: flex-start; border-radius: var(--radius); }
@@ -449,3 +447,27 @@ body {
   .creative-workspace > .split-pane:not(.creative-inspector) { order:1; }
 }
 @media(max-width:767px) { .creative-inspector { width:100%; padding:16px; } .workflow-tabs button { padding:8px 12px; } }
+
+/* Chat's reading canvas stays quieter than its navigation and controls. */
+:root:not([data-theme="light"]) { --bg: #181818; --sidebar: #212121; }
+.sidebar-history { margin-top: 20px; }
+.history-embedded > aside { width: 100%; background: transparent; border: 0; box-shadow: none; }
+.history-embedded > aside > div:first-child { border: 0; padding-left: 8px; }
+.history-embedded > aside > button { border: 0; border-radius: 8px; }
+.history-embedded > aside > div:last-child { display: none; }
+.history-embedded .group { border-radius: 8px; margin-bottom: 2px; }
+.history-embedded .group > div > div:last-child { display: none; }
+
+/* App tools form a slim rail beside the conversation list, like the reference. */
+.rail:has(.sidebar-history) { width: 320px; flex-basis: 320px; }
+.rail:has(.sidebar-history) .rail-body { display: grid; grid-template-columns: 40px minmax(0, 1fr); grid-template-rows: auto auto 1fr; gap: 10px 12px; }
+.rail:has(.sidebar-history) .rail-body > div:not(.sidebar-history) { grid-column: 1; }
+.rail:has(.sidebar-history) .rail-body > .sidebar-history { grid-column: 2; grid-row: 1 / 4; margin-top: 0; min-width: 0; }
+.rail:has(.sidebar-history) .rail-body > div:not(.sidebar-history) .rail-row { justify-content: center; padding: 0; }
+.rail:has(.sidebar-history) .rail-body > div:not(.sidebar-history) .rail-row > span,
+.rail:has(.sidebar-history) .rail-body .rail-label { display: none; }
+.rail:has(.sidebar-history) .history-embedded > aside > div:first-child { padding-top: 6px; }
+@media (max-width: 767px) { .rail:has(.sidebar-history) { width: min(86vw, 320px); } }
+
+.titlebar { background: var(--sidebar); }
+.history-embedded .group:focus-within { background: var(--rail-hover); }
