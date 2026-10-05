@@ -1,4 +1,3 @@
-import AutomationsPanel from '../components/AutomationsPanel';
 import AgentLivePreview from '../components/AgentLivePreview';
 import AutoGrowTextarea from "../components/AutoGrowTextarea";
 import ActivityOrb from '../components/ActivityOrb';
@@ -324,7 +323,6 @@ export default function ChiselView() {
           </div>
         )}
 
-        <AutomationsPanel />
       </header>
 
       <AgentLivePreview runId={runIdRef.current} active={busy} />
