@@ -70,12 +70,11 @@ function Row({ item, active, onChange }: {
   );
 }
 
-export default function Sidebar({ active, onChange, top, history, collapsed = false }: {
+export default function Sidebar({ active, onChange, top, collapsed = false }: {
   active: View;
   onChange: (v: View) => void;
   /** The window's title strip. The rail owns the left half of it. */
   top: ReactNode;
-  history?: ReactNode;
   collapsed?: boolean;
 }) {
   const [hovered, setHovered] = useState(false);
@@ -103,7 +102,6 @@ export default function Sidebar({ active, onChange, top, history, collapsed = fa
             ))}
           </div>
         ))}
-        {active === "chat" && history}
       </div>
 
       <div style={{ padding: '0 8px 4px' }}>

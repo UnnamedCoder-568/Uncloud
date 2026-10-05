@@ -1,5 +1,5 @@
-Uncloud 0.4.20 fixes sidebar collapse: navigation icons remain accessible while labels and conversation history are hidden. Expanded navigation labels now remain consistent across Chat and other pages.
+Uncloud 0.4.21 separates conversation history from permanent navigation. Saved conversations opens a temporary left panel, closed by default. Choosing a conversation, clicking outside, using Close or pressing Escape dismisses it. Navigation icons and labels remain independent.
 
-The Guide now explains the composer model picker, conversation context and Compact, sidebar navigation, and the separate Automations page, including scheduling and background access limits.
+The Guide explains the revised history controls.
 
-Validation: frontend tests and production build passed. Native installed-build visual checks remain pending.
+Validation: 121 frontend tests and the production build passed. Browser preview verified default-hidden history, opening the left panel, outside-click dismissal and Escape dismissal. Installed native visual verification remains pending.
