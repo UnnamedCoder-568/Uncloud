@@ -1,7 +1,5 @@
-Uncloud 0.4.19 adds a dedicated Automations page for saved local agents: choose a model, first-run time and recurring schedule; pause, resume or start fresh; inspect progress and the latest 20 runs. Agents run while Uncloud is open. Interrupted runs pause for review. Background tools are confined to workspace reads and selected web research, respect current permissions and do not inherit interactive session approvals.
+Uncloud 0.4.20 fixes sidebar collapse: navigation icons remain accessible while labels and conversation history are hidden. Expanded navigation labels now remain consistent across Chat and other pages.
 
-Chisel remains the interactive agent workspace and gains an opt-in live browser or desktop preview, refreshed during an active run with access checks and transient images.
+The Guide now explains the composer model picker, conversation context and Compact, sidebar navigation, and the separate Automations page, including scheduling and background access limits.
 
-Chat history now lives in the left sidebar. The chat canvas is darker, the title-bar controls are aligned, and the composer uses a quieter expanding text area with controls below. Settings and legal-document screens have improved spacing and retry handling.
-
-Validation: local backend regression tests, frontend tests and production build passed. Native Windows/Linux screen capture, real-model automation quality and macOS traffic-light alignment have not been validated on installed release builds. Scheduling does not run after Uncloud closes.
+Validation: frontend tests and production build passed. Native installed-build visual checks remain pending.

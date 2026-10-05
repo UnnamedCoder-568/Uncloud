@@ -3,9 +3,7 @@
  *  Laid out to the shared chassis: 260px, 36px rows, uppercase section labels,
  *  identity pinned to the bottom. See docs/DESIGN-LANGUAGE.md.
  *
- *  It hides entirely rather than collapsing to an icon strip. A 60px strip
- *  cannot clear the macOS traffic lights, so a collapsed rail would leave them
- *  straddling the boundary between two different background colours.
+ *  Collapse keeps an 88px navigation strip, with room for native window controls.
  */
 import { useState } from 'react';
 import type { ReactNode } from 'react';
@@ -72,18 +70,19 @@ function Row({ item, active, onChange }: {
   );
 }
 
-export default function Sidebar({ active, onChange, top, history }: {
+export default function Sidebar({ active, onChange, top, history, collapsed = false }: {
   active: View;
   onChange: (v: View) => void;
   /** The window's title strip. The rail owns the left half of it. */
   top: ReactNode;
   history?: ReactNode;
+  collapsed?: boolean;
 }) {
   const [hovered, setHovered] = useState(false);
 
   return (
     <nav
-      className="rail"
+      className={collapsed ? "rail rail-collapsed" : "rail"}
       // The cog in the wordmark punches its holes in var(--bg). On the rail
       // that would be the wrong grey by one step, so --bg is re-pointed at the
       // rail's own colour for the subtree.
@@ -91,7 +90,7 @@ export default function Sidebar({ active, onChange, top, history }: {
     >
       {top}
 
-      <div style={{ padding: '4px 16px 12px' }}>
+      <div className="rail-brand" style={{ padding: '4px 16px 12px' }}>
         <Wordmark size={19} />
       </div>
 
