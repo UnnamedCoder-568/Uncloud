@@ -1,3 +1,4 @@
+import FridayView from './views/FridayView';
 import CapabilityGate from './components/CapabilityGate';
 import StartupScreen from './components/StartupScreen';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -32,6 +33,7 @@ import { AddFromDiskHost } from './components/AddFromDisk';
 /** Rendered once visited, then kept alive so tab switching is not destructive. */
 const PANES: { id: View; render: () => React.ReactElement }[] = [
   { id: 'chat', render: () => <CapabilityGate names="chat"><ChatView /></CapabilityGate> },
+  { id: 'friday', render: () => <FridayView /> },
   { id: 'models', render: () => <ModelsView /> },
   { id: 'automations', render: () => <AutomationsView /> },
   { id: 'chisel', render: () => <CapabilityGate names="chat,tools,browser"><ChiselView /></CapabilityGate> },

@@ -44,12 +44,12 @@ export default function VoiceToVoice() {
   );
 }
 
-function Talk() {
+export function Talk({ friday = false }: { friday?: boolean }) {
   const libraryVersion = useLibraryVersion();
   const [models, setModels] = useState<LocalModel[]>([]);
   const [modelPath, setModelPath] = useState('');
   const [voice, setVoice] = useState(() => {
-    try { return localStorage.getItem('uncloud.voice.talk') || 'bm_george'; } catch { return 'bm_george'; }
+    try { return localStorage.getItem(friday ? 'uncloud.voice.friday' : 'uncloud.voice.talk') || (friday ? 'bf_emma' : 'bm_george'); } catch { return friday ? 'bf_emma' : 'bm_george'; }
   });
   const [turns, setTurns] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(false);
@@ -57,8 +57,8 @@ function Talk() {
   const scroller = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    try { localStorage.setItem('uncloud.voice.talk', voice); } catch { /* storage refused */ }
-  }, [voice]);
+    try { localStorage.setItem(friday ? 'uncloud.voice.friday' : 'uncloud.voice.talk', voice); } catch { /* storage refused */ }
+  }, [voice, friday]);
 
   useEffect(() => {
     Promise.all([getLibrary(), engineStatus().catch(() => null)]).then(([ms, status]) => {
@@ -90,7 +90,7 @@ function Talk() {
     let reply = '';
     for await (const chunk of streamChat([
       // Brief: it is read aloud, and lists and markdown do not survive that.
-      { role: 'system', content: chatSystemPrompt({ web: false, pictures: false, manner: 'brief' }) },
+      { role: 'system', content: chatSystemPrompt({ web: false, pictures: false, manner: 'brief' }) + (friday ? '\nYou are Friday, an original local assistant. Be calm, capable, warm and lightly witty. Speak naturally in concise sentences. Be honest about uncertainty. You can converse here but cannot execute tools or claim to have performed actions. Do not impersonate a fictional character or actor.' : '') },
       ...history,
     ])) {
       if (chunk.kind !== 'text') continue;
