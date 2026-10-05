@@ -28,18 +28,21 @@ export default function TermsView({ onSettled }: { onSettled: () => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(() => {
-    getLegalState()
-      .then((next) => {
-        setState(next);
-        if (next.settled) { onSettled(); return; }
-        const first = next.outstanding[0];
-        if (first) getLegalDocument(first.id).then(setDocument).catch(() => undefined);
-      })
-      .catch(() => setError('Could not reach the Uncloud engine.'));
+  const load = useCallback(async () => {
+    setError(null);
+    try {
+      const next = await getLegalState();
+      setState(next);
+      if (next.settled) { onSettled(); return; }
+      const first = next.outstanding[0];
+      if (!first) throw new Error('No agreement available');
+      setDocument(await getLegalDocument(first.id));
+    } catch {
+      setError('We could not load the agreements. Check that Uncloud is running, then try again.');
+    }
   }, [onSettled]);
 
-  useEffect(load, [load]);
+  useEffect(() => { void load(); }, [load]);
 
   async function agree() {
     if (!document) return;
@@ -50,9 +53,9 @@ export default function TermsView({ onSettled }: { onSettled: () => void }) {
       // is refused rather than silently recorded against the newer one.
       await acceptTerms(document.id, document.version);
       setDocument(null);
-      load();
+      await load();
     } catch {
-      setError('That version is no longer current. Restart to see what changed.');
+      setError('We could not save your choice. Try again; if this document has changed, restart Uncloud to review the current version.');
     } finally {
       setBusy(false);
     }
@@ -60,8 +63,12 @@ export default function TermsView({ onSettled }: { onSettled: () => void }) {
 
   if (!state || !document) {
     return (
-      <div className="h-screen w-screen flex items-center justify-center dot-ground">
-        <span className="glow"><Wordmark size={40} spinning /></span>
+      <div className="h-screen w-screen flex items-center justify-center p-6">
+        <div className="flex flex-col items-center gap-5 max-w-sm text-center" role="status">
+          <Wordmark size={36} spinning={!error} />
+          <p className="text-sm text-[var(--text-dim)]">{error || 'Preparing your agreements…'}</p>
+          {error && <button className="px-4 py-2 rounded-xl bg-[var(--bg-raised)] text-sm" onClick={() => { void load(); }}>Try again</button>}
+        </div>
       </div>
     );
   }
@@ -71,8 +78,8 @@ export default function TermsView({ onSettled }: { onSettled: () => void }) {
     state.outstanding.find((o) => o.id === document.id)?.because === 'changed';
 
   return (
-    <div className="h-screen w-screen flex items-center justify-center p-8 overflow-hidden">
-      <div className="card w-full max-w-3xl flex flex-col gap-5 p-6 min-h-0">
+    <div className="h-screen w-screen flex items-center justify-center p-4 sm:p-8 overflow-hidden">
+      <div className="card w-full max-w-3xl flex flex-col gap-6 p-5 sm:p-8 min-h-0 max-h-[calc(100vh-3rem)]">
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-2">
             <FileText size={18} className="text-[var(--text-dim)]" />
@@ -96,7 +103,7 @@ export default function TermsView({ onSettled }: { onSettled: () => void }) {
           <Markdown>{document.body ?? ""}</Markdown>
         </div>
 
-        {error && <p className="text-sm text-[var(--danger,#f87171)]">{error}</p>}
+        {error && <p role="alert" className="text-sm text-[var(--text-dim)]">{error}</p>}
 
         <div className="flex items-center justify-between gap-4 flex-wrap border-t
                         border-[var(--border)] pt-4">
@@ -105,9 +112,9 @@ export default function TermsView({ onSettled }: { onSettled: () => void }) {
             Reading files, writing them and running commands are asked for separately,
             when they happen.
           </p>
-          <button className="grad-button text-base flex items-center gap-2"
+          <button className="px-5 py-2.5 rounded-xl bg-[var(--text)] text-[var(--bg)] text-sm font-medium flex items-center gap-2 disabled:opacity-50"
                   disabled={busy} onClick={agree}>
-            <Check size={15} /> I agree
+            <Check size={15} /> {document.requires_agreement ? 'I agree' : 'Continue'}
           </button>
         </div>
       </div>

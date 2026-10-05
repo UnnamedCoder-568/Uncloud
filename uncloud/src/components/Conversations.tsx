@@ -24,6 +24,7 @@ function when(seconds: number): string {
 
 export interface ConversationsProps {
   open: boolean;
+  embedded?: boolean;
   onClose: () => void;
   list: ConversationList | null;
   activeId: string | null;
@@ -33,7 +34,7 @@ export interface ConversationsProps {
 }
 
 export default function Conversations({ open, onClose, list, activeId,
-                                        onOpen, onNew, onDelete }: ConversationsProps) {
+                                        onOpen, onNew, onDelete, embedded = false }: ConversationsProps) {
   //: Which row is asking to be confirmed. A conversation is work, and one
   //  click from a stray cursor should not end it — but a modal for every
   //  delete is heavier than the action deserves, so the row asks in place.
@@ -44,26 +45,26 @@ export default function Conversations({ open, onClose, list, activeId,
   }, [open]);
 
   useEffect(() => {
-    if (!open) return undefined;
+    if (!open || embedded) return undefined;
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
+  }, [open, onClose, embedded]);
 
   if (!open) return null;
 
   const items: ConversationSummary[] = list?.conversations ?? [];
 
   return (
-    <div className="absolute inset-0 z-30 flex">
-      <div className="flex-1 bg-black/40" onClick={onClose} />
+    <div className={embedded ? "history-embedded" : "absolute inset-0 z-30 flex"}>
+      {!embedded && <div className="flex-1 bg-black/40" onClick={onClose} />}
       <aside className="w-[300px] h-full bg-[var(--bg-raised)] border-l border-[var(--border)]
                         flex flex-col shadow-2xl">
         <div className="flex items-center justify-between px-3 py-2.5 border-b border-[var(--border-soft)]">
           <span className="text-xs uppercase tracking-wide text-[var(--text-faint)]">
             Conversations
           </span>
-          <button className="tb-btn" onClick={onClose} title="Close">
+          <button className="tb-btn" hidden={embedded} onClick={onClose} title="Close">
             <X size={14} />
           </button>
         </div>

@@ -3,7 +3,7 @@ import StartupScreen from './components/StartupScreen';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Sidebar from './components/Sidebar';
 import type { View } from './components/Sidebar';
-import TitleBar, { NavControls, TitleBarSlot } from './components/TitleBar';
+import TitleBar, { NavControls, TitleBarSlot, HistoryContext } from './components/TitleBar';
 import Panes from './components/Panes';
 import { onHandoffSignal } from './lib/handoff';
 import Onboarding from './views/Onboarding';
@@ -62,6 +62,7 @@ export default function App() {
   const [engineError, setEngineError] = useState<string | null>(null);
   const [railOpen, setRailOpen] = useState(loadRailOpen);
   const [slot, setSlot] = useState<HTMLDivElement | null>(null);
+  const [historySlot, setHistorySlot] = useState<HTMLDivElement | null>(null);
 
   // Real history, so the title bar's arrows do something. Kept as ONE piece of
   // state: a stack and a position updated by two separate setters can disagree
@@ -210,6 +211,7 @@ export default function App() {
       {showRail && (
         <Sidebar
           active={view}
+          history={<div ref={setHistorySlot} className="sidebar-history" />}
           onChange={go}
           top={<TitleBar inset>{controls}</TitleBar>}
         />
@@ -231,7 +233,7 @@ export default function App() {
           // Only the visible pane may write to the title bar. Portalled content
           // is not inside the pane, so `hidden` would not stop it.
           wrap={(pane, isActive) => (
-            <TitleBarSlot value={isActive ? slot : null}>{pane}</TitleBarSlot>
+            <TitleBarSlot value={isActive ? slot : null}><HistoryContext.Provider value={isActive && showRail ? historySlot : null}>{pane}</HistoryContext.Provider></TitleBarSlot>
           )}
         />
       </main>
