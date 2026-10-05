@@ -1,5 +1,3 @@
-Uncloud 0.4.21 separates conversation history from permanent navigation. Saved conversations opens a temporary left panel, closed by default. Choosing a conversation, clicking outside, using Close or pressing Escape dismisses it. Navigation icons and labels remain independent.
+Model activity is visible during loading, response generation and context compaction. Automatic update checks recover on focus and reconnection, with available updates shown in the top bar. Notices no longer block the signed installer check.
 
-The Guide explains the revised history controls.
-
-Validation: 121 frontend tests and the production build passed. Browser preview verified default-hidden history, opening the left panel, outside-click dismissal and Escape dismissal. Installed native visual verification remains pending.
+Friday adds a local voice companion with a calm, concise personality and a selectable voice. This conversation mode uses the installed model and speech engines; tools and computer actions remain in Chisel.

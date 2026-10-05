@@ -15,7 +15,7 @@ import {
 
 export type View =
   | 'chat' | 'models' | 'chisel' | 'automations' | 'image' | 'video' | 'music' | 'voice'
-  | 'outputs' | 'recipes' | 'guide' | 'settings';
+  | 'friday' | 'outputs' | 'recipes' | 'guide' | 'settings';
 
 type Icon = React.ComponentType<{ size?: number; strokeWidth?: number }>;
 
@@ -23,6 +23,7 @@ const GROUPS: { label?: string; items: { id: View; label: string; icon: Icon }[]
   {
     items: [
       { id: 'chat', label: 'Chat', icon: MessageSquare },
+      { id: 'friday', label: 'Friday', icon: Mic },
       { id: 'models', label: 'Models', icon: Boxes },
       { id: 'chisel', label: 'Chisel', icon: Workflow },
       { id: 'automations', label: 'Automations', icon: Clock },
