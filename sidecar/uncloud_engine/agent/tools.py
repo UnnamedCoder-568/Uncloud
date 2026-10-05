@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import re
+from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
 from urllib.parse import unquote
@@ -9,7 +11,7 @@ from urllib.parse import unquote
 import httpx
 
 from ..config import settings
-from ..core import Gate, Request, Risk
+from ..core import Gate, Mode, Request, Risk
 from ..library import scan_library
 
 WORKSPACE_DIR = Path.home() / ".uncloud" / "workspace"
@@ -105,6 +107,16 @@ class Ungoverned(RuntimeError):
 
 
 _gate: Gate | None = None
+_background_tools: ContextVar[frozenset[str] | None] = ContextVar("background_tools", default=None)
+
+
+@contextmanager
+def automation_scope(tools):
+    token = _background_tools.set(frozenset(tools))
+    try:
+        yield
+    finally:
+        _background_tools.reset(token)
 
 
 def install_gate(gate: Gate | None) -> None:
@@ -113,12 +125,27 @@ def install_gate(gate: Gate | None) -> None:
     _gate = gate
 
 
+def automation_tools():
+    return _background_tools.get()
+
+
 def current_gate() -> Gate:
     if _gate is None:
         raise Ungoverned(
             "No approval gate is installed. Every tool call has to be decided by one; a tool layer "
             "without it is not a smaller feature, it is an "
             "ungoverned one."
+        )
+    if _background_tools.get() is not None:
+        # Fresh gate: neither interactive session grants nor its asker are inherited.
+        return Gate(
+            {
+                risk: Mode.ALLOW
+                if risk in (Risk.READ, Risk.NETWORK) and _gate.mode_for(risk) == Mode.ALLOW
+                else Mode.DENY
+                for risk in Risk
+            },
+            record=_gate._record,
         )
     return _gate
 
@@ -542,7 +569,7 @@ def _resolve_path(raw: str) -> Path:
         p = WORKSPACE_DIR / p
     p = p.resolve()
     if (
-        not settings.agent_device_access
+        (not settings.agent_device_access or _background_tools.get() is not None)
         and WORKSPACE_DIR.resolve() not in p.parents
         and p != WORKSPACE_DIR.resolve()
     ):
@@ -562,6 +589,9 @@ async def run_tool(tool_id: str, args: dict[str, Any], *, origin: str = "") -> s
     added tomorrow is governed by having an entry in TOOL_RISK, which it cannot
     run without.
     """
+    allowed = _background_tools.get()
+    if allowed is not None and tool_id not in allowed:
+        raise PermissionError("This tool is outside the saved agent's scope")
     # Integration actions are namespaced (`documents.read`) and carry their own
     # risk category, declared by the integration rather than listed here. They
     # go to `registry.perform`, which asks the gate exactly as this function

@@ -71,7 +71,11 @@ def _active_tool_specs() -> list[dict]:
     a machine that may not have much to spare.
     """
     from ..config import settings
-    from .tools import auto_groups, tools_for
+    from .tools import TOOL_SPECS, auto_groups, automation_tools, tools_for
+
+    scope = automation_tools()
+    if scope is not None:
+        return [spec for spec in TOOL_SPECS if spec["id"] in scope]
 
     groups = settings.agent_tool_groups
     if groups is None:

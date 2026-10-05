@@ -11,7 +11,7 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import (
     Depends,
@@ -39,6 +39,7 @@ from .agent import tools as agent_tools
 from .agent.graph import ExecutionGraph
 from .agent.orchestrator import orchestrator
 from .agent.tools import TOOL_SPECS
+from .automations import Automations, NeedsAttention
 from .catalog import get_catalog, get_entry
 from .chat import model_payload
 from .config import CONFIG_DIR, settings
@@ -2012,6 +2013,10 @@ class EngineStartBody(BaseModel):
 
 @app.post("/api/engine/start", dependencies=[Depends(require_token)])
 async def start_engine(body: EngineStartBody) -> dict:
+    if automations_service.current:
+        raise HTTPException(
+            status_code=409, detail="A saved agent is running. Pause it in Chisel first."
+        )
     try:
         if body.adapter_path:
             from .training import jobs as training
@@ -2033,6 +2038,10 @@ async def start_engine(body: EngineStartBody) -> dict:
 
 @app.post("/api/engine/stop", dependencies=[Depends(require_token)])
 def stop_engine() -> dict:
+    if automations_service.current:
+        raise HTTPException(
+            status_code=409, detail="A saved agent is running. Pause it in Chisel first."
+        )
     engine_manager.stop()
     return {"ok": True}
 
@@ -2109,6 +2118,7 @@ class ChatRun:
 
 
 _chat_runs: dict[str, ChatRun] = {}
+_legacy_chat_active = 0
 
 
 def _chat_run(run_id: str, owner: str) -> ChatRun:
@@ -2205,6 +2215,10 @@ async def _run_chat(run: ChatRun, body: ChatBody, active=None) -> None:
 
 @app.post("/api/chat/runs", dependencies=[Depends(require_token)])
 async def start_chat_run(body: ChatBody, request: Request) -> dict:
+    if automations_service.current:
+        raise HTTPException(
+            status_code=409, detail="A saved agent is running. Pause it in Chisel first."
+        )
     active = engine_manager.active
     if (
         not active
@@ -2263,35 +2277,48 @@ def chat_diagnostics(request: Request) -> dict:
 
 @app.post("/api/chat", dependencies=[Depends(require_token)])
 async def chat(body: ChatBody) -> StreamingResponse:
+    if automations_service.current:
+        raise HTTPException(
+            status_code=409, detail="A saved agent is running. Pause it in Chisel first."
+        )
     if not engine_manager.active:
         raise HTTPException(status_code=400, detail="No text model loaded")
 
     import httpx
 
     async def relay() -> Any:
-        async with httpx.AsyncClient(timeout=None) as client:
-            payload = model_payload(
-                engine_manager.active,
-                body.messages,
-                overrides={
-                    **body.sampling,
-                    **({"temperature": body.temperature} if body.temperature is not None else {}),
-                },
-                max_tokens=body.max_tokens,
-                effort=body.effort or settings.effort,
-            )
-            # Plain Chat is a direct-answer surface. Thinking-capable GGUF
-            # templates otherwise default to an unlimited private-reasoning
-            # pass, and small Qwen variants can loop there without ever
-            # emitting an answer. Agent planning remains a separate endpoint.
-            async with client.stream(
-                "POST",
-                f"{engine_manager.active.base_url}/v1/chat/completions",
-                json=payload,
-            ) as resp:
-                resp.raise_for_status()
-                async for chunk in resp.aiter_bytes():
-                    yield chunk
+        global _legacy_chat_active
+        _legacy_chat_active += 1
+        try:
+            async with httpx.AsyncClient(timeout=None) as client:
+                payload = model_payload(
+                    engine_manager.active,
+                    body.messages,
+                    overrides={
+                        **body.sampling,
+                        **(
+                            {"temperature": body.temperature}
+                            if body.temperature is not None
+                            else {}
+                        ),
+                    },
+                    max_tokens=body.max_tokens,
+                    effort=body.effort or settings.effort,
+                )
+                # Plain Chat is a direct-answer surface. Thinking-capable GGUF
+                # templates otherwise default to an unlimited private-reasoning
+                # pass, and small Qwen variants can loop there without ever
+                # emitting an answer. Agent planning remains a separate endpoint.
+                async with client.stream(
+                    "POST",
+                    f"{engine_manager.active.base_url}/v1/chat/completions",
+                    json=payload,
+                ) as resp:
+                    resp.raise_for_status()
+                    async for chunk in resp.aiter_bytes():
+                        yield chunk
+        finally:
+            _legacy_chat_active -= 1
 
     return StreamingResponse(relay(), media_type="text/event-stream")
 
@@ -3545,6 +3572,210 @@ def remove_conversation(conversation_id: str, request: Request) -> dict:
 # ------------------------------------------------------------------- agent
 _agent_runs: dict[str, tuple[str, asyncio.Task]] = {}
 
+_agent_previews: dict[str, Any] = {}
+
+
+# Saved local agents are desktop-owned and never inherit session approvals.
+
+AUTOMATION_TOOLS = {
+    "fs_read",
+    "fs_list",
+    "fs_glob",
+    "fs_grep",
+    "web_search",
+    "web_read",
+    "http_fetch",
+    "plan_show",
+    "note_recall",
+    "skill_list",
+    "skill_read",
+}
+
+
+async def _execute_automation(item, update):
+    if (
+        _legacy_chat_active
+        or _agent_runs
+        or any(not r.task.done() for r in _chat_runs.values() if r.task)
+    ):
+        raise NeedsAttention("Another chat or agent is active. Run again when it finishes.")
+    active = engine_manager.active
+    if active and (active.model_path != item["model_path"] or active.adapter_path):
+        raise NeedsAttention(
+            "A different model is in use. Load this agent's model before resuming."
+        )
+    if not active or active.process.poll() is not None:
+        await engine_manager.start(item["model_path"], item["engine"])
+    context = None
+    if item.get("progress"):
+        context = [
+            {
+                "role": "user",
+                "content": "Previous saved progress (do not repeat completed work): "
+                + json.dumps(item["progress"]),
+            }
+        ]
+    from .power import keep_awake
+
+    with keep_awake("automation"), agent_tools.automation_scope(item["tools"]):
+        graph = await orchestrator.plan(item["goal"], context, effort="fast")
+        await update(graph.to_dict())
+        blocked = [t.tool_id for t in graph.tasks.values() if t.tool_id not in item["tools"]]
+        if blocked:
+            raise NeedsAttention(
+                "Plan requires tools outside this agent's scope: "
+                + ", ".join(sorted(set(blocked)))
+                + ". Review the saved plan and use interactive Chisel for approval."
+            )
+        from .power import keep_awake
+
+        with keep_awake("automation"):
+
+            async def progress(g):
+                await update(g.to_dict())
+
+            await asyncio.wait_for(orchestrator._execute(graph, progress), timeout=600)
+        if any(t.status == "failed" for t in graph.tasks.values()):
+            raise NeedsAttention(
+                "Some steps failed or require permission. Review saved progress before resuming."
+            )
+        return graph.to_dict()
+
+
+automations_service = Automations(CONFIG_DIR / "automations.enc", _execute_automation)
+
+
+@app.on_event("startup")
+async def _start_automations():
+    automations_service.loop = asyncio.create_task(automations_service.serve())
+
+
+@app.on_event("shutdown")
+async def _stop_automations():
+    await automations_service.close()
+
+
+class AutomationBody(BaseModel):
+    goal: str = Field(min_length=1, max_length=8000)
+    model_path: str = Field(min_length=1)
+    engine: Literal["mlx", "gguf"]
+    interval: int = Field(default=0, ge=0, le=31536000)
+    next_run: float = Field(default=0, ge=0, allow_inf_nan=False)
+    tools: list[str] = Field(default_factory=lambda: ["fs_read", "fs_list", "fs_glob", "fs_grep"])
+
+
+@app.get("/api/automations", dependencies=[Depends(require_desktop)])
+async def automation_list():
+    return {"items": list(automations_service.items.values()), "error": automations_service.error}
+
+
+@app.post("/api/automations", dependencies=[Depends(require_desktop)])
+async def automation_create(body: AutomationBody):
+    if not body.goal.strip() or not body.tools or not set(body.tools) <= AUTOMATION_TOOLS:
+        raise HTTPException(status_code=400, detail="Invalid goal or tool scope")
+    installed = scan_library_cached(settings.models_dir)
+    if not any(
+        m.path == body.model_path and m.engine == body.engine and m.category == "text" and m.ready
+        for m in installed
+    ):
+        raise HTTPException(status_code=400, detail="Choose an installed, ready text model")
+    try:
+        return automations_service.create(
+            body.goal.strip(),
+            body.model_path,
+            body.engine,
+            body.interval,
+            body.next_run or time.time(),
+            body.tools,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="Could not securely save this agent") from exc
+
+
+@app.post("/api/automations/{ident}/{action}", dependencies=[Depends(require_desktop)])
+async def automation_control(ident: str, action: str):
+    try:
+        return automations_service.control(ident, action)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="No such agent") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="Could not securely save this change") from exc
+
+
+class AgentPreviewBody(BaseModel):
+    source: str = Field(pattern="^(browser|desktop)$")
+
+
+def _require_preview_run(run_id: str, request: Request) -> None:
+    require_desktop(request)
+    found = _agent_runs.get(run_id)
+    if found is None or found[0] != principal_of(request) or found[1].done():
+        raise HTTPException(status_code=404, detail="This agent run is no longer active")
+
+
+@app.post("/api/agent/runs/{run_id}/preview", dependencies=[Depends(require_token)])
+def enable_agent_preview(run_id: str, body: AgentPreviewBody, request: Request) -> dict:
+    _require_preview_run(run_id, request)
+    if body.source == "desktop" and not settings.agent_device_access:
+        raise HTTPException(status_code=403, detail="Desktop preview requires full device access")
+    category = Risk.DEVICE if body.source == "desktop" else Risk.NETWORK
+    gated(
+        f"agent_preview_{run_id}_{body.source}",
+        category,
+        f"Show a live {body.source} preview while this Chisel run is active",
+        origin="agent",
+        preview={
+            "source": body.source,
+            "run_id": run_id,
+            "scope": "Capture every two seconds while this run is active",
+        },
+    )
+    from .agent_preview import PreviewSession
+
+    _agent_previews[run_id] = PreviewSession(body.source)
+    return {"enabled": True}
+
+
+@app.delete("/api/agent/runs/{run_id}/preview", dependencies=[Depends(require_token)])
+def disable_agent_preview(run_id: str, request: Request) -> dict:
+    _require_preview_run(run_id, request)
+    _agent_previews.pop(run_id, None)
+    return {"enabled": False}
+
+
+@app.get("/api/agent/runs/{run_id}/preview", dependencies=[Depends(require_token)])
+async def agent_preview_frame(run_id: str, request: Request) -> dict:
+    _require_preview_run(run_id, request)
+    session = _agent_previews.get(run_id)
+    if session is None:
+        raise HTTPException(status_code=403, detail="Enable the preview before capturing")
+    category = Risk.DEVICE if session.source == "desktop" else Risk.NETWORK
+    if gate.mode_for(category) is Mode.DENY or (
+        session.source == "desktop" and not settings.agent_device_access
+    ):
+        _agent_previews.pop(run_id, None)
+        raise HTTPException(status_code=403, detail="Preview access has been revoked")
+    from .agent_preview import capture_frame
+
+    try:
+        frame = await capture_frame(session)
+        _require_preview_run(run_id, request)
+        if (
+            _agent_previews.get(run_id) is not session
+            or gate.mode_for(category) is Mode.DENY
+            or (session.source == "desktop" and not settings.agent_device_access)
+        ):
+            raise HTTPException(status_code=403, detail="Preview access has been revoked")
+        return frame
+    except ValueError as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from None
+    except (RuntimeError, TimeoutError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc) or "Capture timed out") from None
+
 
 @app.delete("/api/agent/runs/{run_id}", dependencies=[Depends(require_token)])
 def cancel_agent_run(run_id: str, request: Request) -> dict:
@@ -3584,6 +3815,9 @@ async def agent_ws(websocket: WebSocket) -> None:
             return False
 
     try:
+        if automations_service.current:
+            await send({"type": "error", "message": "A saved agent is running. Pause it first."})
+            return
         raw = await websocket.receive_text()
         payload = json.loads(raw)
         goal = payload.get("goal", "")
@@ -3672,6 +3906,7 @@ async def agent_ws(websocket: WebSocket) -> None:
             wake_lock.__exit__(None, None, None)
         if run_id:
             _agent_runs.pop(run_id, None)
+            _agent_previews.pop(run_id, None)
 
 
 def _web_dist() -> Path | None:

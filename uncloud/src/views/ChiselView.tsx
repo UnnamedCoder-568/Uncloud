@@ -1,3 +1,5 @@
+import AutomationsPanel from '../components/AutomationsPanel';
+import AgentLivePreview from '../components/AgentLivePreview';
 import AutoGrowTextarea from "../components/AutoGrowTextarea";
 import ActivityOrb from '../components/ActivityOrb';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -322,9 +324,10 @@ export default function ChiselView() {
           </div>
         )}
 
-
+        <AutomationsPanel />
       </header>
 
+      <AgentLivePreview runId={runIdRef.current} active={busy} />
       <div className="flex-1 overflow-y-auto px-6 py-5">
         {!graph && phase === 'idle' && (
           <div className="h-full flex items-center justify-center text-[var(--text-faint)] text-sm">
