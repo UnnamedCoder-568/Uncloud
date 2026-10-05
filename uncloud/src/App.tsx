@@ -208,12 +208,13 @@ export default function App() {
       {showRail && narrow && (
         <div className="rail-scrim" onClick={() => setDrawerOpen(false)} />
       )}
-      {showRail && (
+      {(!narrow || showRail) && (
         <Sidebar
           active={view}
+          collapsed={!showRail}
           history={<div ref={setHistorySlot} className="sidebar-history" />}
           onChange={go}
-          top={<TitleBar inset>{controls}</TitleBar>}
+          top={<TitleBar inset={showRail}>{showRail && controls}</TitleBar>}
         />
       )}
       <main className="flex-1 min-w-0 flex flex-col">
@@ -221,7 +222,7 @@ export default function App() {
             for the traffic lights and carries the navigation controls too. */}
         {/* On a phone the drawer lies over this strip rather than replacing
             it, so the controls stay here whether or not it is open. */}
-        <TitleBar inset={!showRail || narrow}>
+        <TitleBar inset={narrow}>
           {(!showRail || narrow) && controls}
           <div ref={setSlot} className="flex items-center gap-1 flex-1 min-w-0" />
         </TitleBar>

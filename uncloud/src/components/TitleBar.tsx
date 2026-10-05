@@ -56,8 +56,8 @@ export function NavControls({
       <button
         className="tb-btn"
         onClick={onToggleRail}
-        title={railOpen ? 'Hide sidebar' : 'Show sidebar'}
-        aria-label={railOpen ? 'Hide sidebar' : 'Show sidebar'}
+        title={railOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+        aria-label={railOpen ? 'Collapse sidebar' : 'Expand sidebar'}
       >
         <PanelLeft size={17} strokeWidth={1.75} />
       </button>

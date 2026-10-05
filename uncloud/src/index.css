@@ -458,16 +458,15 @@ body {
 .history-embedded .group { border-radius: 8px; margin-bottom: 2px; }
 .history-embedded .group > div > div:last-child { display: none; }
 
-/* App tools form a slim rail beside the conversation list, like the reference. */
-.rail:has(.sidebar-history) { width: 320px; flex-basis: 320px; }
-.rail:has(.sidebar-history) .rail-body { display: grid; grid-template-columns: 40px minmax(0, 1fr); grid-template-rows: auto auto 1fr; gap: 10px 12px; }
-.rail:has(.sidebar-history) .rail-body > div:not(.sidebar-history) { grid-column: 1; }
-.rail:has(.sidebar-history) .rail-body > .sidebar-history { grid-column: 2; grid-row: 1 / 4; margin-top: 0; min-width: 0; }
-.rail:has(.sidebar-history) .rail-body > div:not(.sidebar-history) .rail-row { justify-content: center; padding: 0; }
-.rail:has(.sidebar-history) .rail-body > div:not(.sidebar-history) .rail-row > span,
-.rail:has(.sidebar-history) .rail-body .rail-label { display: none; }
-.rail:has(.sidebar-history) .history-embedded > aside > div:first-child { padding-top: 6px; }
-@media (max-width: 767px) { .rail:has(.sidebar-history) { width: min(86vw, 320px); } }
+/* Conversation history shares the expanded navigation sidebar. */
 
 .titlebar { background: var(--sidebar); }
 .history-embedded .group:focus-within { background: var(--rail-hover); }
+
+/* Collapsing the sidebar preserves navigation on every desktop page. */
+.rail.rail-collapsed { width: 88px; flex-basis: 88px; }
+.rail-collapsed .rail-brand, .rail-collapsed .sidebar-history,
+.rail-collapsed .rail-label, .rail-collapsed .rail-row > span,
+.rail-collapsed .rail-foot-text { display: none; }
+.rail-collapsed .rail-row { justify-content: center; padding-inline: 0; }
+.rail-collapsed .rail-foot { justify-content: center; padding-inline: 0; }

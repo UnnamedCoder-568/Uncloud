@@ -1,5 +1,5 @@
 import {
-  MessageSquare, Boxes, Workflow, ImageIcon, Music, Mic, Settings as Cog,
+  MessageSquare, Boxes, Workflow, ImageIcon, Music, Mic, Clock, Settings as Cog,
 } from 'lucide-react';
 import { useSettings } from '../lib/useSettings';
 
@@ -14,7 +14,7 @@ interface Section {
 const SECTIONS: Section[] = [
   {
     id: 'models', icon: Boxes, title: 'Models', lead:
-      'Everything starts here. Uncloud runs models you have downloaded — nothing is streamed from a server.',
+      'Start here to download or add models that run on your machine.',
     points: [
       { term: 'Browse and download', body: 'Pick from the catalog and it downloads into your models folder. Transfers resume if interrupted.' },
       { term: 'Bring your own', body: 'Point Uncloud at a folder that already holds .gguf or diffusers models and they appear automatically.' },
@@ -25,7 +25,9 @@ const SECTIONS: Section[] = [
     id: 'chat', icon: MessageSquare, title: 'Chat', lead:
       'A conversation with a model running on your machine.',
     points: [
-      { term: 'Pick a model first', body: 'The selector at the top loads it into memory. Large models take a minute on first load.' },
+      { term: 'Pick a model first', body: 'Use the model selector beside the message field. First load can take longer; later messages reuse the loaded model.' },
+      { term: 'History and navigation', body: 'Your conversations appear in the left sidebar. Collapse it to keep navigation icons visible while hiding names and history; expand it to bring them back.' },
+      { term: 'Context and Compact', body: 'The counter below the composer shows conversation usage against the selected model’s effective context window. Near 75%, Compact becomes available: it preserves a summary and recent turns so the same conversation can continue. You can inspect the saved summary.' },
       { term: 'Talk to it', body: 'If a speech-to-text model is installed, the mic button records and transcribes. The speaker icon reads replies aloud.' },
       { term: 'Vision', body: 'Models such as Gemma 4 and Qwen3.8 can look at images as well as read text.' },
       { term: 'Pictures in the reply', body: 'A model can add a generated picture alongside its answer when one would help. It chooses a quick draft for playful ideas, or a high-quality render at the requested dimensions for a finished image. The Image tab provides the full manual studio.' },
@@ -67,10 +69,19 @@ const SECTIONS: Section[] = [
       { term: 'What it can reach', body: 'Files, a shell, web search and reading, a real browser it can click and type in, image generation, and vision when a suitable model is loaded.' },
       { term: 'It remembers', body: 'The plan is written to disk as it runs, so progress survives a restart and you can see exactly which step failed.' },
       { term: 'Scope', body: 'By default it is confined to its own workspace folder. Full device access is a deliberate switch in Settings.' },
-      { term: 'Match the model', body: 'Planning quality depends heavily on the model. Small models plan poorly on multi-step work; a 27B handles it far better.' },
-      { term: 'Tool sets', body: 'Every tool it can see costs room in the planner\u2019s prompt, so the set is matched to the model: a small one gets 13 tools, a large one all 34. Settings lets you override that per group.' },
+      { term: 'Match the model', body: 'Planning quality depends heavily on the model. Try a simple task first, then increase complexity as you learn what your model handles reliably.' },
+      { term: 'Tool sets', body: 'Every tool it can see costs room in the planner\u2019s prompt, so the set is matched to the model: Settings lets you choose the available groups or use automatic selection.' },
       { term: 'Its own pointer', body: 'It can click at coordinates and drag inside its browser using a pointer of its own. That pointer is not your mouse \u2014 you can keep working while it does.' },
       { term: 'Skills', body: 'Written procedures it can look up. Drop a folder in ~/.uncloud/skills with a SKILL.md inside, or just ask the agent to remember how something is done and it writes one. Skills are instructions, never code.' },
+    ],
+  },
+  {
+    id: 'automations', icon: Clock, title: 'Automations', lead:
+      'Save recurring agent work separately from interactive Chisel tasks.',
+    points: [
+      { term: 'Choose when', body: 'Select a model, goal and first-run time, then choose a one-off or recurring schedule. Uncloud must remain open for scheduled work to run.' },
+      { term: 'Review and control', body: 'Inspect progress and recent runs. Pause or resume the schedule, or start a fresh run. Interrupted runs pause for review.' },
+      { term: 'Background access', body: 'Background tools are limited to workspace reads and selected web research. They respect current permissions and do not inherit interactive approvals.' },
     ],
   },
   {
@@ -93,8 +104,8 @@ export default function GuideView() {
       <div className="page-column">
         <h1 className="text-2xl font-semibold">Getting around Uncloud</h1>
         <p className="mt-2 text-sm text-[var(--text-dim)] leading-relaxed">
-          Every model runs on this machine. Once the files are downloaded, none of it
-          needs an internet connection.
+          Local models run on this machine after download. Web searches, model downloads
+          and connected online providers need an internet connection.
         </p>
 
         <div className="mt-8 card p-4">
