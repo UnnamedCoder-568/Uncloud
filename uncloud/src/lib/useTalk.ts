@@ -30,7 +30,7 @@ export type TalkState = 'off' | 'listening' | 'hearing' | 'thinking' | 'speaking
  */
 export function useTalk(
   voice: string,
-  onHeard: (said: string, say: (text: string) => void) => Promise<string | null | void>,
+  onHeard: (said: string, say: (text: string) => void, signal: AbortSignal) => Promise<string | null | void>,
 ) {
   const [sttModel, setSttModel] = useState<LocalModel | null>(null);
   const [native, setNative] = useState(false);
@@ -49,6 +49,7 @@ export function useTalk(
   const queue = useRef<Promise<void>>(Promise.resolve());
   const speakingCount = useRef(0);
   const running = useRef(false);
+  const answering = useRef<AbortController | null>(null);
 
   useEffect(() => { handler.current = onHeard; });
   useEffect(() => { voiceRef.current = voice; }, [voice]);
@@ -87,7 +88,7 @@ export function useTalk(
   /** Queue something to be said. Returns immediately: the caller is usually
    *  mid-stream and must not be blocked by the speaking. */
   const say = useCallback((text: string) => {
-    if (!text.trim()) return;
+    if (!text.trim() || !running.current) return;
     speakingCount.current += 1;
     muted(true);
     queue.current = queue.current
@@ -101,6 +102,8 @@ export function useTalk(
 
   const stop = useCallback(() => {
     running.current = false;
+    answering.current?.abort();
+    answering.current = null;
     loop.current?.stop();
     loop.current = null;
     stopNative.current?.();
@@ -113,15 +116,19 @@ export function useTalk(
   /** One turn: hand the words to the caller, and speak whatever comes back
    *  that it did not already say itself. */
   const answer = useCallback(async (said: string) => {
-    if (!said.trim()) return;
+    if (!said.trim() || !running.current || answering.current) return;
+    const controller = new AbortController();
+    answering.current = controller;
     setState('thinking');
     setHeard('');
     try {
-      const reply = await handler.current(said.trim(), say);
+      const reply = await handler.current(said.trim(), say, controller.signal);
+      if (controller.signal.aborted) return;
       if (reply && reply.trim()) say(reply);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      if (!controller.signal.aborted) setError(e instanceof Error ? e.message : String(e));
     } finally {
+      if (answering.current === controller) answering.current = null;
       if (speakingCount.current === 0 && running.current) setState('listening');
     }
   }, [say]);
@@ -142,7 +149,7 @@ export function useTalk(
             case 'final':
               // Only while listening: the recogniser keeps reporting during a
               // reply, and showing that would look like it heard itself.
-              if (speakingCount.current === 0) {
+              if (speakingCount.current === 0 && !answering.current) {
                 setHeard(event.text ?? '');
                 if ((event.text ?? '').trim()) setState('hearing');
               }
@@ -190,6 +197,8 @@ export function useTalk(
   // The microphone must not outlive the view.
   useEffect(() => () => {
     running.current = false;
+    answering.current?.abort();
+    answering.current = null;
     loop.current?.stop();
     loop.current = null;
     stopNative.current?.();
