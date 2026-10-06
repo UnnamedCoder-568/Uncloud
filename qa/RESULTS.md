@@ -50,3 +50,7 @@ Raw fixed-prompt evidence is in `live-chat-results.json`. This is a diagnostic c
 - Legal source drafts already present in the working tree were not changed or included in this release. Release CI also tests committed source.
 
 No user models/conversations were deleted. No external messages were sent, no paid API calls were made, and the isolated live text backend was stopped after benchmarking.
+
+## Release validation follow-up
+
+v0.4.24 publication was blocked by eight lint findings in the new test/runner files after backend tests passed. Formatting/import order, explicit subprocess check behavior and strict zip were corrected. The repeatable runner now includes both Python and frontend lint gates, which pass. The corrected installer release is v0.4.25; no failed release is treated as available.
