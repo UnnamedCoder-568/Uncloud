@@ -1,0 +1,258 @@
+{
+  "model": "minicpm5-2b-mlx-8bit",
+  "engine": "mlx",
+  "hardware": "arm64",
+  "platform": "macOS-27.0.1-arm64-arm-64bit",
+  "config_sha256": "aa0fa827a83a29f2bc8b1b9c681914b0689554762f11f3d7240725133f8a104f",
+  "sampling": {
+    "temperature": 0,
+    "seed": 42,
+    "max_tokens": 384
+  },
+  "cold_request": {
+    "mode": "direct",
+    "ttft_ms": 3268.8547499710694,
+    "total_ms": 5962.339665973559,
+    "library_scan_ms": 0,
+    "usage": {
+      "prompt_tokens": 14,
+      "completion_tokens": 137,
+      "total_tokens": 151,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      }
+    },
+    "answer": "\n\nHello! I'm a MiniCPM series model, developed by ModelBest and the OpenBMB open-source community. It's nice to meet you! You can find more details at https://github.com/OpenBMB/.",
+    "finish_reason": "stop"
+  },
+  "records": [
+    {
+      "mode": "legacy",
+      "ttft_ms": 282.216957944911,
+      "total_ms": 4629.816290980671,
+      "library_scan_ms": 101.66379099246114,
+      "usage": {
+        "prompt_tokens": 44,
+        "completion_tokens": 216,
+        "total_tokens": 260,
+        "prompt_tokens_details": {
+          "cached_tokens": 4
+        }
+      },
+      "answer": "\n\n3/10",
+      "finish_reason": "stop",
+      "case": "reasoning",
+      "basic_check": true
+    },
+    {
+      "mode": "optimized",
+      "ttft_ms": 108.40845800703391,
+      "total_ms": 4440.394125005696,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 44,
+        "completion_tokens": 216,
+        "total_tokens": 260,
+        "prompt_tokens_details": {
+          "cached_tokens": 43
+        }
+      },
+      "answer": "\n\n3/10",
+      "finish_reason": "stop",
+      "case": "reasoning",
+      "basic_check": true
+    },
+    {
+      "mode": "direct",
+      "ttft_ms": 94.94354197522625,
+      "total_ms": 4418.212374963332,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 44,
+        "completion_tokens": 216,
+        "total_tokens": 260,
+        "prompt_tokens_details": {
+          "cached_tokens": 43
+        }
+      },
+      "answer": "\n\n3/10",
+      "finish_reason": "stop",
+      "case": "reasoning",
+      "basic_check": true
+    },
+    {
+      "mode": "optimized",
+      "ttft_ms": 145.7736250013113,
+      "total_ms": 1386.157832981553,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 29,
+        "completion_tokens": 60,
+        "total_tokens": 89,
+        "prompt_tokens_details": {
+          "cached_tokens": 4
+        }
+      },
+      "answer": "\n\n{\"ready\":true,\"count\":3}",
+      "finish_reason": "stop",
+      "case": "instruction",
+      "basic_check": true
+    },
+    {
+      "mode": "direct",
+      "ttft_ms": 78.55745899723843,
+      "total_ms": 1329.409875033889,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 29,
+        "completion_tokens": 60,
+        "total_tokens": 89,
+        "prompt_tokens_details": {
+          "cached_tokens": 28
+        }
+      },
+      "answer": "\n\n{\"ready\":true,\"count\":3}",
+      "finish_reason": "stop",
+      "case": "instruction",
+      "basic_check": true
+    },
+    {
+      "mode": "legacy",
+      "ttft_ms": 291.2846669787541,
+      "total_ms": 1557.8904169960879,
+      "library_scan_ms": 110.62804202083498,
+      "usage": {
+        "prompt_tokens": 29,
+        "completion_tokens": 60,
+        "total_tokens": 89,
+        "prompt_tokens_details": {
+          "cached_tokens": 28
+        }
+      },
+      "answer": "\n\n{\"ready\":true,\"count\":3}",
+      "finish_reason": "stop",
+      "case": "instruction",
+      "basic_check": true
+    },
+    {
+      "mode": "direct",
+      "ttft_ms": 143.92241602763534,
+      "total_ms": 2384.9175830255263,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 39,
+        "completion_tokens": 111,
+        "total_tokens": 150,
+        "prompt_tokens_details": {
+          "cached_tokens": 4
+        }
+      },
+      "answer": "\n\nThe code name is Cedar and the budget is 73 credits.",
+      "finish_reason": "stop",
+      "case": "context",
+      "basic_check": true
+    },
+    {
+      "mode": "legacy",
+      "ttft_ms": 306.28895899280906,
+      "total_ms": 2477.6034589740448,
+      "library_scan_ms": 125.16808399232104,
+      "usage": {
+        "prompt_tokens": 39,
+        "completion_tokens": 111,
+        "total_tokens": 150,
+        "prompt_tokens_details": {
+          "cached_tokens": 38
+        }
+      },
+      "answer": "\n\nThe code name is Cedar and the budget is 73 credits.",
+      "finish_reason": "stop",
+      "case": "context",
+      "basic_check": true
+    },
+    {
+      "mode": "optimized",
+      "ttft_ms": 100.67249997518957,
+      "total_ms": 2322.268249990884,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 39,
+        "completion_tokens": 111,
+        "total_tokens": 150,
+        "prompt_tokens_details": {
+          "cached_tokens": 38
+        }
+      },
+      "answer": "\n\nThe code name is Cedar and the budget is 73 credits.",
+      "finish_reason": "stop",
+      "case": "context",
+      "basic_check": true
+    },
+    {
+      "mode": "legacy",
+      "ttft_ms": 307.81970801763237,
+      "total_ms": 4463.93312496366,
+      "library_scan_ms": 126.73241697484627,
+      "usage": {
+        "prompt_tokens": 27,
+        "completion_tokens": 204,
+        "total_tokens": 231,
+        "prompt_tokens_details": {
+          "cached_tokens": 4
+        }
+      },
+      "answer": "\n\n```python\ndef add(a, b):\n    return a + b\n```",
+      "finish_reason": "stop",
+      "case": "coding",
+      "basic_check": true
+    },
+    {
+      "mode": "optimized",
+      "ttft_ms": 100.99745797924697,
+      "total_ms": 4194.485082989559,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 27,
+        "completion_tokens": 204,
+        "total_tokens": 231,
+        "prompt_tokens_details": {
+          "cached_tokens": 26
+        }
+      },
+      "answer": "\n\n```python\ndef add(a, b):\n    return a + b\n```",
+      "finish_reason": "stop",
+      "case": "coding",
+      "basic_check": true
+    },
+    {
+      "mode": "direct",
+      "ttft_ms": 98.64737500902265,
+      "total_ms": 4255.012459005229,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 27,
+        "completion_tokens": 204,
+        "total_tokens": 231,
+        "prompt_tokens_details": {
+          "cached_tokens": 26
+        }
+      },
+      "answer": "\n\n```python\ndef add(a, b):\n    return a + b\n```",
+      "finish_reason": "stop",
+      "case": "coding",
+      "basic_check": true
+    }
+  ],
+  "prompt_quality": [],
+  "median_ttft_ms": {
+    "direct": 96.79545849212445,
+    "legacy": 298.7868129857816,
+    "optimized": 104.70295799314044
+  },
+  "limits": [
+    "One local model; not a cross-family intelligence evaluation",
+    "Transport comparison excludes browser rendering and HTTP hop into sidecar",
+    "Legacy path reconstructed with identical inference payload",
+    "Basic checks do not establish general model intelligence"
+  ]
+}

@@ -135,13 +135,12 @@ export default function Quantize({ models, onBuilt }: {
           <Gauge size={15} className="text-[var(--text-dim)]" />
         </div>
         <div className="min-w-0">
-          <h2 className="text-sm mb-1">Make a version that fits this Mac</h2>
+          <h2 className="text-sm mb-1">Make a version that fits your device</h2>
           <p className="text-[11px] text-[var(--text-faint)] max-w-2xl leading-relaxed">
-            Quantises a model once and saves the result, so it loads in seconds and
-            stays in memory instead of being rebuilt for every prompt. Lower
-            precision buys memory, not speed — a bf16 matmul measured 13.6 TFLOPS
-            against 11.9 for 4-bit — so pick the highest that fits. On a 24GB Mac
-            that is usually 6-bit for a 9B model, 8-bit for anything smaller.
+            Creates a smaller copy and keeps the original. Lower precision reduces
+            storage and memory needs, but speed and quality depend on the model
+            and backend. Choose the highest precision that fits, then compare
+            the result before removing the source.
           </p>
         </div>
       </div>

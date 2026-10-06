@@ -133,8 +133,8 @@ export default function Conversations({ open, onClose, list, activeId,
         <div className="px-3 py-2 border-t border-[var(--border-soft)] text-[10px]
                         text-[var(--text-faint)] leading-relaxed">
           {list?.secure
-            ? 'Encrypted on this Mac. The key is in your keychain.'
-            : 'Encrypted on this Mac. No keychain was available, so the key is in a '
+            ? 'Encrypted on this device. The key is in your keychain.'
+            : 'Encrypted on this device. No keychain was available, so the key is in a '
               + 'file next to them — which protects them if the files are copied '
               + 'away, and not if the whole folder is.'}
           {!!list?.unreadable && (
