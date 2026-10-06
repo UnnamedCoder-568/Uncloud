@@ -27,6 +27,10 @@ export interface Pane<T extends string> {
 
 const VisibleContext = createContext<boolean>(true);
 
+export function usePaneVisible(): boolean {
+  return useContext(VisibleContext);
+}
+
 /** Run something each time this pane becomes visible again — not on the first
  *  mount, which the pane's own effects already cover. */
 export function useWhenVisible(refresh: () => void): void {
@@ -137,6 +141,7 @@ export default function Panes<T extends string>({ active, panes, className, wrap
    *  write into it at once. */
   wrap?: (pane: ReactNode, isActive: boolean) => ReactNode;
 }) {
+  const parentVisible = usePaneVisible();
   // Adjusted during render rather than in an effect. React documents this for
   // deriving state from props: it re-runs this component before committing, so
   // nothing is painted twice, where an effect would queue a second render
@@ -153,7 +158,7 @@ export default function Panes<T extends string>({ active, panes, className, wrap
         const isActive = active === id;
         return (
           <div key={id} className={isActive ? className : undefined} hidden={!isActive}>
-            <VisibleContext.Provider value={isActive}>
+            <VisibleContext.Provider value={isActive && parentVisible}>
               {wrap
                 ? wrap(<ScreenBoundary>{render()}</ScreenBoundary>, isActive)
                 : <ScreenBoundary>{render()}</ScreenBoundary>}

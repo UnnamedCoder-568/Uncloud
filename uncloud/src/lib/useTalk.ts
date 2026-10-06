@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Conversation } from './converse';
+import { usePaneVisible } from '../components/Panes';
 import { getLibrary, speakReply, transcribeAudio } from './sidecar';
 import { endNativeTurn, nativeListening, startNativeListener } from './nativeListen';
 import type { LocalModel } from './sidecar';
@@ -32,6 +33,7 @@ export function useTalk(
   voice: string,
   onHeard: (said: string, say: (text: string) => void, signal: AbortSignal) => Promise<string | null | void>,
 ) {
+  const visible = usePaneVisible();
   const [sttModel, setSttModel] = useState<LocalModel | null>(null);
   const [native, setNative] = useState(false);
   const [state, setState] = useState<TalkState>('off');
@@ -49,6 +51,7 @@ export function useTalk(
   const queue = useRef<Promise<void>>(Promise.resolve());
   const speakingCount = useRef(0);
   const running = useRef(false);
+  const session = useRef(0);
   const answering = useRef<AbortController | null>(null);
 
   useEffect(() => { handler.current = onHeard; });
@@ -68,19 +71,23 @@ export function useTalk(
     setState(quiet ? 'speaking' : 'listening');
   }, []);
 
-  const play = useCallback(async (text: string) => {
+  const play = useCallback(async (text: string, epoch: number) => {
+    if (!running.current || session.current !== epoch) return;
     const url = await speakReply(text.trim(), voiceRef.current);
+    if (!running.current || session.current !== epoch) { URL.revokeObjectURL(url); return; }
     const audio = player.current ?? new Audio();
     player.current = audio;
     audio.src = url;
+    const ended = new Promise<void>((resolve, reject) => {
+      audio.onended = () => resolve();
+      audio.onerror = () => reject(new Error('Audio playback failed. Check the selected voice and output device.'));
+      audio.onpause = () => resolve();
+    });
+    // Install handlers before play: a very short clip can end immediately.
     try {
-      await audio.play();
-      await new Promise<void>((resolve) => {
-        audio.onended = () => resolve();
-        audio.onerror = () => resolve();
-        audio.onpause = () => resolve();
-      });
+      await Promise.all([audio.play(), ended]);
     } finally {
+      audio.onended = audio.onerror = audio.onpause = null;
       URL.revokeObjectURL(url);
     }
   }, []);
@@ -89,19 +96,27 @@ export function useTalk(
    *  mid-stream and must not be blocked by the speaking. */
   const say = useCallback((text: string) => {
     if (!text.trim() || !running.current) return;
+    const epoch = session.current;
     speakingCount.current += 1;
     muted(true);
     queue.current = queue.current
-      .then(() => play(text))
-      .catch((e) => setError(e instanceof Error ? e.message : String(e)))
+      .then(() => play(text, epoch))
+      .catch((e) => { if (session.current === epoch) setError(e instanceof Error ? e.message : String(e)); })
       .finally(() => {
+        if (session.current !== epoch) return;
         speakingCount.current -= 1;
-        if (speakingCount.current === 0 && running.current) muted(false);
+        if (speakingCount.current === 0 && running.current) {
+          if (answering.current) { loop.current?.setSpeaking(true); setState('thinking'); }
+          else muted(false);
+        }
       });
   }, [muted, play]);
 
   const stop = useCallback(() => {
     running.current = false;
+    session.current += 1;
+    speakingCount.current = 0;
+    queue.current = Promise.resolve();
     answering.current?.abort();
     answering.current = null;
     loop.current?.stop();
@@ -112,6 +127,9 @@ export function useTalk(
     setState('off');
     setHeard('');
   }, []);
+
+  // Panes preserve views on navigation; hiding does not unmount them.
+  useEffect(() => { if (!visible) stop(); }, [visible, stop]);
 
   /** One turn: hand the words to the caller, and speak whatever comes back
    *  that it did not already say itself. */
@@ -125,11 +143,13 @@ export function useTalk(
       const reply = await handler.current(said.trim(), say, controller.signal);
       if (controller.signal.aborted) return;
       if (reply && reply.trim()) say(reply);
+      // The browser recorder must stay muted until queued speech has finished.
+      await queue.current;
     } catch (e) {
       if (!controller.signal.aborted) setError(e instanceof Error ? e.message : String(e));
     } finally {
       if (answering.current === controller) answering.current = null;
-      if (speakingCount.current === 0 && running.current) setState('listening');
+      if (!controller.signal.aborted && speakingCount.current === 0 && running.current && !answering.current) muted(false);
     }
   }, [say]);
 
@@ -137,10 +157,14 @@ export function useTalk(
     if (running.current) return;
     setError(null);
     running.current = true;
+    const epoch = session.current;
 
-    if (await nativeListening()) {
+    const canListenNatively = await nativeListening();
+    if (!running.current || session.current !== epoch) return;
+    if (canListenNatively) {
       try {
-        stopNative.current = await startNativeListener((event) => {
+        const release = await startNativeListener((event) => {
+          if (!running.current || session.current !== epoch) return;
           switch (event.event) {
             case 'ready':
               setState('listening');
@@ -168,8 +192,11 @@ export function useTalk(
               break;
           }
         });
+        if (!running.current || session.current !== epoch) { release(); return; }
+        stopNative.current = release;
         return;
       } catch (e) {
+        if (!running.current || session.current !== epoch) return;
         // Fall through to the browser path rather than leaving someone with
         // no way to talk at all.
         setError(e instanceof Error ? e.message : String(e));
@@ -191,12 +218,16 @@ export function useTalk(
       },
     });
     loop.current = conversation;
-    await conversation.start();
+    try { await conversation.start(); }
+    catch (e) { stop(); setError(e instanceof Error ? e.message : String(e)); throw e; }
   }, [answer, stop]);
 
   // The microphone must not outlive the view.
   useEffect(() => () => {
     running.current = false;
+    session.current += 1;
+    speakingCount.current = 0;
+    queue.current = Promise.resolve();
     answering.current?.abort();
     answering.current = null;
     loop.current?.stop();
@@ -217,7 +248,7 @@ export function useTalk(
     ready: native || !!sttModel,
     start,
     stop,
-    toggle: () => (state !== 'off' ? stop() : void start()),
+    toggle: () => (state !== 'off' ? stop() : void start().catch(() => {})),
     /** End this turn now rather than waiting for a pause. */
     endTurn: () => (native ? endNativeTurn() : Promise.resolve()),
     say,
