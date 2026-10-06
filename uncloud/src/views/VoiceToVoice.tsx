@@ -73,12 +73,13 @@ export function Talk({ friday = false }: { friday?: boolean }) {
     scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: 'smooth' });
   }, [turns]);
 
-  const talk = useTalk(voice, async (said, say) => {
+  const talk = useTalk(voice, async (said, say, signal) => {
     const model = models.find((m) => m.path === modelPath);
     if (!model) return 'Choose a model to talk to first.';
     const history: ChatMessage[] = [...turnsRef.current, { role: 'user', content: said }];
     turnsRef.current = history;
     setTurns([...history, { role: 'assistant', content: '' }]);
+    try {
     const status = await engineStatus();
     if (!status.running || status.model_path !== model.path) {
       setLoading(true);
@@ -92,17 +93,27 @@ export function Talk({ friday = false }: { friday?: boolean }) {
       // Brief: it is read aloud, and lists and markdown do not survive that.
       { role: 'system', content: chatSystemPrompt({ web: false, pictures: false, manner: 'brief' }) + (friday ? '\nYou are Friday, an original local assistant. Be calm, capable, warm and lightly witty. Speak naturally in concise sentences. Be honest about uncertainty. You can converse here but cannot execute tools or claim to have performed actions. Do not impersonate a fictional character or actor.' : '') },
       ...history,
-    ])) {
-      if (chunk.kind !== 'text') continue;
+    ], signal)) {
+      if (signal.aborted) return;
+      if (chunk.kind === 'thinking') {
+        setTurns([...history, { role: 'assistant', content: '', reasoning: chunk.text }]);
+        continue;
+      }
       reply += chunk.text;
       const growing = reply.trim();
       setTurns([...history, { role: 'assistant', content: growing }]);
       for (const sentence of sentences.push(chunk.text)) say(sentence);
     }
+    if (!reply.trim()) throw new Error('The model finished without an answer. Try again or select another model.');
     const answered: ChatMessage[] = [...history, { role: 'assistant', content: reply.trim() }];
     turnsRef.current = answered;
     setTurns(answered);
     return sentences.rest();
+    } catch (error) {
+      turnsRef.current = history.slice(0, -1);
+      setTurns([...history, { role: 'assistant', content: signal.aborted ? 'Response stopped.' : (error instanceof Error ? error.message : String(error)) }]);
+      throw error;
+    }
   });
 
   return (
@@ -157,7 +168,7 @@ export function Talk({ friday = false }: { friday?: boolean }) {
           {turns.map((t, i) => (
             <div key={i} className={`max-w-[80%] text-sm leading-relaxed px-3.5 py-2.5 rounded-2xl ${
               t.role === 'user' ? 'self-end bg-[var(--bg-raised)]' : 'self-start bg-[var(--bg-inset)] text-[var(--text-dim)]'}`}>
-              {t.content || <ActivityOrb state="working" size={20} label="Working…" />}
+              {t.content || <><ActivityOrb state="working" size={20} label="Model processing…" /> {t.reasoning ? 'Model is reasoning…' : loading ? 'Loading model…' : 'Waiting for model…'}</>}
             </div>
           ))}
         </div>
