@@ -1,0 +1,52 @@
+{
+  "platform": "Darwin",
+  "architecture": "arm64",
+  "cpu_count": 10,
+  "engine": "kokoro",
+  "model": "Kokoro 82M (existing offline weights)",
+  "voice": "bf_emma",
+  "text": "Welcome to Uncloud. Your models run locally, and your work stays on this device.",
+  "runs": [
+    {
+      "phase": "cold",
+      "seconds": 4.9581,
+      "audio_seconds": 5.35,
+      "device": "cpu"
+    },
+    {
+      "phase": "warm",
+      "seconds": 0.4764,
+      "audio_seconds": 5.35,
+      "device": "cpu"
+    },
+    {
+      "phase": "warm",
+      "seconds": 0.474,
+      "audio_seconds": 5.35,
+      "device": "cpu"
+    }
+  ],
+  "wave_checks": [
+    {
+      "clip": "kokoro-0.wav",
+      "frames": 128400,
+      "sample_rate": 24000,
+      "finite": true,
+      "non_silent": true
+    },
+    {
+      "clip": "kokoro-1.wav",
+      "frames": 128400,
+      "sample_rate": 24000,
+      "finite": true,
+      "non_silent": true
+    },
+    {
+      "clip": "kokoro-2.wav",
+      "frames": 128400,
+      "sample_rate": 24000,
+      "finite": true,
+      "non_silent": true
+    }
+  ]
+}

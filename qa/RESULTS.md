@@ -54,3 +54,7 @@ No user models/conversations were deleted. No external messages were sent, no pa
 ## Release validation follow-up
 
 v0.4.24 publication was blocked by eight lint findings in the new test/runner files after backend tests passed. Formatting/import order, explicit subprocess check behavior and strict zip were corrected. The repeatable runner now includes both Python and frontend lint gates, which pass. The corrected installer release is v0.4.25; no failed release is treated as available.
+
+## Additional offline Friday speech check
+
+Kokoro 82M, Emma (`bf_emma`), fixed neutral script, three sequential worker requests. All three WAVs contained finite non-silent samples. Warm synthesis took 0.4764 and 0.4740 seconds for 5.35-second clips. No audio was played and no microphone used. This verifies synthesis and file validity, not subjective voice quality or hardware playback. Evidence: `live-friday-speech-results.json`. This documentation-only follow-up does not change installer code.
