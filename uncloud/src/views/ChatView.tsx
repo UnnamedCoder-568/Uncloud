@@ -18,6 +18,7 @@ import { Sentences, useTalk } from '../lib/useTalk';
 import { cleanReply } from '../lib/reply';
 import { MAX_ROUNDS, describe, findLookups, initialWebQuery, resultsTurn, stripLookups } from '../lib/lookup';
 import { compactAvailable, contextMessages, COMPACTION_INSTRUCTION } from '../lib/context';
+import { fitWebContext } from '../lib/web-context';
 import { printerSound } from '../lib/printer-sound';
 import { getLibrary, getAdapters, startEngine, engineStatus, streamChat, countChatContext, transcribeAudio, speakReply, IMAGE_MARKER, chatSystemPrompt, parseReplyImages, generateReplyImage,
   listConversations, readConversation, writeConversation, deleteConversation,
@@ -51,6 +52,11 @@ export default function ChatView() {
   const [compactSummary, setCompactSummary] = useState('');
   const [compactedThrough, setCompactedThrough] = useState(0);
   const [compacting, setCompacting] = useState(false);
+  const [contextLength, setContextLength] = useState('');
+  const [contextWindows, setContextWindows] = useState<Record<string, number>>(() => {
+    try { return JSON.parse(localStorage.getItem('uncloud.chat.contextWindows') || '{}'); }
+    catch { return {}; }
+  });
   const [rawMode] = useState(() => localStorage.getItem('uncloud.debug.raw') === 'on');
   const [temperatures, setTemperatures] = useState<Record<string, string>>(() => {
     try { return JSON.parse(localStorage.getItem('uncloud.chat.temperatures') || '{}'); }
@@ -210,7 +216,8 @@ export default function ChatView() {
     setPickerOpen(false);
     setLoadingModel(true);
     try {
-      await startEngine(model.path, model.engine, adapter?.path);
+      await startEngine(model.path, model.engine, adapter?.path, contextWindows[model.path]);
+      setContextLength(contextWindows[model.path]?.toString() ?? '');
       setActiveModel(model);
       setActiveAdapter(adapter?.path ?? null);
     } catch (e) {
@@ -495,6 +502,17 @@ export default function ChatView() {
       let sent: ChatMessage[] = [
         ...next.slice(rawMode ? 0 : compactedThrough),
       ];
+      let fittedReplyBudget: number | undefined;
+      const fitEvidence = async (evidence: string, assemble: (text: string) => ChatMessage[]) => {
+        const fitted = await fitWebContext(evidence,
+          value => contextMessages(assemble(value), chatSystemPrompt({ pictures, web, manner }), compactSummary, 0, rawMode),
+          countChatContext,
+          replyBudgets[activeModel.path]?.trim() ? Number(replyBudgets[activeModel.path]) : undefined);
+        if (epoch !== generationEpoch.current || controller.signal.aborted) throw new Error('Reply stopped');
+        setContextUsage(fitted.usage);
+        fittedReplyBudget = fitted.replyBudget;
+        return assemble(fitted.evidence);
+      };
       //: Hands-free only: the reply is cut into sentences as it is written so
       //  each can be spoken while the rest is still coming.
       const sentences = say ? new Sentences() : null;
@@ -512,9 +530,14 @@ export default function ChatView() {
         setConsulted([query]);
         // Keep the evidence beside the latest user request to suit local models
         // that require alternating user/assistant turns.
-        sent = sent.map((message, index) => index === sent.length - 1
-          ? { ...message, content: `${message.content}\n\n${resultsTurn([{ lookup, text: evidence }])}` }
-          : message);
+        const beforeSearch = sent;
+        sent = await fitEvidence(evidence, value => beforeSearch.map((message, index) => index === beforeSearch.length - 1
+          ? { ...message, content: `${message.content}\n\n${resultsTurn([{ lookup, text: value }])}` }
+          : message));
+        const retrieved = sent.at(-1)!.content.slice(beforeSearch.at(-1)!.content.length + 2);
+        next[next.length - 1] = { ...next[next.length - 1], retrieved };
+        setMessages(current => current.map((message, index) => index === next.length - 1
+          ? { ...message, retrieved } : message));
       }
 
 
@@ -523,7 +546,7 @@ export default function ChatView() {
         for await (const chunk of streamChat(
           contextMessages(sent, chatSystemPrompt({ pictures, web, manner }), compactSummary, 0, rawMode),
           controller.signal,
-          replyBudgets[activeModel.path]?.trim() ? Number(replyBudgets[activeModel.path]) : undefined,
+          fittedReplyBudget ?? (replyBudgets[activeModel.path]?.trim() ? Number(replyBudgets[activeModel.path]) : undefined),
           { path: activeModel.path, engine: activeModel.engine, adapter: activeAdapter,
             temperature: temperatures[activeModel.path]?.trim() ? Number(temperatures[activeModel.path]) : undefined },
         )) {
@@ -637,11 +660,13 @@ export default function ChatView() {
 
         // The request stays in the transcript the model sees — without it the
         // results arrive as an answer to nothing.
-        sent = [
+        const beforeLookup = [
           ...sent,
           { role: 'assistant', content: full },
-          { role: 'user', content: resultsTurn(fetched) },
-        ];
+        ] as ChatMessage[];
+        sent = await fitEvidence(resultsTurn(fetched), value => [
+          ...beforeLookup, { role: 'user', content: value },
+        ]);
         setMessages((m) => {
           if (epoch !== generationEpoch.current) return m;
           const copy = [...m];
@@ -916,6 +941,25 @@ export default function ChatView() {
                  onKeyDown={(e) => { if (e.key === 'Escape') { e.currentTarget.closest('details')?.removeAttribute('open'); } }}>
               <span className="text-xs text-[var(--text-dim)]">Chat settings</span>
               {rawMode && <span className="text-xs">Direct-model diagnostic mode</span>}
+              {activeModel?.engine === 'gguf' && <div className="text-xs flex flex-col gap-1">
+                <label htmlFor="context-length">Model context window · applies when reloaded</label>
+                <input id="context-length" className="input" type="number" min="256" step="256"
+                  placeholder={`Auto · ${contextUsage?.limit ?? 'model and memory'}`} value={contextLength}
+                  onChange={e => setContextLength(e.target.value)} />
+                <span className="faint">Larger windows use more memory. Cannot exceed the model’s supported limit.</span>
+                <button className="pill" disabled={generating || loadingModel || !contextLength}
+                  onClick={async () => {
+                    setLoadingModel(true);
+                    try {
+                      await startEngine(activeModel.path, activeModel.engine, activeAdapter, Number(contextLength));
+                      const windows = { ...contextWindows, [activeModel.path]: Number(contextLength) };
+                      setContextWindows(windows);
+                      localStorage.setItem('uncloud.chat.contextWindows', JSON.stringify(windows));
+                      setContextUsage(await countChatContext(contextMessages(messages, chatSystemPrompt({ pictures, web, manner }), compactSummary, compactedThrough, rawMode)));
+                    } catch (error) { setNetworkError(error instanceof Error ? error.message : String(error)); }
+                    finally { setLoadingModel(false); }
+                  }}>Apply context window</button>
+              </div>}
               {activeModel && <label className="text-xs flex flex-col gap-1">
                 Temperature · this model
                 <input className="input" type="number" min="0" step="any" placeholder="Auto · model defaults"

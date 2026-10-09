@@ -53,7 +53,8 @@ class EngineManager:
         self._lock = asyncio.Lock()
 
     async def start(
-        self, model_path: str, engine: str, adapter_path: str | None = None
+        self, model_path: str, engine: str, adapter_path: str | None = None,
+        context_length: int | None = None,
     ) -> ActiveEngine:
         async with self._lock:
             if (
@@ -62,14 +63,25 @@ class EngineManager:
                 and self.active.engine == engine
                 and self.active.adapter_path == adapter_path
                 and self.active.process.poll() is None
+                and (context_length is None or self.active.context_limit == context_length)
             ):
                 return self.active
+            profile = for_model(model_path, engine)
+            if context_length is not None:
+                native = profile.get("native_limit")
+                if (
+                    not isinstance(context_length, int) or context_length < 256
+                    or (native and context_length > native)
+                ):
+                    raise ValueError("Context must fit the model's supported window.")
+                profile = {**profile, "effective_limit": context_length}
+                if engine != "gguf" or not native:
+                    raise ValueError("Context overrides require GGUF context metadata.")
             if self.active:
                 self._stop_process(self.active)
                 self.active = None
 
             port = _free_port()
-            profile = for_model(model_path, engine)
             model_profile, inference_profile = load_inference_profile(model_path, engine)
             if engine == "gguf":
                 proc = self._spawn_llama_cpp(model_path, port, profile["effective_limit"])
@@ -253,7 +265,10 @@ class EngineManager:
             "port": self.active.port,
             "adapter_path": self.active.adapter_path,
             "context_limit": self.active.context_limit,
-            "context_profile": for_model(self.active.model_path, self.active.engine),
+            "context_profile": {
+                **for_model(self.active.model_path, self.active.engine),
+                "effective_limit": self.active.context_limit,
+            },
             "inference_profile": self.active.inference_profile,
             # So the interface can offer image attachment against a model that
             # can actually receive one, and say why when it cannot — rather
