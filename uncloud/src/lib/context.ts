@@ -17,7 +17,9 @@ export function contextMessages(messages: ChatMessage[], system: string,
   const content = system + (summary ? `\n\nEarlier conversation, compacted for continuity:\n${summary}` : '');
   const start = summary ? through : 0;
   const tail = messages.slice(start).filter((_, index) => !failed.has(index + start));
-  return [{ role: 'system', content }, ...tail];
+  return [{ role: 'system', content }, ...tail.map(message => message.retrieved
+    ? { ...message, content: `${message.content}\n\n${message.retrieved}`, retrieved: undefined }
+    : message)];
 }
 
 export function compactAvailable(used: number | null, limit: number | null): boolean {

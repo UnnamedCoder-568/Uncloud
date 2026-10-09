@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import io
 import zipfile
@@ -69,3 +70,28 @@ def test_native_chat_has_one_slot_so_context_is_not_split(monkeypatch):
     engines.EngineManager()._spawn_llama_cpp("model.gguf", 8080, 8192)
     assert commands[0][-2:] == ["--parallel", "1"]
     assert commands[0][commands[0].index("-c") + 1] == "8192"
+
+
+def test_context_override_rejected_before_unloading_current_model(monkeypatch):
+    from uncloud_engine import engines
+
+    manager = engines.EngineManager()
+    current = SimpleNamespace(model_path="other", engine="gguf", adapter_path=None,
+                              process=SimpleNamespace(poll=lambda: None), context_limit=1024)
+    manager.active = current
+    monkeypatch.setattr(engines, "for_model", lambda *args: {
+        "native_limit": 8192, "effective_limit": 1024,
+    })
+    with pytest.raises(ValueError, match="supported"):
+        asyncio.run(manager.start("new", "gguf", context_length=16384))
+    assert manager.active is current
+
+
+def test_normal_turn_keeps_explicitly_loaded_window_and_resident_model():
+    from uncloud_engine import engines
+
+    manager = engines.EngineManager()
+    current = SimpleNamespace(model_path="model", engine="gguf", adapter_path=None,
+                              process=SimpleNamespace(poll=lambda: None), context_limit=8192)
+    manager.active = current
+    assert asyncio.run(manager.start("model", "gguf")) is current

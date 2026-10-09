@@ -2009,6 +2009,7 @@ class EngineStartBody(BaseModel):
     model_path: str
     engine: str
     adapter_path: str | None = None
+    context_length: int | None = Field(default=None, ge=256, le=1048576)
 
 
 @app.post("/api/engine/start", dependencies=[Depends(require_token)])
@@ -2030,7 +2031,12 @@ async def start_engine(body: EngineStartBody) -> dict:
                 raise HTTPException(
                     status_code=400, detail="This adapter is not ready for the selected MLX model."
                 )
-        active = await engine_manager.start(body.model_path, body.engine, body.adapter_path)
+        active = await engine_manager.start(
+            body.model_path, body.engine, body.adapter_path,
+            **({"context_length": body.context_length} if body.context_length is not None else {}),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     return {"running": True, "port": active.port, "engine": active.engine}

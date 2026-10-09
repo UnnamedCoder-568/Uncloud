@@ -230,8 +230,8 @@ export async function listDownloads() {
 export async function cancelDownload(id: string) {
   return apiPost(`/api/downloads/${id}/cancel`);
 }
-export async function startEngine(model_path: string, engine: string, adapter_path?: string | null) {
-  return apiPost<{ running: boolean; port: number; engine: string }>('/api/engine/start', { model_path, engine, adapter_path });
+export async function startEngine(model_path: string, engine: string, adapter_path?: string | null, context_length?: number) {
+  return apiPost<{ running: boolean; port: number; engine: string }>('/api/engine/start', { model_path, engine, adapter_path, context_length });
 }
 export async function stopEngine() {
   return apiPost('/api/engine/stop');
@@ -253,6 +253,8 @@ export async function countChatContext(messages: ChatMessage[]) {
 }
 
 export interface ChatMessage {
+  /** Retrieved evidence kept with its user turn for continuity and accounting. */
+  retrieved?: string;
   role: 'user' | 'assistant' | 'system';
   content: string;
   /** A reasoning model's working, streamed before the answer. */

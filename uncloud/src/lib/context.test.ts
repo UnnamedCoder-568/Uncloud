@@ -39,4 +39,10 @@ describe('conversation context', () => {
     expect(compactAvailable(6144, 131072)).toBe(false);
     expect(compactAvailable(null, 8192)).toBe(false);
   });
+  it('includes saved retrieved evidence in both model prompts and context counts', () => {
+    const user: ChatMessage = { role: 'user', content: 'Question', retrieved: 'Verified source https://example.com' };
+    expect(contextMessages([user], 'Assistant')[1].content).toContain('Verified source');
+    expect(user.content).toBe('Question');
+    expect(contextMessages([user], '', '', 0, true)[0].content).toBe('Question');
+  });
 });
