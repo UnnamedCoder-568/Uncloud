@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "profiles": [
+    {
+      "id": "qwen3.5-9b",
+      "source": "https://huggingface.co/Qwen/Qwen3.5-9B#best-practices",
+      "verified": "2026-10-11",
+      "match": {
+        "model_types": ["qwen3_5", "qwen3_5_text", "qwen35"],
+        "num_hidden_layers": 32,
+        "hidden_size": 4096,
+        "intermediate_size": 12288
+      },
+      "native_mode": "thinking",
+      "modes": {
+        "thinking": {"temperature": 1.0, "top_p": 0.95, "top_k": 20, "min_p": 0.0, "presence_penalty": 1.5, "repetition_penalty": 1.0},
+        "off": {"temperature": 0.7, "top_p": 0.8, "top_k": 20, "min_p": 0.0, "presence_penalty": 1.5, "repetition_penalty": 1.0}
+      }
+    }
+  ]
+}

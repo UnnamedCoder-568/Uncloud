@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from .core import Effort, ModelProfile, translate
+from .reasoning_budget import bound
 
 
 def model_payload(
@@ -16,14 +17,16 @@ def model_payload(
 ) -> dict:
     """Native model recommendations with explicit request overrides.
 
-    Balanced/default chat keeps the model's native thinking/template behavior.
-    Advanced effort remains opt-in and never launches additional model passes.
+    Keep the model's native template and sampling. Compatible thinking runtimes
+    receive a separate, visible reasoning allowance that leaves answer space.
+    Effort never launches additional model passes.
     """
-    from .inference_profile import for_backend
+    from .inference_profile import for_backend, parameters
 
     metadata = getattr(active, "inference_profile", {})
     payload = {"messages": messages, "stream": True, "stream_options": {"include_usage": True}}
-    payload.update(for_backend(metadata.get("parameters", {}), overrides or {}, active.engine))
+    payload.update(for_backend(parameters(metadata, (inference or {}).get("reasoning", "auto")),
+                               overrides or {}, active.engine))
     if max_tokens is not None:
         payload["max_tokens"] = max_tokens
     elif metadata.get("max_output_tokens"):
@@ -37,7 +40,8 @@ def model_payload(
     # it into guessed template flags or token caps on the direct-model path.
     from .inference_controls import apply
 
-    return apply(active, payload, inference)
+    return bound(active, apply(active, payload, inference),
+                 (inference or {}).get("reasoning", "auto"))
 
 
 def build_chat_payload(

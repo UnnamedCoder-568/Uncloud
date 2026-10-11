@@ -46,11 +46,38 @@ def _count_mlx(model_path: str, messages: list[dict], template_kwargs: dict | No
 async def count(active, messages: list[dict], inference: dict | None = None) -> int | None:
     from .inference_controls import apply
 
-    kwargs = apply(active, {}, inference).get("chat_template_kwargs", {})
+    controls = apply(active, {}, inference)
+    kwargs = controls.get("chat_template_kwargs", {})
     if active.engine == "mlx":
         if kwargs:
             return await asyncio.to_thread(_count_mlx, active.model_path, messages, kwargs)
         return await asyncio.to_thread(_count_mlx, active.model_path, messages)
+    if active.engine == "mlx-vlm":
+        turns = []
+        for message in messages:
+            content = message.get("content")
+            if isinstance(content, list):
+                parts = []
+                for item in content:
+                    if item.get("type") == "text":
+                        parts.append({"type": "input_text", "text": item["text"]})
+                    elif item.get("type") == "image_url":
+                        parts.append({"type": "input_image", "image_url": item["image_url"]["url"]})
+                    else:
+                        return None  # Do not invent counts for unknown modalities.
+                content = parts
+            turns.append({"role": message["role"], "content": content})
+        async with httpx.AsyncClient(timeout=10) as client:
+            response = await client.post(
+                f"{active.base_url}/v1/responses/input_tokens",
+                json={"model": active.model_path, "input": turns,
+                      **({"enable_thinking": controls["enable_thinking"]}
+                         if "enable_thinking" in controls else {})},
+            )
+            if not response.is_success:
+                return None
+            value = response.json().get("input_tokens")
+            return value if isinstance(value, int) else None
     if active.engine != "gguf":
         return None
     async with httpx.AsyncClient(timeout=10) as client:

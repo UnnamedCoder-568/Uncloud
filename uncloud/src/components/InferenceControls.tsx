@@ -4,10 +4,11 @@ import { presetValues, saveInference } from '../lib/inference';
 import type { InferenceInfo, InferenceValues } from '../lib/inference';
 
 const CORE = ['temperature', 'top_p', 'top_k', 'min_p', 'repetition_penalty',
-  'presence_penalty', 'frequency_penalty', 'max_tokens', 'seed'];
+  'presence_penalty', 'frequency_penalty', 'max_tokens', 'reasoning_budget', 'seed'];
 const LABELS: Record<string, string> = { temperature: 'Temperature', top_p: 'Top P', top_k: 'Top K',
   min_p: 'Min P', repetition_penalty: 'Repeat penalty', presence_penalty: 'Presence penalty',
-  frequency_penalty: 'Frequency penalty', max_tokens: 'Reply budget · includes reasoning', seed: 'Seed' };
+  frequency_penalty: 'Frequency penalty', max_tokens: 'Reply budget · includes reasoning',
+  reasoning_budget: 'Thinking limit · tokens', seed: 'Seed' };
 
 export default function InferenceControls({ info, values, onChange, onRefresh, conversationId, compact = false }:
   { info: InferenceInfo | null; values: InferenceValues; onChange: (v: InferenceValues) => void;
@@ -29,7 +30,15 @@ export default function InferenceControls({ info, values, onChange, onRefresh, c
   }, [values, active?.model_path]);
   if (!active) return <p className="text-xs faint">Load a model to see its supported controls.</p>;
   const cap = active.profile.capabilities;
+  const mode = values.reasoning === 'off' ? 'off' : active.profile.recommendation?.native_mode;
+  const recommendations = active.profile.mode_parameters && mode
+    ? { ...active.profile.mode_parameters[mode], ...active.profile.explicit_parameters }
+    : active.profile.parameters;
   if (!cap) return <p className="text-xs faint">Reload this model to discover its supported controls.</p>;
+  const boundedThinking = !!cap.reasoning.budget;
+  const thinkingToggle = cap.reasoning.mechanism === 'template_toggle' && !boundedThinking;
+  const thinkingLabel = boundedThinking || cap.reasoning.mechanism === 'template_effort' ? 'Thinking effort' : 'Thinking';
+  const effectiveThinking = effective?.thinking_budget_tokens ?? effective?.thinking_budget;
   const update = (key: string, value: InferenceValues[string] | undefined) => {
     const next = { ...values };
     if (value === undefined) delete next[key]; else next[key] = value;
@@ -51,20 +60,47 @@ export default function InferenceControls({ info, values, onChange, onRefresh, c
         {['Auto', 'Fast', 'Balanced', 'Deep', 'Creative', 'Deterministic', 'Custom', ...Object.keys(info!.saved.presets)].map(label =>
           <option key={label} value={label} disabled={(label === 'Deep' && !cap.reasoning.levels.includes('high')) ||
             (label === 'Fast' && !cap.reasoning.levels.includes('off')) ||
-            (label === 'Creative' && active.profile.parameters.temperature === undefined)}>{label}</option>)}
+            (label === 'Creative' && active.profile.parameters.temperature === undefined)}>
+            {label === 'Deep' && thinkingToggle ? 'Thinking on' : label}</option>)}
       </select>
     </div>
-    <label className="flex flex-col gap-1">Thinking effort
-      <select className="input" value={String(values.reasoning ?? 'auto')} onChange={e => update('reasoning', e.target.value)}>
-        {['auto', 'off', 'low', 'medium', 'high', 'max'].map(level => <option key={level} disabled={!cap.reasoning.levels.includes(level)} value={level}>
-          {level[0].toUpperCase() + level.slice(1)}{!cap.reasoning.levels.includes(level) ? ' · unsupported' : ''}</option>)}
-      </select><span className="faint text-[11px]">{cap.reasoning.explanation}</span>
-    </label>
+    <div className="flex flex-col gap-2">
+      <label className="flex justify-between items-center gap-3" htmlFor={`thinking-effort-${compact ? 'compact' : 'full'}`}>
+        <span>{thinkingLabel}</span>
+        <span className="text-[var(--text-dim)]">{values.reasoning === 'high' && thinkingToggle ? 'On'
+          : String(values.reasoning ?? 'Auto').replace(/^./, c => c.toUpperCase())}</span>
+      </label>
+      <input id={`thinking-effort-${compact ? 'compact' : 'full'}`} type="range" className="effort-slider"
+        aria-label={thinkingLabel} aria-valuetext={values.reasoning === 'high' && thinkingToggle ? 'On' : String(values.reasoning ?? 'Auto')}
+        min={0} max={Math.max(1, cap.reasoning.levels.length - 1)} step={1}
+        disabled={cap.reasoning.levels.length < 2}
+        value={Math.max(0, cap.reasoning.levels.indexOf(String(values.reasoning ?? 'auto')))}
+        onChange={e => {
+          const next: InferenceValues = { ...values, reasoning: cap.reasoning.levels[Number(e.target.value)] };
+          delete next.reasoning_budget;
+          setSelected('Custom'); onChange(next);
+          if (values.reasoning_budget !== undefined) setStatus('Effort selected. The custom thinking token limit was cleared.');
+        }} />
+      <div className="flex justify-between gap-1 text-[10px] text-[var(--text-faint)]" aria-hidden="true">
+        {cap.reasoning.levels.map(level => <span key={level}>{thinkingToggle && level === 'high' ? 'On'
+          : level[0].toUpperCase() + level.slice(1)}</span>)}
+      </div>
+      <span className="faint text-[11px]">{cap.reasoning.explanation}</span>
+      {thinkingToggle && <span className="faint text-[11px]">
+        Thinking and the answer share the reply budget. This control turns thinking on or off; it does not set a separate thinking limit.
+      </span>}
+      {boundedThinking && <span className="faint text-[11px]">
+        Higher effort allows more thinking. At the limit, the model continues with its answer in the same reply.
+        {typeof effectiveThinking === 'number' &&
+          ` Current thinking limit: ${effectiveThinking.toLocaleString()} tokens.`}
+      </span>}
+    </div>
     <details><summary className="cursor-pointer text-[var(--text-dim)]">Sampling and reply budget</summary>
       <div className="grid grid-cols-2 gap-3 mt-3">{CORE.filter(key => cap.fields.includes(key)).map(key => <label key={key} className="flex flex-col gap-1 text-xs">
-        {LABELS[key]}<input className="input" type="number" step={['seed', 'top_k', 'max_tokens'].includes(key) ? '1' : 'any'}
+        {LABELS[key]}<input className="input" type="number" step={['seed', 'top_k', 'max_tokens', 'reasoning_budget'].includes(key) ? '1' : 'any'}
           value={values[key] === undefined ? '' : String(values[key])}
-          placeholder={active.profile.parameters[key] === undefined ? 'Auto · backend' : `Auto · ${active.profile.parameters[key]}`}
+          placeholder={key === 'reasoning_budget' ? `Auto · ${effectiveThinking ?? 'effort level'}`
+            : recommendations[key] === undefined ? 'Auto · backend' : `Auto · ${recommendations[key]}`}
           onChange={e => update(key, e.target.value === '' ? undefined : Number(e.target.value))} />
       </label>)}</div>
       {cap.fields.includes('stop') && <label className="flex flex-col gap-1 mt-3 text-xs">Stop sequences · one per line
@@ -81,8 +117,9 @@ export default function InferenceControls({ info, values, onChange, onRefresh, c
     </details>
     <details><summary className="cursor-pointer text-[var(--text-dim)]">Advanced and effective configuration</summary>
       <p className="text-[11px] faint mt-2">{active.engine} · {cap.backend_version} · {active.context_limit.toLocaleString()} context tokens. Unsupported settings are rejected.</p>
-      <pre className="text-[11px] whitespace-pre-wrap break-all mt-2">{JSON.stringify({ recommendations: active.profile.parameters,
+      <pre className="text-[11px] whitespace-pre-wrap break-all mt-2">{JSON.stringify({ recommendations,
         sources: active.profile.sources, overrides: values, effective_request: effective,
+        architecture_fallback: active.profile.recommendation,
         unsupported_native_defaults: Object.keys(active.profile.parameters).filter(k => !cap.fields.includes(k)),
         supported: cap.fields }, null, 2)}</pre>
       <textarea className="input mt-2 font-mono text-xs" aria-label="Advanced inference JSON" rows={4}

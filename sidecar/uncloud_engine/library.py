@@ -408,6 +408,17 @@ def _scan_library(models_dir: Path) -> list[LocalModel]:
         if not entry_dir.is_dir() or not any(entry_dir.iterdir()):
             continue
         seen_dirs.add(str(entry_dir))
+        # Older releases did not write a completion marker. Their resumable
+        # fragments must not become runnable library entries after an upgrade.
+        if any(entry_dir.rglob("*.part")):
+            continue
+        download_marker = entry_dir / ".uncloud-download.json"
+        if download_marker.is_file():
+            try:
+                if json.loads(download_marker.read_text()).get("status") != "done":
+                    continue
+            except (OSError, ValueError, AttributeError):
+                continue  # An incomplete download is never a runnable model.
         # llama.cpp opens a .gguf file, never its folder. Only diffusers entries
         # set `single_file`, so every GGUF chat model downloaded from the
         # catalogue used to be listed as its folder and failed to load.
