@@ -67,8 +67,9 @@ def test_prose_is_repaired_without_executing_tools(monkeypatch):
     graph = asyncio.run(module.Orchestrator().plan("Save a file"))
     assert graph.tasks["t1"].args["content"] == "a } brace"
     assert len(requests) == 2
-    assert requests[0]["response_format"] == {"type": "json_object"}
-    assert requests[0]["chat_template_kwargs"]["enable_thinking"] is False
+    assert "response_format" not in requests[0]  # Unknown backend capabilities are not guessed.
+    assert "chat_template_kwargs" not in requests[0]  # Preserve native reasoning.
+    assert "temperature" not in requests[0]  # No generic planner sampling override.
     runner.assert_not_called()
 
 

@@ -93,6 +93,7 @@ TOOL_RISK: dict[str, Risk] = {
     "plan_update": Risk.READ,
     "note_save": Risk.READ,
     "note_recall": Risk.READ,
+    "ask_user": Risk.READ,
     "generate_image": Risk.GENERATE,
 }
 
@@ -107,7 +108,21 @@ class Ungoverned(RuntimeError):
 
 
 _gate: Gate | None = None
+_session_gate: ContextVar[Gate | None] = ContextVar("agent_session_gate", default=None)
 _background_tools: ContextVar[frozenset[str] | None] = ContextVar("background_tools", default=None)
+
+
+@contextmanager
+def tool_session():
+    """Run-local grants, existing shared policy. No other run inherits consent."""
+    base = current_gate()
+    scoped = Gate(base.policy, record=base._record, on_policy_change=base._on_policy_change)
+    scoped.policy = base.policy  # Live revocation remains authoritative.
+    token = _session_gate.set(scoped)
+    try:
+        yield
+    finally:
+        _session_gate.reset(token)
 
 
 @contextmanager
@@ -147,7 +162,7 @@ def current_gate() -> Gate:
             },
             record=_gate._record,
         )
-    return _gate
+    return _session_gate.get() or _gate
 
 
 def _summarise(tool_id: str, args: dict[str, Any]) -> tuple[str, dict]:
@@ -203,6 +218,9 @@ def _summarise(tool_id: str, args: dict[str, Any]) -> tuple[str, dict]:
 
 
 TOOL_SPECS = [
+    {"id": "ask_user",
+     "description": "Ask the user for missing information and wait for their answer.",
+     "args": ["question", "options"]},
     {"id": "shell", "name": "Shell", "description": "Run a shell command.", "args": ["command"]},
     {
         "id": "capability",
@@ -592,6 +610,13 @@ async def run_tool(tool_id: str, args: dict[str, Any], *, origin: str = "") -> s
     allowed = _background_tools.get()
     if allowed is not None and tool_id not in allowed:
         raise PermissionError("This tool is outside the saved agent's scope")
+    def check_enabled():
+        if settings.agent_tool_groups is not None and tool_id not in {
+            spec["id"] for spec in tools_for(settings.agent_tool_groups)
+        }:
+            raise PermissionError("This tool is disabled. Review Chisel tool access first.")
+
+    check_enabled()
     # Integration actions are namespaced (`documents.read`) and carry their own
     # risk category, declared by the integration rather than listed here. They
     # go to `registry.perform`, which asks the gate exactly as this function
@@ -654,6 +679,12 @@ async def run_tool(tool_id: str, args: dict[str, Any], *, origin: str = "") -> s
             origin=origin or "agent",
         )
     )
+    # Settings may change while the task is paused for permission.
+    check_enabled()
+    if not settings.agent_device_access and (
+        tool_id == "shell" or tool_id.startswith("computer_") or tool_id == "app_open"
+    ):
+        raise PermissionError("Full device access was revoked while waiting for approval.")
 
     if tool_id.startswith("computer_"):
         from .computer import execute
@@ -750,6 +781,9 @@ async def run_tool(tool_id: str, args: dict[str, Any], *, origin: str = "") -> s
             )
         if tool_id == "browser_screenshot":
             return await browser.screenshot(_truthy(args.get("full_page")))
+    if tool_id == "ask_user":
+        from .questions import ask
+        return await ask(args.get("question", ""), args.get("options"))
     if tool_id.startswith(("plan_", "note_")):
         from . import memory
 
@@ -1410,7 +1444,7 @@ TOOL_GROUPS: dict[str, dict] = {
     "memory": {
         "label": "Plan and memory",
         "note": "Write a plan, track step status, remember facts across a run.",
-        "ids": {"plan_set", "plan_show", "plan_update", "note_save", "note_recall"},
+        "ids": {"ask_user", "plan_set", "plan_show", "plan_update", "note_save", "note_recall"},
     },
     "browser": {
         "label": "Browser",
@@ -1490,7 +1524,7 @@ def auto_groups(model_path: str | None) -> list[str]:
 
 def tools_for(groups: list[str] | None) -> list[dict]:
     """The specs a planner should see. None means every tool."""
-    if not groups:
+    if groups is None:
         return list(TOOL_SPECS)
     allowed: set[str] = set()
     for g in groups:

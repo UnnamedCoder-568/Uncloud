@@ -83,6 +83,9 @@ class EngineManager:
 
             port = _free_port()
             model_profile, inference_profile = load_inference_profile(model_path, engine)
+            from .inference_controls import discover
+            inference_profile["capabilities"] = discover(
+                model_path, engine, native=bool(LLAMA_SERVER_BIN or server_path()))
             if engine == "gguf":
                 proc = self._spawn_llama_cpp(model_path, port, profile["effective_limit"])
             elif engine == "mlx":

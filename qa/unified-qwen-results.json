@@ -1,0 +1,477 @@
+{
+  "model_file": "/Volumes/AI Folder/New Models/qwen3.5-9b-mlx-q4",
+  "platform": "macOS-27.0.1-arm64-arm-64bit",
+  "records": [
+    {
+      "mode": "direct",
+      "ttft_ms": 6394.063458999881,
+      "total_ms": 28668.846874999872,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 57,
+        "completion_tokens": 574,
+        "total_tokens": 631,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "answer": "\n\n```json\n{\"profit\": 60}\n```",
+      "finish_reason": "stop",
+      "case": "multi_step",
+      "expected": {
+        "profit": 60
+      },
+      "factual": {
+        "passed": true,
+        "fields": {
+          "profit": true
+        }
+      }
+    },
+    {
+      "mode": "optimized",
+      "ttft_ms": 352.7919580010348,
+      "total_ms": 22168.08829100046,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 57,
+        "completion_tokens": 574,
+        "total_tokens": 631,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "answer": "\n\n```json\n{\"profit\": 60}\n```",
+      "finish_reason": "stop",
+      "case": "multi_step",
+      "expected": {
+        "profit": 60
+      },
+      "factual": {
+        "passed": true,
+        "fields": {
+          "profit": true
+        }
+      }
+    },
+    {
+      "mode": "direct",
+      "ttft_ms": 400.5954999993264,
+      "total_ms": 75264.89991699782,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 61,
+        "completion_tokens": 1536,
+        "total_tokens": 1597,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "answer": "",
+      "finish_reason": "length",
+      "case": "logic",
+      "expected": {
+        "true": "B"
+      },
+      "factual": {
+        "passed": false,
+        "fields": {
+          "true": false
+        }
+      }
+    },
+    {
+      "mode": "optimized",
+      "ttft_ms": 578.9894999979879,
+      "total_ms": 86672.07487499763,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 61,
+        "completion_tokens": 1536,
+        "total_tokens": 1597,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "answer": "",
+      "finish_reason": "length",
+      "case": "logic",
+      "expected": {
+        "true": "B"
+      },
+      "factual": {
+        "passed": false,
+        "fields": {
+          "true": false
+        }
+      }
+    },
+    {
+      "mode": "direct",
+      "ttft_ms": 609.2747500006226,
+      "total_ms": 34492.91545900269,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 42,
+        "completion_tokens": 583,
+        "total_tokens": 625,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "answer": "\n\n[\"Build\", \"Test\", \"Ship\"]",
+      "finish_reason": "stop",
+      "case": "constraints",
+      "expected": [
+        "Build",
+        "Test",
+        "Ship"
+      ],
+      "factual": {
+        "passed": true
+      }
+    },
+    {
+      "mode": "optimized",
+      "ttft_ms": 641.6933750006137,
+      "total_ms": 36251.71195900111,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 42,
+        "completion_tokens": 583,
+        "total_tokens": 625,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "answer": "\n\n[\"Build\", \"Test\", \"Ship\"]",
+      "finish_reason": "stop",
+      "case": "constraints",
+      "expected": [
+        "Build",
+        "Test",
+        "Ship"
+      ],
+      "factual": {
+        "passed": true
+      }
+    },
+    {
+      "mode": "direct",
+      "ttft_ms": 619.7913340001833,
+      "total_ms": 49678.167875001236,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 58,
+        "completion_tokens": 795,
+        "total_tokens": 853,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "answer": "\n\n{\n  \"a\": [1, 2, 3],\n  \"b\": [1, 2, 4]\n}",
+      "finish_reason": "stop",
+      "case": "code_reasoning",
+      "expected": {
+        "a": [
+          1,
+          2,
+          3
+        ],
+        "b": [
+          1,
+          2,
+          4
+        ]
+      },
+      "factual": {
+        "passed": true,
+        "fields": {
+          "a": true,
+          "b": true
+        }
+      }
+    },
+    {
+      "mode": "optimized",
+      "ttft_ms": 655.9139589990082,
+      "total_ms": 49915.340667001146,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 58,
+        "completion_tokens": 795,
+        "total_tokens": 853,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "answer": "\n\n{\n  \"a\": [1, 2, 3],\n  \"b\": [1, 2, 4]\n}",
+      "finish_reason": "stop",
+      "case": "code_reasoning",
+      "expected": {
+        "a": [
+          1,
+          2,
+          3
+        ],
+        "b": [
+          1,
+          2,
+          4
+        ]
+      },
+      "factual": {
+        "passed": true,
+        "fields": {
+          "a": true,
+          "b": true
+        }
+      }
+    },
+    {
+      "mode": "direct",
+      "ttft_ms": 730.7749999999942,
+      "total_ms": 100719.0327089993,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 66,
+        "completion_tokens": 1536,
+        "total_tokens": 1602,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "answer": "",
+      "finish_reason": "length",
+      "case": "correction",
+      "expected": {
+        "budget": 63,
+        "release": null
+      },
+      "factual": {
+        "passed": false,
+        "fields": {
+          "budget": false,
+          "release": false
+        }
+      }
+    },
+    {
+      "mode": "optimized",
+      "ttft_ms": 861.944250002125,
+      "total_ms": 101224.33891699984,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 66,
+        "completion_tokens": 1536,
+        "total_tokens": 1602,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "answer": "",
+      "finish_reason": "length",
+      "case": "correction",
+      "expected": {
+        "budget": 63,
+        "release": null
+      },
+      "factual": {
+        "passed": false,
+        "fields": {
+          "budget": false,
+          "release": false
+        }
+      }
+    },
+    {
+      "mode": "direct",
+      "ttft_ms": 382.0684589991288,
+      "total_ms": 26020.086459000595,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 50,
+        "completion_tokens": 387,
+        "total_tokens": 437,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "answer": "\n\n{\"age\":null}",
+      "finish_reason": "stop",
+      "case": "unanswerable",
+      "expected": {
+        "age": null
+      },
+      "factual": {
+        "passed": true,
+        "fields": {
+          "age": true
+        }
+      }
+    },
+    {
+      "mode": "optimized",
+      "ttft_ms": 850.8937500009779,
+      "total_ms": 26182.976750002126,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 50,
+        "completion_tokens": 387,
+        "total_tokens": 437,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "answer": "\n\n{\"age\":null}",
+      "finish_reason": "stop",
+      "case": "unanswerable",
+      "expected": {
+        "age": null
+      },
+      "factual": {
+        "passed": true,
+        "fields": {
+          "age": true
+        }
+      }
+    }
+  ],
+  "limitations": [
+    "One Apple Silicon MLX model, not all model families",
+    "Transport measurement excludes Rust/frontend dispatch",
+    "No OS notification delivery or Windows/CUDA hardware claim"
+  ],
+  "sampling": {
+    "temperature": 0,
+    "seed": 42
+  },
+  "compaction": [],
+  "cold_readiness_ms": 1555.2416249993257,
+  "capabilities": {
+    "fields": [
+      "frequency_context_size",
+      "frequency_penalty",
+      "logprobs",
+      "max_tokens",
+      "min_p",
+      "presence_context_size",
+      "presence_penalty",
+      "repetition_context_size",
+      "repetition_penalty",
+      "seed",
+      "stop",
+      "temperature",
+      "top_k",
+      "top_logprobs",
+      "top_p",
+      "xtc_probability",
+      "xtc_threshold"
+    ],
+    "reasoning": {
+      "mechanism": "template_toggle",
+      "levels": [
+        "auto",
+        "off",
+        "high"
+      ],
+      "explanation": "This template supports thinking on/off; graded budgets are not verified."
+    },
+    "family": "qwen3_5",
+    "backend_version": "0.31.3",
+    "template_available": true,
+    "template": "{%- set image_count = namespace(value=0) %}\n{%- set video_count = namespace(value=0) %}\n{%- macro render_content(content, do_vision_count, is_system_content=false) %}\n    {%- if content is string %}\n        {{- content }}\n    {%- elif content is iterable and content is not mapping %}\n        {%- for item in content %}\n            {%- if 'image' in item or 'image_url' in item or item.type == 'image' %}\n                {%- if is_system_content %}\n                    {{- raise_exception('System message cannot contain images.') }}\n                {%- endif %}\n                {%- if do_vision_count %}\n                    {%- set image_count.value = image_count.value + 1 %}\n                {%- endif %}\n                {%- if add_vision_id %}\n                    {{- 'Picture ' ~ image_count.value ~ ': ' }}\n                {%- endif %}\n                {{- '<|vision_start|><|image_pad|><|vision_end|>' }}\n            {%- elif 'video' in item or item.type == 'video' %}\n                {%- if is_system_content %}\n                    {{- raise_exception('System message cannot contain videos.') }}\n                {%- endif %}\n                {%- if do_vision_count %}\n                    {%- set video_count.value = video_count.value + 1 %}\n                {%- endif %}\n                {%- if add_vision_id %}\n                    {{- 'Video ' ~ video_count.value ~ ': ' }}\n                {%- endif %}\n                {{- '<|vision_start|><|video_pad|><|vision_end|>' }}\n            {%- elif 'text' in item %}\n                {{- item.text }}\n            {%- else %}\n                {{- raise_exception('Unexpected item type in content.') }}\n            {%- endif %}\n        {%- endfor %}\n    {%- elif content is none or content is undefined %}\n        {{- '' }}\n    {%- else %}\n        {{- raise_exception('Unexpected content type.') }}\n    {%- endif %}\n{%- endmacro %}\n{%- if not messages %}\n    {{- raise_exception('No messages provided.') }}\n{%- endif %}\n{%- if tools and tools is iterable and tools is not mapping %}\n    {{- '<|im_start|>system\\n' }}\n    {{- \"# Tools\\n\\nYou have access to the following functions:\\n\\n<tools>\" }}\n    {%- for tool in tools %}\n        {{- \"\\n\" }}\n        {{- tool | tojson }}\n    {%- endfor %}\n    {{- \"\\n</tools>\" }}\n    {{- '\\n\\nIf you choose to call a function ONLY reply in the following format with NO suffix:\\n\\n<tool_call>\\n<function=example_function_name>\\n<parameter=example_parameter_1>\\nvalue_1\\n</parameter>\\n<parameter=example_parameter_2>\\nThis is the value for the second parameter\\nthat can span\\nmultiple lines\\n</parameter>\\n</function>\\n</tool_call>\\n\\n<IMPORTANT>\\nReminder:\\n- Function calls MUST follow the specified format: an inner <function=...></function> block must be nested within <tool_call></tool_call> XML tags\\n- Required parameters MUST be specified\\n- You may provide optional reasoning for your function call in natural language BEFORE the function call, but NOT after\\n- If there is no function call available, answer the question like normal with your current knowledge and do not tell the user about function calls\\n</IMPORTANT>' }}\n    {%- if messages[0].role == 'system' %}\n        {%- set content = render_content(messages[0].content, false, true)|trim %}\n        {%- if content %}\n            {{- '\\n\\n' + content }}\n        {%- endif %}\n    {%- endif %}\n    {{- '<|im_end|>\\n' }}\n{%- else %}\n    {%- if messages[0].role == 'system' %}\n        {%- set content = render_content(messages[0].content, false, true)|trim %}\n        {{- '<|im_start|>system\\n' + content + '<|im_end|>\\n' }}\n    {%- endif %}\n{%- endif %}\n{%- set ns = namespace(multi_step_tool=true, last_query_index=messages|length - 1) %}\n{%- for message in messages[::-1] %}\n    {%- set index = (messages|length - 1) - loop.index0 %}\n    {%- if ns.multi_step_tool and message.role == \"user\" %}\n        {%- set content = render_content(message.content, false)|trim %}\n        {%- if not(content.startswith('<tool_response>') and content.endswith('</tool_response>')) %}\n            {%- set ns.multi_step_tool = false %}\n            {%- set ns.last_query_index = index %}\n        {%- endif %}\n    {%- endif %}\n{%- endfor %}\n{%- if ns.multi_step_tool %}\n    {{- raise_exception('No user query found in messages.') }}\n{%- endif %}\n{%- for message in messages %}\n    {%- set content = render_content(message.content, true)|trim %}\n    {%- if message.role == \"system\" %}\n        {%- if not loop.first %}\n            {{- raise_exception('System message must be at the beginning.') }}\n        {%- endif %}\n    {%- elif message.role == \"user\" %}\n        {{- '<|im_start|>' + message.role + '\\n' + content + '<|im_end|>' + '\\n' }}\n    {%- elif message.role == \"assistant\" %}\n        {%- set reasoning_content = '' %}\n        {%- if message.reasoning_content is string %}\n            {%- set reasoning_content = message.reasoning_content %}\n        {%- else %}\n            {%- if '</think>' in content %}\n                {%- set reasoning_content = content.split('</think>')[0].rstrip('\\n').split('<think>')[-1].lstrip('\\n') %}\n                {%- set content = content.split('</think>')[-1].lstrip('\\n') %}\n            {%- endif %}\n        {%- endif %}\n        {%- set reasoning_content = reasoning_content|trim %}\n        {%- if loop.index0 > ns.last_query_index %}\n            {{- '<|im_start|>' + message.role + '\\n<think>\\n' + reasoning_content + '\\n</think>\\n\\n' + content }}\n        {%- else %}\n            {{- '<|im_start|>' + message.role + '\\n' + content }}\n        {%- endif %}\n        {%- if message.tool_calls and message.tool_calls is iterable and message.tool_calls is not mapping %}\n            {%- for tool_call in message.tool_calls %}\n                {%- if tool_call.function is defined %}\n                    {%- set tool_call = tool_call.function %}\n                {%- endif %}\n                {%- if loop.first %}\n                    {%- if content|trim %}\n                        {{- '\\n\\n<tool_call>\\n<function=' + tool_call.name + '>\\n' }}\n                    {%- else %}\n                        {{- '<tool_call>\\n<function=' + tool_call.name + '>\\n' }}\n                    {%- endif %}\n                {%- else %}\n                    {{- '\\n<tool_call>\\n<function=' + tool_call.name + '>\\n' }}\n                {%- endif %}\n                {%- if tool_call.arguments is defined %}\n                    {%- for args_name, args_value in tool_call.arguments|items %}\n                        {{- '<parameter=' + args_name + '>\\n' }}\n                        {%- set args_value = args_value | tojson | safe if args_value is mapping or (args_value is sequence and args_value is not string) else args_value | string %}\n                        {{- args_value }}\n                        {{- '\\n</parameter>\\n' }}\n                    {%- endfor %}\n                {%- endif %}\n                {{- '</function>\\n</tool_call>' }}\n            {%- endfor %}\n        {%- endif %}\n        {{- '<|im_end|>\\n' }}\n    {%- elif message.role == \"tool\" %}\n        {%- if loop.previtem and loop.previtem.role != \"tool\" %}\n            {{- '<|im_start|>user' }}\n        {%- endif %}\n        {{- '\\n<tool_response>\\n' }}\n        {{- content }}\n        {{- '\\n</tool_response>' }}\n        {%- if not loop.last and loop.nextitem.role != \"tool\" %}\n            {{- '<|im_end|>\\n' }}\n        {%- elif loop.last %}\n            {{- '<|im_end|>\\n' }}\n        {%- endif %}\n    {%- else %}\n        {{- raise_exception('Unexpected message role.') }}\n    {%- endif %}\n{%- endfor %}\n{%- if add_generation_prompt %}\n    {{- '<|im_start|>assistant\\n' }}\n    {%- if enable_thinking is defined and enable_thinking is false %}\n        {{- '<think>\\n\\n</think>\\n\\n' }}\n    {%- else %}\n        {{- '<think>\\n' }}\n    {%- endif %}\n{%- endif %}",
+    "optimizations": "Native backend configuration; no speculative flags enabled."
+  },
+  "effective_context": 57344,
+  "warmup": {
+    "mode": "direct",
+    "ttft_ms": 762.907833999634,
+    "total_ms": 7941.2187919988355,
+    "library_scan_ms": 0,
+    "usage": {
+      "prompt_tokens": 14,
+      "completion_tokens": 109,
+      "total_tokens": 123,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      }
+    },
+    "answer": "\n\nready",
+    "finish_reason": "stop"
+  },
+  "balanced_benchmark": [
+    {
+      "mode": "direct",
+      "ttft_ms": 773.8638340015314,
+      "total_ms": 69865.00199999864,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 24,
+        "completion_tokens": 1034,
+        "total_tokens": 1058,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "answer": "\n\n{\"ready\":true,\"count\":3}",
+      "finish_reason": "stop",
+      "round": 0
+    },
+    {
+      "mode": "optimized",
+      "ttft_ms": 322.46045900319587,
+      "total_ms": 66626.3077500007,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 24,
+        "completion_tokens": 1034,
+        "total_tokens": 1058,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "answer": "\n\n{\"ready\":true,\"count\":3}",
+      "finish_reason": "stop",
+      "round": 0
+    },
+    {
+      "mode": "optimized",
+      "ttft_ms": 580.2855419970001,
+      "total_ms": 71120.57124999774,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 24,
+        "completion_tokens": 1034,
+        "total_tokens": 1058,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "answer": "\n\n{\"ready\":true,\"count\":3}",
+      "finish_reason": "stop",
+      "round": 1
+    },
+    {
+      "mode": "direct",
+      "ttft_ms": 631.9890419981675,
+      "total_ms": 72182.17512499905,
+      "library_scan_ms": 0,
+      "usage": {
+        "prompt_tokens": 24,
+        "completion_tokens": 1034,
+        "total_tokens": 1058,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "answer": "\n\n{\"ready\":true,\"count\":3}",
+      "finish_reason": "stop",
+      "round": 1
+    }
+  ],
+  "median_ttft_ms": {
+    "direct": 702.9264379998494,
+    "optimized": 451.373000500098
+  }
+}

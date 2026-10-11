@@ -1,6 +1,7 @@
 import { getVersion } from '@tauri-apps/api/app';
 import packageInfo from '../../package.json';
 import { useEffect, useState } from 'react';
+import NotificationsSettings from '../components/NotificationsSettings';
 import DevicesSection from '../components/DevicesSection';
 import UpdatesSection from '../components/UpdatesSection';
 import IntegrationsSection from '../components/IntegrationsSection';
@@ -146,9 +147,10 @@ export default function SettingsView() {
       <div className="page-column flex flex-col gap-6">
         <h1 className="page-title">Settings</h1>
         <div className="workflow-tabs settings-tabs" role="tablist" aria-label="Settings category">
-          {['General', 'Models', 'Permissions', 'Connections', 'Developer'].map(label => <button key={label} role="tab" id={`settings-tab-${label}`} aria-controls={`settings-panel-${label}`} aria-selected={section === label} onClick={() => setSection(label)}>{label}</button>)}
+          {['General', 'Models', 'Permissions', 'Connections', 'Notifications', 'Developer'].map(label => <button key={label} role="tab" id={`settings-tab-${label}`} aria-controls={`settings-panel-${label}`} aria-selected={section === label} onClick={() => setSection(label)}>{label}</button>)}
         </div>
         <div hidden={section !== 'Developer'} role="tabpanel" id="settings-panel-Developer" aria-labelledby="settings-tab-Developer"><InferenceDiagnostics /></div>
+        <div hidden={section !== 'Notifications'} role="tabpanel" id="settings-panel-Notifications" aria-labelledby="settings-tab-Notifications"><NotificationsSettings /></div>
         <div className="settings-group" hidden={section !== 'General'} role="tabpanel" id="settings-panel-General" aria-labelledby="settings-tab-General">
         <AppearanceSection />
         <PrinterSoundSection />

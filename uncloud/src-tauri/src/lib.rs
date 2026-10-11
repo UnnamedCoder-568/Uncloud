@@ -1,4 +1,5 @@
 mod listener;
+mod notifications;
 mod sidecar;
 mod updates;
 
@@ -103,6 +104,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .manage(updates::UpdateState::default())
         .manage(listener::Listening::default())
+        .manage(notifications::DesktopState::default())
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -116,10 +118,14 @@ pub fn run() {
             // when it is missing the front end shows a setup screen, and it
             // cannot do that if this closure returns Err.
             app.manage(SidecarState::new());
+            notifications::start(app.handle())?;
 
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            notifications::desktop_preferences,
+            notifications::notification_permission,
+            notifications::set_background_running,
             get_sidecar_info,
             runtime_status,
             install_runtime,
@@ -133,6 +139,19 @@ pub fn run() {
             listener::listener_end_turn,
             listener::listener_stop
         ])
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if window
+                    .app_handle()
+                    .state::<notifications::DesktopState>()
+                    .background
+                    .load(std::sync::atomic::Ordering::Relaxed)
+                {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
+        })
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| {

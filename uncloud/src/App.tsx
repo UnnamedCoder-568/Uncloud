@@ -1,3 +1,4 @@
+import NotificationCenter from './components/NotificationCenter';
 import FridayView from './views/FridayView';
 import CapabilityGate from './components/CapabilityGate';
 import StartupScreen from './components/StartupScreen';
@@ -225,6 +226,7 @@ export default function App() {
         <TitleBar inset={narrow}>
           {(!showRail || narrow) && controls}
           <div ref={setSlot} className="flex items-center gap-1 flex-1 min-w-0" />
+          <NotificationCenter navigate={go} />
         </TitleBar>
         <UpdateBanner />
         <Panes

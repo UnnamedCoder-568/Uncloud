@@ -5,8 +5,15 @@ from __future__ import annotations
 from .core import Effort, ModelProfile, translate
 
 
-def model_payload(active, messages: list[dict], *, overrides: dict | None = None,
-                  max_tokens: int | None = None, effort: str = "") -> dict:
+def model_payload(
+    active,
+    messages: list[dict],
+    *,
+    overrides: dict | None = None,
+    max_tokens: int | None = None,
+    effort: str = "",
+    inference: dict | None = None,
+) -> dict:
     """Native model recommendations with explicit request overrides.
 
     Balanced/default chat keeps the model's native thinking/template behavior.
@@ -26,21 +33,21 @@ def model_payload(active, messages: list[dict], *, overrides: dict | None = None
         # the model gives no recommendation. Avoid MLX's silent 512-token cap,
         # which can consume the whole answer in reasoning. User budgets win.
         payload["max_tokens"] = max(1, active.context_limit // 4)
-    if effort and effort != "balanced":
-        model = getattr(active, "model_profile", None)
-        plan = translate(effort, model, **(
-            {"base_output_tokens": max_tokens} if max_tokens is not None else {}))
-        if "enable_thinking" in plan.parameters:
-            payload["chat_template_kwargs"] = {
-                "enable_thinking": bool(plan.parameters["enable_thinking"])}
-        if max_tokens is None:
-            payload["max_tokens"] = plan.max_output_tokens
-    return payload
+    # Legacy workflow effort is not a native reasoning budget. Do not translate
+    # it into guessed template flags or token caps on the direct-model path.
+    from .inference_controls import apply
+
+    return apply(active, payload, inference)
 
 
 def build_chat_payload(
-    messages: list[dict], *, temperature: float, max_tokens: int, engine: str,
-    effort: Effort | str = Effort.BALANCED, model: ModelProfile | None = None,
+    messages: list[dict],
+    *,
+    temperature: float,
+    max_tokens: int,
+    engine: str,
+    effort: Effort | str = Effort.BALANCED,
+    model: ModelProfile | None = None,
 ) -> dict:
     """Build a bounded request for a local inference server.
 

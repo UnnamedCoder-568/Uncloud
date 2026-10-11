@@ -185,15 +185,6 @@ def _rename_refs(value: Any, names: dict[str, str]) -> Any:
     return value
 
 
-#: How much of a handed-over conversation to carry into planning.
-#:
-#: A long chat would otherwise crowd out the tool list in a small model's
-#: context window, and the planner would start inventing tools because it could
-#: no longer see the real ones. The tail is what matters: the work being asked
-#: for is at the end of the conversation, not the beginning.
-CONTEXT_BUDGET_CHARS = 6000
-
-
 def _context_block(context: list[dict] | None) -> str:
     """The conversation a goal was handed over from, as background.
 
@@ -213,8 +204,7 @@ def _context_block(context: list[dict] | None) -> str:
         lines.append(f"{who}: {content}")
 
     text = "\n\n".join(lines)
-    if len(text) > CONTEXT_BUDGET_CHARS:
-        text = "…\n\n" + text[-CONTEXT_BUDGET_CHARS:]
+
     return (
         "\n\nBACKGROUND — the conversation this was handed over from. It is "
         "context for understanding the goal, not a list of things to do. Plan "
@@ -235,6 +225,18 @@ reached, return an empty task list rather than inventing work.
 Respond with ONLY the same JSON object shape as before."""
 
 
+def planning_messages(goal: str, context: list[dict] | None = None, inference: dict | None = None):
+    specs = _active_tool_specs()
+    system = PLANNING_SYSTEM_PROMPT.format(tools=_tools_description(specs))
+    custom = (inference or {}).get("system_prompt")
+    if isinstance(custom, str) and custom:
+        system += "\n\nUser model instructions:\n" + custom
+    return specs, [
+        {"role": "system", "content": system},
+        {"role": "user", "content": goal + _context_block(context)},
+    ]
+
+
 class Orchestrator:
     async def plan(
         self,
@@ -242,39 +244,44 @@ class Orchestrator:
         context: list[dict] | None = None,
         *,
         effort: Effort | str = Effort.BALANCED,
+        inference: dict | None = None,
     ) -> ExecutionGraph:
         if not engine_manager.active:
             raise RuntimeError("No text model is loaded. Start one from the Chat tab first.")
 
         active = engine_manager.active
-        plan_budget = translate_effort(effort, _active_profile())
-        specs = _active_tool_specs()
-        system = PLANNING_SYSTEM_PROMPT.format(tools=_tools_description(specs))
-        messages = [
-            {"role": "system", "content": system},
-            {"role": "user", "content": goal + _context_block(context)},
-        ]
-        parameters = _planning_parameters(plan_budget)
-        # Structured planning needs the answer, not a private reasoning trace.
-        # Unknown GGUF templates may otherwise spend the entire budget thinking.
-        if active.engine == "gguf":
-            parameters.update(
-                response_format={"type": "json_object"},
-                chat_template_kwargs={"enable_thinking": False},
-                thinking_budget_tokens=0,
-                reasoning_effort="none",
-            )
+
+        specs, messages = planning_messages(goal, context, inference)
+        from ..chat import model_payload
+        payload = model_payload(active, messages, inference=inference)
+        payload["stream"] = False
+        payload.pop("stream_options", None)
+        # Keep native reasoning and samplers; structured-output enforcement is
+        # used only when the running backend actually supports it.
+        fields = getattr(active, "inference_profile", {}).get("capabilities", {}).get("fields", [])
+        if "response_format" in fields and "response_format" not in payload:
+            payload["response_format"] = {"type": "json_object"}
         try:
             async with httpx.AsyncClient(timeout=900) as client:
                 for attempt in range(2):
+                    if getattr(active, "context_limit", 0):
+                        from ..context_count import count
+
+                        used = await count(active, messages, inference)
+                        if used is None:
+                            raise RuntimeError(
+                                "Native context accounting is unavailable. No tools ran."
+                            )
+                        reserve = payload.get("max_tokens") or active.context_limit // 4
+                        if used + reserve > active.context_limit:
+                            raise RuntimeError(
+                                f"Planning needs {used} input tokens plus {reserve} reply tokens, "
+                                f"but this runtime allows {active.context_limit}. Compact the "
+                                "handoff or enable fewer tools. No tools ran."
+                            )
                     resp = await client.post(
                         f"{active.base_url}/v1/chat/completions",
-                        json={
-                            "messages": messages,
-                            "temperature": 0.2,
-                            "stream": False,
-                            **parameters,
-                        },
+                        json={**payload, "messages": messages},
                     )
                     resp.raise_for_status()
                     choice = resp.json()["choices"][0]
@@ -282,7 +289,9 @@ class Orchestrator:
                     try:
                         if choice.get("finish_reason") == "length":
                             raise ValueError("The plan was cut off. Use fewer, shorter steps.")
-                        return _graph_from_plan(_extract_json(content), goal, specs)
+                        graph = _graph_from_plan(_extract_json(content), goal, specs)
+                        graph.inference = dict(inference or {})
+                        return graph
                     except ValueError as exc:
                         if attempt:
                             raise RuntimeError(
@@ -301,7 +310,7 @@ class Orchestrator:
                                 "Do not explain or summarise the goal.",
                             },
                         ]
-                        parameters["chat_template_kwargs"] = {"enable_thinking": False}
+
         except httpx.TimeoutException as exc:
             raise RuntimeError(
                 "The model took too long to produce a plan. No tools were run. "
@@ -409,7 +418,8 @@ class Orchestrator:
             )
         try:
             recovered = await self.plan(
-                RECOVERY_PROMPT.format(report=report) + f"\n\nORIGINAL GOAL: {graph.goal}"
+                RECOVERY_PROMPT.format(report=report) + f"\n\nORIGINAL GOAL: {graph.goal}",
+                **({"inference": graph.inference} if graph.inference else {})
             )
             # A new plan normally starts at t1 again. Keep its identity distinct
             # from the first attempt so completed recovery work is visible and

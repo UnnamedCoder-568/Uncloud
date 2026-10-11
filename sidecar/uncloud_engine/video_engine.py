@@ -507,6 +507,11 @@ class VideoEngine:
             job.error = str(exc)
             self.unload()
 
+        finally:
+            from .job_events import finished
+
+            finished("video", job)
+
     def _arrangement(self, model_path: str, family: str, frames: int,
                      width: int, height: int):
         """How this clip's parts should be placed on this machine.

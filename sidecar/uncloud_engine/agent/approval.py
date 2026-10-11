@@ -23,20 +23,20 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
+from contextvars import ContextVar
 
-from ..core import ApprovalRequired, Decision, Gate, Request
+from ..core import ApprovalRequired, Decision, Gate, Mode, Request
 from .tools import current_gate
 
 #: An asker returns "yes", "no", "always" or "never".
 AsyncAsker = Callable[[Request], Awaitable[str]]
 
-_asker: AsyncAsker | None = None
+_asker: ContextVar[AsyncAsker | None] = ContextVar("agent_asker", default=None)
 
 
 def set_asker(asker: AsyncAsker | None) -> None:
     """Install the way to reach a person. Set for the life of a connection."""
-    global _asker
-    _asker = asker
+    _asker.set(asker)
 
 
 class _Scope:
@@ -53,7 +53,7 @@ class _Scope:
         self.previous: AsyncAsker | None = None
 
     def __enter__(self) -> _Scope:
-        self.previous = _asker
+        self.previous = _asker.get()
         set_asker(self.asker)
         return self
 
@@ -70,10 +70,14 @@ async def decide(request: Request, *, gate: Gate | None = None) -> Decision:
     gate = gate or current_gate()
     settled = gate.check(request)
     if settled is None:
-        if _asker is None:
+        asker = _asker.get()
+        if asker is None:
             raise ApprovalRequired(request)
-        answer = await _asker(request)
-        settled = gate.answer(request, answer)
+        answer = await asker(request)
+        if gate.mode_for(request.category) is Mode.DENY:
+            settled = Decision(False, Mode.DENY, "Permission was revoked while waiting", asked=True)
+        else:
+            settled = gate.answer(request, answer)
     return gate.settle(request, settled)
 
 
@@ -88,6 +92,10 @@ async def decide_or_refuse(request: Request, *, timeout: float = 300.0) -> Decis
         return await asyncio.wait_for(decide(request), timeout=timeout)
     except TimeoutError:
         gate = current_gate()
-        refused = Decision(False, gate.mode_for(request.category),
-                           "nobody answered the approval request", asked=True)
+        refused = Decision(
+            False,
+            gate.mode_for(request.category),
+            "nobody answered the approval request",
+            asked=True,
+        )
         return gate.settle(request, refused)
