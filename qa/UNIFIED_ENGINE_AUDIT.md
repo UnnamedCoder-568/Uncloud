@@ -160,22 +160,24 @@ D-Bus desktop notifications. Display/click verification is discussed below.
 ## L. Sound — IMPLEMENTED BUT NOT VERIFIED
 
 Optional system sounds and quiet mode are implemented. Windows requests the
-  adapter's explicit Default sound when enabled; an omitted sound is silent in
-  that adapter, which was corrected during source inspection. The dispatcher uses
+adapter's explicit Default sound when enabled; an omitted sound is silent in
+that adapter, which was corrected during source inspection. The dispatcher uses
 normal OS priority, with no direct audio player, critical interruption flag,
 Focus override or copyrighted custom sound. Audible OS behavior was not
 verified. Custom audio-file selection is **NOT IMPLEMENTED**.
 
 ## M. Operating-system compatibility — IMPLEMENTED BUT NOT VERIFIED
 
-macOS Rust compilation and native Settings/inbox UI checks passed. The initial hand-assembled temporary
-QA bundle received `NotDetermined / NotSupported` and a native request rejection:
-`Notifications are not allowed for this application`. Actual visible native
-delivery and click navigation are **BLOCKED** on that test bundle; they must not
-be described as passed. The UI now reports refusal and preserves inbox access. A correctly Tauri-packaged
-  QA bundle subsequently opened the native permission prompt. Its system dialog
-  requires manual user interaction because the UI-control tool cannot access it.
-  Until allowed and visually checked, delivery/click tests remain unverified.
+macOS Rust compilation, installer contents and native Settings/inbox UI checks
+passed. The initial hand-assembled temporary QA bundle received
+`NotDetermined / NotSupported` and a native request rejection. A correctly
+Tauri-packaged QA bundle subsequently opened the native permission prompt.
+After the user reported completing that prompt, a fresh native query still
+returned `Denied; alerts: Enabled; sound: Enabled`, and an explicit authorization
+refresh returned `Not authorized`. Visible delivery and click navigation remain
+**BLOCKED** on this QA bundle; no successful delivery is inferred from the user's
+report. The UI reports the refusal and preserves inbox access. The UI-control
+tool cannot operate the system permission dialog.
 
 Windows/Linux native branches are implemented, but their physical-device
 notification presentation, sound, click and Focus/Do Not Disturb tests have not
@@ -213,7 +215,7 @@ protected from history clearing. Existing vault/key protections are reused.
 ## Q. Tests — IMPLEMENTED AND TESTED
 
 - Backend: local workspace 1,050 passed, 1 skipped; the published-source Linux
-  CI suite passed 1,026 with 12 optional-runtime tests skipped. Local totals
+  v0.4.28 CI suite passed 1,026 with 12 optional-runtime tests skipped. Local totals
   include existing unpublished legal tests; those are excluded from this commit. Warnings include existing deprecated FastAPI
   lifecycle/TestClient APIs and TorchScript warnings.
 - Frontend: 135 tests across 18 files passed. TypeScript/production build passed.
@@ -222,7 +224,15 @@ protected from history clearing. Existing vault/key protections are reused.
 - Release metadata: six desktop version fields and 135 bundled runtime files
   verified for 0.4.28. Sidecar package version intentionally remains 0.3.0rc2.
 - Live native UI: final version display, single Notifications panel and inbox
-  fallback inspected in a disposable QA configuration.
+  fallback inspected in a disposable QA configuration. A Llama 3.1 8B Chat
+  request returned exactly `LOCAL TEST OK`; the native context counter grew
+  from 192 to 212 tokens against its 62,720-token effective runtime window.
+  Setting temperature to zero changed the preset to Custom and the inspectable
+  native request to `temperature: 0`. The packaged QA app was then quit, and
+  the separately installed production app opened. Its v0.4.22 update check
+  correctly offered the currently published v0.4.26 rather than unpublished
+  installers. QA uses a separate bundle ID/configuration and is not a rename
+  of the production app.
 
 ## R. Benchmarks — IMPLEMENTED AND TESTED
 
@@ -318,6 +328,27 @@ and design changes are excluded from this feature commit.
 Release status and installer links are verified separately after CI completes.
 Download links in README use `/releases/latest/download/` and advance only when
 GitHub publishes the new release and its signed updater manifest.
+
+### Published release verification — IMPLEMENTED AND TESTED
+
+The v0.4.28 release was published on 11 October 2026 at 03:27:19 UTC. Source
+checks, macOS Apple Silicon, Windows x64, Linux x64 and the publication job all
+passed. Windows/Linux packaged engines became healthy in their installer smoke
+checks. All three public installer links returned HTTP 200. Release checksum
+records match GitHub's uploaded-asset digests; the public updater manifest is
+0.4.28 with signature entries and correct artifact URLs for all three platforms.
+
+The existing /Applications/Uncloud.app discovered 0.4.28 and installed it through
+its signed Tauri updater. Its installed Info.plist confirms name `Uncloud`,
+identifier `com.uncloud.app` and version `0.4.28`; the installed macOS bundle's
+deep/strict code-signature verification passed. This is distinct from the QA
+test copy. Post-restart visual inspection is **BLOCKED**: the computer-control
+tool reported `noWindowsAvailable` and subsequently timed out while attempting
+to locate the window. No visible post-restart result is claimed.
+
+Evidence: `unified-release-verification.json` and
+[the successful release workflow](https://github.com/UnnamedCoder-568/Uncloud/actions/runs/38107578598).
+Installers: [Uncloud v0.4.28](https://github.com/UnnamedCoder-568/Uncloud/releases/tag/v0.4.28).
 
 The initial v0.4.27 build was stopped by a release-script import-order lint
 error after its Linux backend tests passed. v0.4.28 retains that tag unchanged
