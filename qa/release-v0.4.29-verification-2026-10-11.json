@@ -1,0 +1,92 @@
+{
+  "release": "v0.4.29",
+  "release_url": "https://github.com/UnnamedCoder-568/Uncloud/releases/tag/v0.4.29",
+  "commit": "0809311b4c665aead521ca1e6fe5064fa6a224ec",
+  "workflow_url": "https://github.com/UnnamedCoder-568/Uncloud/actions/runs/38140374253",
+  "workflow_result": "success",
+  "published_at": "2026-10-11T12:57:36Z",
+  "public_release_verified": true,
+  "assets": [
+    {
+      "name": "latest.json",
+      "bytes": 3495
+    },
+    {
+      "name": "SHA256SUMS.txt",
+      "bytes": 386
+    },
+    {
+      "name": "Uncloud-Linux-x64.AppImage",
+      "bytes": 104483320
+    },
+    {
+      "name": "Uncloud-Linux-x64.AppImage.sig",
+      "bytes": 420
+    },
+    {
+      "name": "Uncloud-macOS-Apple-Silicon.app.tar.gz",
+      "bytes": 24905365
+    },
+    {
+      "name": "Uncloud-macOS-Apple-Silicon.app.tar.gz.sig",
+      "bytes": 404
+    },
+    {
+      "name": "Uncloud-macOS-Apple-Silicon.dmg",
+      "bytes": 24220556
+    },
+    {
+      "name": "Uncloud-Windows-x64.exe",
+      "bytes": 26643609
+    },
+    {
+      "name": "Uncloud-Windows-x64.exe.sig",
+      "bytes": 420
+    }
+  ],
+  "updater_platforms": [
+    "darwin-aarch64",
+    "linux-x86_64",
+    "windows-x86_64"
+  ],
+  "installed_app": "/Applications/Uncloud.app",
+  "installed_version": "0.4.29",
+  "built_in_update_checker_found_release": true,
+  "built_in_signed_update_completed": true,
+  "engine_files": {
+    "mlx_server.py": {
+      "source_bundle_active_engine_match": true,
+      "sha256": "c5c0381bca0fe183af729936d1948f1b0709f64e870cf5fac87d35ca6c6cdab9"
+    },
+    "reasoning_budget.py": {
+      "source_bundle_active_engine_match": true,
+      "sha256": "6169089ce60d8ba324fef92482ef1c4cf1695b147099632de921990a984d2d61"
+    },
+    "model-recommendations.json": {
+      "source_bundle_active_engine_match": true,
+      "sha256": "e33eba38518e06c8f7dff1ee69a4db0d94e804b1d8a58c842da481eb9ddfa5ea"
+    },
+    "inference_controls.py": {
+      "source_bundle_active_engine_match": true,
+      "sha256": "94de0aa620fd88fff32824b46490d1531e655b83f6a30e04c687ab855e23e0d6"
+    },
+    "inference_profile.py": {
+      "source_bundle_active_engine_match": true,
+      "sha256": "c79216683b0a1772ed30d954fa58cf932b89332c37fa60c4663682e77955417a"
+    },
+    "downloader.py": {
+      "source_bundle_active_engine_match": true,
+      "sha256": "7516c95e8a9e77362a11598009550a07cfd2b5059780f63cdd5aeb99c1e610a7"
+    },
+    "context_count.py": {
+      "source_bundle_active_engine_match": true,
+      "sha256": "972b10c8f8f0ee42f27a758ef1fc1476db6ab521df12f02866762375cf7b5c5f"
+    }
+  },
+  "chrome_interaction": false,
+  "concurrent_model_tests": false,
+  "local_model_test_workers_remaining": false,
+  "visible_post_update_ui_verified": false,
+  "visible_post_update_ui_limitation": "Computer-control calls reported noWindowsAvailable and then timed out. No post-update inference test was started.",
+  "native_model_validation_report": "qa/reasoning-effort-audit-2026-10-11.md"
+}
