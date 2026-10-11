@@ -322,6 +322,26 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  release_notes:
+    name: Refresh published release notes
+    # Updating documentation must not rebuild or replace tested installers.
+    # Opt in only with an explicit marker on a main-branch documentation commit.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[release-notes]')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: Update notes for the already-published current version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="v$(python3 -c 'import json; print(json.load(open("uncloud/package.json"))["version"])')"
+          # Refuse to publish notes into a draft or another version's release.
+          gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft,tagName > /tmp/uncloud-release.json
+          python3 -c 'import json,sys; r=json.load(open("/tmp/uncloud-release.json")); assert not r["isDraft"] and r["tagName"] == sys.argv[1]' "$tag"
+          gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --notes-file .github/release-notes.md
+
   release:
     name: Publish GitHub release
     if: startsWith(github.ref, 'refs/tags/')
