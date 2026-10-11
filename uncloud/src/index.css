@@ -104,6 +104,9 @@
   --info:    #C7C7C7;
 }
 
+.effort-slider { width:100%; height:24px; accent-color:var(--accent); cursor:pointer; }
+.effort-slider:disabled { opacity:.45; cursor:default; }
+
 * { box-sizing: border-box; }
 
 html, body, #root { height: 100%; margin: 0; }

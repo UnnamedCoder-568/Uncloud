@@ -11,6 +11,8 @@ import importlib.metadata
 import json
 import math
 import re
+import subprocess
+from functools import lru_cache
 from pathlib import Path
 
 CORE = {
@@ -26,6 +28,7 @@ CORE = {
     "max_tokens",
 }
 ADVANCED = {
+    "reasoning_budget",
     "typical_p",
     "xtc_probability",
     "xtc_threshold",
@@ -45,6 +48,7 @@ ADVANCED = {
     "response_format",
 }
 INTEGERS = {
+    "reasoning_budget",
     "top_k",
     "seed",
     "max_tokens",
@@ -58,6 +62,7 @@ INTEGERS = {
 }
 PROBABILITIES = {"top_p", "min_p", "typical_p", "xtc_probability", "xtc_threshold"}
 NONNEGATIVE = {
+    "reasoning_budget",
     "temperature",
     "top_k",
     "repetition_penalty",
@@ -133,6 +138,31 @@ def validate(values: dict) -> dict:
     return dict(values)
 
 
+@lru_cache(maxsize=4)
+def _native_budget_support(executable: str, stamp: int, size: int) -> bool:
+    """Read native runtime capabilities once, never on the send path.
+
+    Older binaries can expose a global CLI budget but ignore the per-request
+    field. Require both declarations before advertising request-level control.
+    """
+    try:
+        help_text = subprocess.run([executable, "--help"], capture_output=True,
+                                   text=True, timeout=5, check=False,
+                                   creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        if "--reasoning-budget" not in help_text.stdout + help_text.stderr:
+            return False
+        with Path(executable).open("rb") as binary:
+            tail = b""
+            while block := binary.read(128 * 1024):
+                data = tail + block
+                if b"thinking_budget_tokens" in data:
+                    return True
+                tail = data[-32:]
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return False
+
+
 def discover(model_path: str, engine: str, *, native: bool = False) -> dict:
     """One-time discovery. Template variables, never filename guesses, enable thinking."""
     path = Path(model_path)
@@ -160,11 +190,17 @@ def discover(model_path: str, engine: str, *, native: bool = False) -> dict:
             family = str(header.fields.get("general.architecture", ""))
     fields = set(CORE)
     version = "unknown"
+    mlx_budget = False
+    vlm_budget = False
+    vlm_tokens = None
     if engine == "mlx":
         try:
             dist = importlib.metadata.distribution("mlx-lm")
             version = dist.version
             source = Path(dist.locate_file("mlx_lm/server.py")).read_text()
+            from .mlx_server import compatible_source
+
+            mlx_budget = compatible_source(source)
             consumed = set(re.findall(r'\bself\.body\.get\("([a-z_]+)"', source))
             fields &= consumed
             fields |= ADVANCED & consumed
@@ -172,6 +208,29 @@ def discover(model_path: str, engine: str, *, native: bool = False) -> dict:
             fields |= {key for key in CORE if f'"{key}"' in source}
         except (importlib.metadata.PackageNotFoundError, OSError):
             fields = set()  # Not installed, no capability claims.
+    elif engine == "mlx-vlm":
+        try:
+            dist = importlib.metadata.distribution("mlx-vlm")
+            version = dist.version
+            schema = Path(dist.locate_file("mlx_vlm/server/schemas.py")).read_text()
+            source = Path(dist.locate_file("mlx_vlm/server/generation.py")).read_text()
+            normalization = Path(dist.locate_file(
+                "mlx_vlm/server/request_normalization.py")).read_text()
+            fields = {key for key in CORE if f"{key}:" in schema and f'"{key}"' in source}
+            vlm_budget = all(marker in source for marker in (
+                "def _make_thinking_budget_criteria", 'kw["thinking_budget"]',
+            )) and 'request, "thinking_budget"' in normalization
+            # This native limiter accepts single special-token boundaries. Read
+            # their declarations once; never guess IDs from the model's name.
+            token_config = json.loads((path / "tokenizer_config.json").read_text())
+            special = {item.get("content") for item in
+                       token_config.get("added_tokens_decoder", {}).values()
+                       if isinstance(item, dict) and item.get("special")}
+            vlm_tokens = next(((start, end) for start, end in (
+                ("<think>", "</think>"), ("<|channel>", "<channel|>"),
+            ) if start in template and end in template and {start, end} <= special), None)
+        except (importlib.metadata.PackageNotFoundError, OSError, ValueError, AttributeError):
+            fields = {"temperature", "top_p", "max_tokens", "stop"}
     elif engine == "gguf":
         # llama-cpp-python's API is deliberately narrower than native llama-server.
         if native:
@@ -180,9 +239,33 @@ def discover(model_path: str, engine: str, *, native: bool = False) -> dict:
             fields |= {"response_format"}
     else:
         fields = {"temperature", "top_p", "max_tokens", "stop"}
-    toggle = engine in {"mlx", "gguf"} and bool(re.search(r"\benable_thinking\b", template))
+    toggle = engine in {"mlx", "gguf", "mlx-vlm"} and bool(
+        re.search(r"\benable_thinking\b", template))
     native_effort = engine in {"mlx", "gguf"} and bool(re.search(r"\breasoning_effort\b", template))
+    budget = None
+    boundary = next((end for start, end in (
+        ("<think>", "</think>"), ("<longcat_think>", "</longcat_think>"),
+    ) if start in template and end in template), None)
+    if boundary and engine == "mlx" and mlx_budget:
+        budget = {"mechanism": "mlx_sampler", "closing_tokens": 1}
+    elif boundary and engine == "gguf" and native:
+        from .native_chat import server_path
+
+        executable = server_path()
+        if executable:
+            with contextlib.suppress(OSError):
+                info = Path(executable).stat()
+                if _native_budget_support(executable, info.st_mtime_ns, info.st_size):
+                    budget = {"mechanism": "llama_cpp", "end_sequence": boundary}
+    elif engine == "mlx-vlm" and vlm_budget and vlm_tokens:
+        budget = {"mechanism": "mlx_vlm", "closing_tokens": 2,
+                  "native_field": "thinking_budget",
+                  "start_sequence": vlm_tokens[0], "end_sequence": vlm_tokens[1]}
+    if budget:
+        fields.add("reasoning_budget")
     levels = ["auto", "off", "high"] if toggle else ["auto"]
+    if budget:
+        levels = ["auto", *(["off"] if toggle else []), "low", "medium", "high", "max"]
     if native_effort:
         levels = ["auto"] + [
             level
@@ -195,11 +278,20 @@ def discover(model_path: str, engine: str, *, native: bool = False) -> dict:
             "mechanism": "template_effort"
             if native_effort
             else ("template_toggle" if toggle else "native_fixed_or_unknown"),
+            **({"default": "off"} if engine == "mlx-vlm" and re.search(
+                r"enable_thinking\s*\|\s*default\(false\)", template) else {}),
             "levels": levels,
+            **({"budget": budget} if budget else {}),
             "explanation": (
                 "This native template declares graded reasoning effort."
                 if native_effort
-                else "This template supports thinking on/off; graded budgets are not verified."
+                else "Uncloud effort levels limit thinking tokens and leave room for an answer. "
+                     "The model's native template uses thinking on/off."
+                if toggle and budget
+                else "Uncloud effort levels limit this model's native thinking tokens "
+                     "and leave room for an answer."
+                if budget
+                else "This model supports thinking on/off, not graded effort."
                 if toggle
                 else "Native behavior is preserved. No adjustable thinking mechanism verified."
             ),
@@ -223,11 +315,14 @@ def apply(active, payload: dict, overrides: dict | None = None) -> dict:
     if level not in capabilities["reasoning"]["levels"]:
         raise ValueError("This model/backend does not support that thinking level.")
     if level != "auto":
-        payload["chat_template_kwargs"] = (
-            {"reasoning_effort": level}
-            if capabilities["reasoning"].get("mechanism") == "template_effort"
-            else {"enable_thinking": level != "off"}
-        )
+        mechanism = capabilities["reasoning"].get("mechanism")
+        if mechanism == "template_effort":
+            payload["chat_template_kwargs"] = {"reasoning_effort": level}
+        elif mechanism in {"template_toggle", None}:
+            if active.engine == "mlx-vlm":
+                payload["enable_thinking"] = level != "off"
+            else:
+                payload["chat_template_kwargs"] = {"enable_thinking": level != "off"}
     unsupported = set(values) - supported
     if unsupported:
         raise ValueError("Unsupported by this backend: " + ", ".join(sorted(unsupported)))

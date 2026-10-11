@@ -7,8 +7,12 @@ export interface InferenceInfo {
   saved: { version: number; presets: Record<string, InferenceValues>; defaults: Record<string, InferenceValues> };
   active: null | { model_path: string; engine: string; context_limit: number; profile: {
     parameters: Record<string, number>; sources: Record<string, string>; max_output_tokens?: number;
+    recommendation?: { id?: string; source?: string; verified?: string; native_mode?: string };
+    mode_parameters?: Record<string, Record<string, number>>;
+    explicit_parameters?: Record<string, number>;
     capabilities: { fields: string[]; backend_version: string; template: string;
-      reasoning: { levels: string[]; explanation: string; mechanism: string } };
+      reasoning: { levels: string[]; explanation: string; mechanism: string;
+        budget?: { mechanism: string; closing_tokens: number } } };
   } };
 }
 export const getInference = () => api<InferenceInfo>('/api/inference');

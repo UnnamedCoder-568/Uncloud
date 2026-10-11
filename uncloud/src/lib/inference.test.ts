@@ -9,7 +9,7 @@ const info: InferenceInfo = { saved: { version: 1, presets: {}, defaults: {} },
         reasoning: { levels: ['auto'], mechanism: 'native_fixed', explanation: 'Native' } } } } };
 
 describe('native inference controls', () => {
-  it('Auto and Balanced never guess a thinking budget or override native settings', () => {
+  it('Auto and Balanced presets do not invent native flags or fixed token counts', () => {
     expect(presetValues('Auto', info)).toEqual({});
     expect(presetValues('Balanced', info)).toEqual({});
     expect(presetValues('Deep', info)).toEqual({});

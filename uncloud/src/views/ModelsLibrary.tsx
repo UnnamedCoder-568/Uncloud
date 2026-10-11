@@ -351,6 +351,11 @@ export default function ModelsLibrary() {
                       />
                     </div>
                   )}
+                  {active && <div className="text-[10px] text-[var(--text-faint)] mt-2 truncate" title={active.stage}>
+                    {active.status === 'pending' ? 'Preparing download…' : active.stage}
+                    {active.total_bytes > 0 && ` · ${formatBytes(active.downloaded_bytes)} / ${formatBytes(active.total_bytes)}`}
+                    {!!active.files?.length && ` · file ${Math.min((active.completed_files ?? 0) + 1, active.files.length)} of ${active.files.length}`}
+                  </div>}
                   {downloads.find((d) => d.catalog_id === entry.id && d.status === 'error') && (
                     <div className="flex items-center gap-1 text-[11px] text-rose-400 mt-2">
                       <XCircle size={12} /> {downloads.find((d) => d.catalog_id === entry.id)?.error}

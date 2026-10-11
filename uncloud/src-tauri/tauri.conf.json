@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Uncloud",
-  "version": "0.4.28",
+  "version": "0.4.29",
   "identifier": "com.uncloud.app",
   "build": {
     "frontendDist": "../dist",
@@ -64,6 +64,7 @@
       "../../sidecar/scripts/vibevoice_hq_runner.py": "engine/scripts/vibevoice_hq_runner.py",
       "../../sidecar/scripts/vibevoice_runner.py": "engine/scripts/vibevoice_runner.py",
       "../../sidecar/uncloud_engine/*.py": "engine/uncloud_engine/",
+      "../../sidecar/uncloud_engine/model-recommendations.json": "engine/uncloud_engine/model-recommendations.json",
       "../../sidecar/uncloud_engine/agent/*.py": "engine/uncloud_engine/agent/",
       "../../sidecar/uncloud_engine/core/*.py": "engine/uncloud_engine/core/",
       "../../sidecar/uncloud_engine/core/README.md": "engine/uncloud_engine/core/README.md",

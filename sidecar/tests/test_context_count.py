@@ -1,5 +1,9 @@
+import asyncio
+import json
 from collections import UserDict
+from types import SimpleNamespace
 
+import httpx
 import pytest
 
 from uncloud_engine import context_count
@@ -50,3 +54,27 @@ def test_gguf_native_counter_accepts_zero_without_falling_back(monkeypatch):
         == 0
     )
     assert requests == ["/v1/chat/completions/input_tokens"]
+
+
+def test_vlm_counts_native_prompt_and_preserves_thinking_and_images(monkeypatch):
+    def handler(request):
+        assert request.url.path == '/v1/responses/input_tokens'
+        body = json.loads(request.content)
+        assert body['enable_thinking'] is False
+        assert body['input'] == [{'role': 'user', 'content': [
+            {'type': 'input_text', 'text': 'Describe this'},
+            {'type': 'input_image', 'image_url': 'data:image/png;base64,test'},
+        ]}]
+        return httpx.Response(200, json={'input_tokens': 314})
+    client = httpx.AsyncClient
+    monkeypatch.setattr(context_count.httpx, 'AsyncClient',
+        lambda **kw: client(transport=httpx.MockTransport(handler), **kw))
+    active = SimpleNamespace(engine='mlx-vlm', base_url='http://native', model_path='/model',
+                             inference_profile={'capabilities': {'fields': [], 'reasoning': {
+                                 'mechanism': 'template_toggle', 'levels': ['auto', 'off', 'high'],
+                             }}})
+    messages = [{'role': 'user', 'content': [
+        {'type': 'text', 'text': 'Describe this'},
+        {'type': 'image_url', 'image_url': {'url': 'data:image/png;base64,test'}},
+    ]}]
+    assert asyncio.run(context_count.count(active, messages, {'reasoning': 'off'})) == 314

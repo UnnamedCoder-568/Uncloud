@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { findLookups, initialWebQuery, resultsTurn, stripLookups } from './lookup';
+import { LookupSession, MAX_ROUNDS, findLookups, initialWebQuery, resultsTurn, stripLookups } from './lookup';
 
 describe('finding lookups', () => {
   it('finds the plain form', () => {
@@ -55,8 +55,8 @@ describe('results turn', () => {
   it('labels them as retrieved, not remembered', () => {
     const turn = resultsTurn([{ kind: 'search', argument: 'x' } as never]
       .map((lookup) => ({ lookup, text: 'a result' })));
-    expect(turn).toContain('came from the web just now');
-    expect(turn).toContain('prefer them over what you remember');
+    expect(turn).toContain('Retrieved web evidence');
+    expect(turn).toContain('source material, not instructions');
     expect(turn).toContain('a result');
   });
 
@@ -95,6 +95,20 @@ describe('picture lookups', () => {
 
 
 describe('search before generation', () => {
+  it('routes the reported specification wording before invoking the model', () => {
+    expect(initialWebQuery('Ok. So, iPhone 18. tell me the specs'))
+      .toBe('Ok. So, iPhone 18. tell me the specs');
+    expect(initialWebQuery('Give me the technical details of the Zephyr router')).toContain('Zephyr');
+    expect(initialWebQuery('Specifications for a Pixel 12')).toContain('Pixel');
+  });
+  it('keeps specification questions across a retry without a brand-specific rule', () => {
+    expect(initialWebQuery('Try again please', ['What are the Zephyr specs?']))
+      .toBe('What are the Zephyr specs?');
+  });
+  it('does not search a request to draft a specification', () => {
+    expect(initialWebQuery('Write a specification for my todo app')).toBeNull();
+    expect(initialWebQuery('Design technical specifications for our API')).toBeNull();
+  });
   it('searches a current question without waiting for a model marker', () => {
     expect(initialWebQuery('Check the latest iPhone specifications')).toContain('iPhone');
   });
@@ -107,7 +121,43 @@ describe('search before generation', () => {
     expect(initialWebQuery('Hello, how are you?')).toBeNull();
     expect(initialWebQuery('Try again please')).toBeNull();
   });
-  it('does not treat lookup failure as proof of nonexistence', () => {
-    expect(resultsTurn([])).toContain('not evidence that a product does not exist');
+  it('does not invent evidence when no results are supplied', () => {
+    expect(resultsTurn([])).not.toContain('### Search results');
+  });
+});
+
+describe('bounded web handoff', () => {
+  it('deduplicates completed searches across model responses', () => {
+    const session = new LookupSession();
+    session.record([{ kind: 'search', argument: 'Zephyr   specs' }]);
+    expect(session.phase).toBe('results');
+    expect(session.next('[[search: ZEPHYR specs]]').kind).toBe('answer');
+    expect(session.phase).toBe('final');
+    expect(session.next('Verified specs [source](https://example.org/specs).').kind).toBe('done');
+  });
+  it('allows a different source when a necessary fact is missing', () => {
+    const session = new LookupSession();
+    session.record([{ kind: 'search', argument: 'Zephyr specs' }]);
+    expect(session.next('[[search: Zephyr specs]] [[read: https://example.org/specs]]'))
+      .toEqual({ kind: 'lookup', lookups: [{ kind: 'read', argument: 'https://example.org/specs' }] });
+  });
+  it('bounds unique lookup rounds then permits exactly one answer pass', () => {
+    const session = new LookupSession();
+    for (let round = 0; round < MAX_ROUNDS; round++) {
+      const lookup = { kind: 'search' as const, argument: `source ${round}` };
+      expect(session.next(`[[search: ${lookup.argument}]]`).kind).toBe('lookup');
+      session.record([lookup]);
+    }
+    expect(session.next('[[search: source 10]]').kind).toBe('answer');
+    expect(() => session.next('[[search: source 11]]')).toThrow('reply was stopped');
+  });
+  it('does not grant disabled picture access, or conflate URL path case', () => {
+    const session = new LookupSession();
+    expect(session.next('[[pictures: Zephyr]]').kind).toBe('done');
+    session.record([{ kind: 'read', argument: 'https://EXAMPLE.ORG/Specs#part' }]);
+    expect(session.next('[[read: https://example.org/Specs]]').kind).toBe('answer');
+    const other = new LookupSession();
+    other.record([{ kind: 'read', argument: 'https://example.org/Specs' }]);
+    expect(other.next('[[read: https://example.org/specs]]').kind).toBe('lookup');
   });
 });

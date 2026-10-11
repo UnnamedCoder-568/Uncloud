@@ -18,7 +18,7 @@ import { useLibraryVersion } from '../lib/library-changed';
 import { splitThinking } from '../lib/thinking';
 import { Sentences, useTalk } from '../lib/useTalk';
 import { cleanReply } from '../lib/reply';
-import { MAX_ROUNDS, describe, findLookups, initialWebQuery, resultsTurn, stripLookups } from '../lib/lookup';
+import { LookupSession, describe, initialWebQuery, resultsTurn, stripLookups } from '../lib/lookup';
 import { compactAvailable, contextMessages } from '../lib/context';
 import { fitWebContext } from '../lib/web-context';
 import { printerSound } from '../lib/printer-sound';
@@ -509,9 +509,11 @@ export default function ChatView() {
         ...next.slice(rawMode ? 0 : compactedThrough),
       ];
       let fittedReplyBudget: number | undefined;
+      const lookups = new LookupSession();
+      const replyPrompt = () => systemPrompt({ pictures, web, manner, webPhase: lookups.phase });
       const fitEvidence = async (evidence: string, assemble: (text: string) => ChatMessage[]) => {
         const fitted = await fitWebContext(evidence,
-          value => contextMessages(assemble(value), systemPrompt({ pictures, web, manner }), compactSummary, 0, rawMode),
+          value => contextMessages(assemble(value), replyPrompt(), compactSummary, 0, rawMode),
           turns => countChatContext(turns, inference.values),
           inference.values.max_tokens !== undefined ? Number(inference.values.max_tokens) : undefined);
         if (epoch !== generationEpoch.current || controller.signal.aborted) throw new Error('Reply stopped');
@@ -534,6 +536,7 @@ export default function ChatView() {
         if (epoch !== generationEpoch.current || controller.signal.aborted) return;
         setLooking([]);
         setConsulted([query]);
+        lookups.record([lookup]);
         // Keep the evidence beside the latest user request to suit local models
         // that require alternating user/assistant turns.
         const beforeSearch = sent;
@@ -547,10 +550,10 @@ export default function ChatView() {
       }
 
 
-      for (let round = 0; ; round++) {
+      for (;;) {
         full = '';
         for await (const chunk of streamChat(
-          contextMessages(sent, systemPrompt({ pictures, web, manner }), compactSummary, 0, rawMode),
+          contextMessages(sent, replyPrompt(), compactSummary, 0, rawMode),
           controller.signal,
           fittedReplyBudget,
           { path: activeModel.path, engine: activeModel.engine, adapter: activeAdapter,
@@ -590,29 +593,14 @@ export default function ChatView() {
         // Both switches hold whatever the model wrote. A model told it is
         // offline will occasionally ask to search anyway, and the setting has
         // to win that argument rather than merely take part in it.
-        const wanted = web && !rawMode
-          ? findLookups(full).filter((l) => pictures || l.kind !== 'pictures')
-          : [];
-        if (!wanted.length) break;
-
-        // A model that searches, reads, and searches again is working. One
-        // that searches for ever is not, and without a ceiling it would do so
-        // while the user watched.
-        if (round >= MAX_ROUNDS - 1) {
-          setMessages((m) => {
-            if (epoch !== generationEpoch.current) return m;
-            const copy = [...m];
-            const prev = copy[assistantIndex];
-            if (!prev) return m;
-            copy[assistantIndex] = {
-              ...prev,
-              content: `${stripLookups(prev.content)}\n\n_Stopped after `
-                + `${MAX_ROUNDS} lookups without an answer._`,
-            };
-            return copy;
-          });
-          break;
+        const plan = web && !rawMode ? lookups.next(full, pictures) : { kind: 'done' as const, lookups: [] };
+        if (plan.kind === 'done') break;
+        if (plan.kind === 'answer') {
+          setMessages(current => current.map((message, index) => index === assistantIndex
+            ? { ...message, content: '', reasoning: '' } : message));
+          continue;
         }
+        const wanted = plan.lookups;
 
         // What is happening to their network connection, in plain words and
         // before it happens.
@@ -652,6 +640,7 @@ export default function ChatView() {
         if (fetched.every((part) => part.text.startsWith('This lookup failed:'))) {
           throw new Error(`Web lookup failed, so I could not verify this answer. ${fetched[0].text}`);
         }
+        lookups.record(wanted);
         setConsulted((c) => [...c, ...wanted.map((l) => l.argument)]);
         if (shown.length) {
           setMessages((m) => {
@@ -673,12 +662,15 @@ export default function ChatView() {
         sent = await fitEvidence(resultsTurn(fetched), value => [
           ...beforeLookup, { role: 'user', content: value },
         ]);
+        const retrieved = [next.at(-1)?.retrieved, sent.at(-1)!.content].filter(Boolean).join('\n\n');
+        next[next.length - 1] = { ...next[next.length - 1], retrieved };
         setMessages((m) => {
           if (epoch !== generationEpoch.current) return m;
           const copy = [...m];
           const prev = copy[assistantIndex];
           if (!prev) return m;
-          copy[assistantIndex] = { ...prev, content: '' };
+          copy[assistantIndex] = { ...prev, content: '', reasoning: '' };
+          copy[next.length - 1] = { ...copy[next.length - 1], retrieved };
           return copy;
         });
       }
@@ -687,6 +679,7 @@ export default function ChatView() {
       // answer. Left in, the user reads the plumbing.
       const rawReply = full;
       full = rawMode ? full : cleanReply(stripLookups(full));
+      if (!full.trim()) throw new Error('The model finished without an answer. Its thinking is available above; no lookup was executed from thinking text.');
       setMessages((m) => {
         if (epoch !== generationEpoch.current) return m;
         const copy = [...m];
@@ -748,7 +741,9 @@ export default function ChatView() {
           const copy = [...m];
           const last = copy[copy.length - 1];
           if (last?.role === 'assistant') {
-            copy[copy.length - 1] = { ...last, error: e instanceof Error ? e.message : String(e) };
+            copy[copy.length - 1] = { ...last,
+              content: rawMode ? last.content : cleanReply(stripLookups(last.content)),
+              error: e instanceof Error ? e.message : String(e) };
           }
           return copy;
         });
@@ -1249,7 +1244,7 @@ export default function ChatView() {
                       {!m.content && generating && i === messages.length - 1 && (
                         <ActivityOrb state="solving" label="Thinking…" className="mr-1.5" />
                       )}
-                      {m.content ? 'Thought before answering' : 'Thinking…'}
+                      {m.content ? 'Thought before answering' : generating && i === messages.length - 1 ? 'Thinking…' : 'Thinking finished'}
                       <span className="ml-1.5 opacity-60 group-open:hidden">
                         {m.reasoning.trim().split(/\s+/).length} words
                       </span>
@@ -1297,8 +1292,8 @@ export default function ChatView() {
                       const shown = cleanReply(m.content, generating && i === messages.length - 1);
                       if (shown) return <Markdown>{shown}</Markdown>;
                       // Still arriving.
-                      if (i === messages.length - 1 && generating && !m.reasoning) {
-                        return <ActivityOrb state="solving" label="Thinking…" />;
+                      if (i === messages.length - 1 && generating) {
+                        return m.reasoning ? null : <ActivityOrb state="solving" label="Thinking…" />;
                       }
                       // Nothing left after the markers were taken out: the
                       // model replied with an instruction and no words. The
@@ -1316,7 +1311,7 @@ export default function ChatView() {
                           </span>
                         );
                       }
-                      if (m.reasoning) {
+                      if (m.reasoning && !m.error) {
                         return (
                           <span className="text-[var(--text-faint)] italic">
                             (it thought, but wrote no answer — open the working above)

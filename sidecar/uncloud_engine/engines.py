@@ -120,8 +120,36 @@ class EngineManager:
                             )
                             if isinstance(effective, int) and effective > 0:
                                 active.context_limit = min(active.context_limit, effective)
+                            # Count this model's native boundary once at load.
+                            # Never assume every tokenizer closes thinking in one token.
+                            budget = inference_profile["capabilities"]["reasoning"].get("budget")
+                            if budget:
+                                ending = await client.post(f"{active.base_url}/tokenize", json={
+                                    "content": budget["end_sequence"], "add_special": False,
+                                    "parse_special": True,
+                                })
+                                ending.raise_for_status()
+                                token_ids = ending.json().get("tokens")
+                                if not isinstance(token_ids, list) or not token_ids:
+                                    raise ValueError(
+                                        "The native thinking boundary could not be counted.")
+                                budget["closing_tokens"] = len(token_ids)
                     except (httpx.HTTPError, ValueError, AttributeError):
-                        pass  # Python and older native servers need not expose props.
+                        # Python/older servers need not expose native metadata.
+                        cap = inference_profile["capabilities"]
+                        reason = cap["reasoning"]
+                        if reason.pop("budget", None):
+                            cap["fields"] = [key for key in cap["fields"]
+                                             if key != "reasoning_budget"]
+                            if reason["mechanism"] == "template_toggle":
+                                reason["levels"] = ["auto", "off", "high"]
+                                reason["explanation"] = (
+                                    "Thinking on/off is available; a separate native thinking "
+                                    "limit could not be verified.")
+                            elif reason["mechanism"] != "template_effort":
+                                reason["levels"] = ["auto"]
+                                reason["explanation"] = (
+                                    "A native thinking limit could not be verified.")
             except BaseException:
                 self._stop_process(active)
                 raise
@@ -181,8 +209,7 @@ class EngineManager:
         command = [
             sys.executable,
             "-m",
-            "mlx_lm",
-            "server",
+            "uncloud_engine.mlx_server",
             "--model",
             model_path,
             "--port",

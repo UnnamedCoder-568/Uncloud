@@ -30,6 +30,96 @@ def test_missing_metadata_does_not_invent_sampling(tmp_path):
     assert inference_profile.clean({"temperature": float("nan"), "top_p": 3}) == {}
 
 
+def qwen_config(tmp_path):
+    (tmp_path / "config.json").write_text(json.dumps({
+        "model_type": "qwen3_5", "text_config": {
+            "num_hidden_layers": 32, "hidden_size": 4096,
+            "intermediate_size": 12288, "vocab_size": 248320,
+        },
+    }))
+
+
+def test_architecture_recommendations_with_native_thinking_and_override_precedence(tmp_path):
+    qwen_config(tmp_path)
+    model, profile = inference_profile.load(str(tmp_path), "mlx")
+    active = SimpleNamespace(engine="mlx", inference_profile=profile, model_profile=model)
+    native = model_payload(active, [])
+    assert native["temperature"] == 1.0
+    assert native["top_p"] == 0.95
+    assert native["top_k"] == 20
+    assert native["presence_penalty"] == 1.5
+    assert "chat_template_kwargs" not in native
+    assert profile["recommendation"]["source"].startswith("https://huggingface.co/Qwen/")
+    assert model_payload(active, [], inference={"temperature": 0})["temperature"] == 0
+    (tmp_path / "generation_config.json").write_text('{"temperature": 0.4, "top_p": 0.7}')
+    (tmp_path / "uncloud-inference.json").write_text('{"temperature": 0.2}')
+    _, active.inference_profile = inference_profile.load(str(tmp_path), "mlx")
+    assert model_payload(active, [])["temperature"] == 0.2
+    assert model_payload(active, [], overrides={"temperature": 0.3})["temperature"] == 0.3
+    assert model_payload(active, [], inference={"temperature": 0.9})["temperature"] == 0.9
+
+
+def test_mode_recommendations_do_not_override_metadata_or_user_controls(tmp_path):
+    qwen_config(tmp_path)
+    _, profile = inference_profile.load(str(tmp_path), "mlx")
+    profile["capabilities"] = {"fields": ["temperature", "top_p", "seed"],
+                               "reasoning": {"levels": ["auto", "off", "high"]}}
+    active = SimpleNamespace(engine="mlx", inference_profile=profile)
+    off = model_payload(active, [], inference={"reasoning": "off"})
+    assert off["temperature"] == 0.7
+    assert off["top_p"] == 0.8
+    assert off["chat_template_kwargs"] == {"enable_thinking": False}
+    assert model_payload(active, [], inference={"reasoning": "high"})["temperature"] == 1.0
+    profile["explicit_parameters"]["temperature"] = 0
+    assert model_payload(active, [], inference={"reasoning": "off"})["temperature"] == 0
+    assert model_payload(active, [], inference={"reasoning": "off", "top_p": 0.6})["top_p"] == 0.6
+
+
+def test_no_architecture_guess_from_filename_or_partial_signature(tmp_path):
+    misleading = tmp_path / "Qwen3.5-9B"
+    misleading.mkdir()
+    _, profile = inference_profile.load(str(misleading), "mlx")
+    assert profile["parameters"] == {}
+    qwen_config(misleading)
+    data = json.loads((misleading / "config.json").read_text())
+    data["text_config"]["num_hidden_layers"] = 40
+    (misleading / "config.json").write_text(json.dumps(data))
+    _, profile = inference_profile.load(str(misleading), "mlx")
+    assert profile["parameters"] == {}
+
+
+def test_recommendations_require_no_file_access_on_chat_turn(tmp_path, monkeypatch):
+    qwen_config(tmp_path)
+    _, profile = inference_profile.load(str(tmp_path), "mlx")
+    active = SimpleNamespace(engine="mlx", inference_profile=profile)
+    def forbidden(*args, **kwargs):
+        raise AssertionError("Sampling resolution must use cached model metadata")
+    monkeypatch.setattr(inference_profile, "_json", forbidden)
+    assert model_payload(active, [])["temperature"] == 1.0
+
+
+def test_gguf_architecture_fallback_and_embedded_sampling_priority(tmp_path, monkeypatch):
+    from uncloud_engine.core.models.headers import GgufHeader
+
+    weights = tmp_path / "renamed.gguf"
+    weights.write_bytes(b"fixture")
+    fields = {"general.architecture": "qwen35", "qwen35.block_count": 32,
+              "qwen35.embedding_length": 4096, "qwen35.feed_forward_length": 12288,
+              "general.sampling.temperature": 0.5}
+    monkeypatch.setattr(inference_profile, "read_gguf", lambda path: GgufHeader(3, 1, fields))
+    model, profile = inference_profile.load(str(weights), "gguf")
+    active = SimpleNamespace(engine="gguf", inference_profile=profile)
+    assert model.family == "qwen35"
+    payload = model_payload(active, [])
+    assert payload["temperature"] == 0.5
+    assert payload["top_p"] == 0.95
+    assert payload["repeat_penalty"] == 1.0
+    assert profile["sources"]["temperature"] == "GGUF sampling metadata"
+    del fields["qwen35.block_count"]
+    _, profile = inference_profile.load(str(weights), "gguf")
+    assert profile["parameters"] == {"temperature": 0.5}
+
+
 def test_chat_does_not_scan_library_and_records_actual_stream(monkeypatch):
     from uncloud_engine import main
 
