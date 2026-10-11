@@ -1,0 +1,3 @@
+# Release scripts use the same Python version as the engine and CI runner.
+# Declaring it avoids machine-dependent standard-library import classification.
+target-version = "py312"

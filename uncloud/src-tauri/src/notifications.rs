@@ -129,9 +129,9 @@ fn present(app: AppHandle, event: Event, sound: bool) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
         notification.app_id("com.uncloud.app");
-        if !sound {
-            notification.sound_name("silent");
-        }
+        // The Windows adapter treats an omitted sound as silent. Request the
+        // standard system sound explicitly; quiet mode remains silent.
+        notification.sound_name(if sound { "Default" } else { "silent" });
     }
     #[cfg(target_os = "macos")]
     if sound {
