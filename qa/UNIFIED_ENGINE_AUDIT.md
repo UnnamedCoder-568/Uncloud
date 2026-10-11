@@ -1,4 +1,4 @@
-# Unified inference and notification engine — v0.4.27
+# Unified inference and notification engine — v0.4.28
 
 Verification date: 11 October 2026. This report covers Uncloud Chat and Chisel.
 It distinguishes implementation from device verification. It does not claim
@@ -159,18 +159,23 @@ D-Bus desktop notifications. Display/click verification is discussed below.
 
 ## L. Sound — IMPLEMENTED BUT NOT VERIFIED
 
-Optional system sounds and quiet mode are implemented. The dispatcher uses
+Optional system sounds and quiet mode are implemented. Windows requests the
+  adapter's explicit Default sound when enabled; an omitted sound is silent in
+  that adapter, which was corrected during source inspection. The dispatcher uses
 normal OS priority, with no direct audio player, critical interruption flag,
 Focus override or copyrighted custom sound. Audible OS behavior was not
 verified. Custom audio-file selection is **NOT IMPLEMENTED**.
 
 ## M. Operating-system compatibility — IMPLEMENTED BUT NOT VERIFIED
 
-macOS Rust compilation and native Settings/inbox UI checks passed. The temporary
+macOS Rust compilation and native Settings/inbox UI checks passed. The initial hand-assembled temporary
 QA bundle received `NotDetermined / NotSupported` and a native request rejection:
 `Notifications are not allowed for this application`. Actual visible native
 delivery and click navigation are **BLOCKED** on that test bundle; they must not
-be described as passed. The UI now reports refusal and preserves inbox access.
+be described as passed. The UI now reports refusal and preserves inbox access. A correctly Tauri-packaged
+  QA bundle subsequently opened the native permission prompt. Its system dialog
+  requires manual user interaction because the UI-control tool cannot access it.
+  Until allowed and visually checked, delivery/click tests remain unverified.
 
 Windows/Linux native branches are implemented, but their physical-device
 notification presentation, sound, click and Focus/Do Not Disturb tests have not
@@ -207,13 +212,15 @@ protected from history clearing. Existing vault/key protections are reused.
 
 ## Q. Tests — IMPLEMENTED AND TESTED
 
-- Backend: 1,050 passed, 1 skipped. Warnings include existing deprecated FastAPI
+- Backend: local workspace 1,050 passed, 1 skipped; the published-source Linux
+  CI suite passed 1,026 with 12 optional-runtime tests skipped. Local totals
+  include existing unpublished legal tests; those are excluded from this commit. Warnings include existing deprecated FastAPI
   lifecycle/TestClient APIs and TorchScript warnings.
 - Frontend: 135 tests across 18 files passed. TypeScript/production build passed.
   Lint passed with existing warnings and two non-failing component warnings.
 - Desktop: 5 Rust tests passed; formatting and locked compilation passed.
 - Release metadata: six desktop version fields and 135 bundled runtime files
-  verified for 0.4.27. Sidecar package version intentionally remains 0.3.0rc2.
+  verified for 0.4.28. Sidecar package version intentionally remains 0.3.0rc2.
 - Live native UI: final version display, single Notifications panel and inbox
   fallback inspected in a disposable QA configuration.
 
@@ -275,6 +282,7 @@ Integration changes: `main.py`, `chat.py`, `context_count.py`, `engines.py`,
 Frontend: shared inference hook/controls/tests, NotificationCenter,
 NotificationsSettings, ChatView, ChiselView, SettingsView, GuideView, App,
 UpdateBanner and sidecar/context clients.
+Release-script Python 3.12 import classification is now explicit in `ruff.toml`.
 Desktop: `notifications.rs`, `lib.rs`, Cargo dependencies/lock and synchronized
 release versions. Tests: unified API, controls, recovery, planning and
 permissions. QA benchmark/report files are included. Unrelated local legal
@@ -310,3 +318,7 @@ and design changes are excluded from this feature commit.
 Release status and installer links are verified separately after CI completes.
 Download links in README use `/releases/latest/download/` and advance only when
 GitHub publishes the new release and its signed updater manifest.
+
+The initial v0.4.27 build was stopped by a release-script import-order lint
+error after its Linux backend tests passed. v0.4.28 retains that tag unchanged
+and retries with explicit Python 3.12 lint configuration and updated notes.
