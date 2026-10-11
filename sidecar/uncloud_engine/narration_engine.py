@@ -408,6 +408,11 @@ class NarrationEngine:
             job.status = "error"
             job.error = str(exc)
 
+        finally:
+            from .job_events import finished
+
+            finished("narration", job)
+
     def _synthesise(
         self, job: NarrationJob, model_dir: str, text: str, voice_slug: str,
         sample_rate: int, bit_depth: int, cfg_scale: float, ddpm_steps: int = 20,

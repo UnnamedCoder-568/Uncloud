@@ -195,6 +195,11 @@ class MusicEngine:
             job.status = "error"
             job.error = str(exc)
 
+        finally:
+            from .job_events import finished
+
+            finished("music", job)
+
     def _generate(
         self, job: MusicJob, model_dir: str, prompt: str, lyrics: str, instrumental: bool,
         duration: float, bpm: int | None, keyscale: str, steps: int, guidance: float,

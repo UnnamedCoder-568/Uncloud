@@ -358,8 +358,8 @@ def test_an_asker_is_removed_when_its_connection_ends(gate) -> None:
         return "yes"
 
     with approval.asking(ask):
-        assert approval._asker is ask
-    assert approval._asker is None
+        assert approval._asker.get() is ask
+    assert approval._asker.get() is None
 
 
 def test_an_unrecognised_answer_is_a_no(gate) -> None:

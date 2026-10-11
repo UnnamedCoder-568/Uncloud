@@ -29,13 +29,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field, field_validator
 
-from . import characters, product_studio, speech, voice_engine
+from . import characters, job_events, product_studio, speech, voice_engine
 from . import conversations as conversations_store
 from . import music_engine as music_engine_mod
 from . import narration_engine as narration_engine_mod
 from . import video_engine as video_engine_mod
 from .agent import approval as agent_approval
-from .agent import tools as agent_tools
+from .agent import tools as agent_tools_mod
 from .agent.graph import ExecutionGraph
 from .agent.orchestrator import orchestrator
 from .agent.tools import TOOL_SPECS
@@ -43,6 +43,7 @@ from .automations import Automations, NeedsAttention
 from .catalog import get_catalog, get_entry
 from .chat import model_payload
 from .config import CONFIG_DIR, settings
+from .control_api import install as install_control_api
 from .core import AuditLog, Denied, Gate, Mode, Risk, dump_policy, load_policy
 from .core import Request as PermissionRequest
 from .core.integrations import credentials as integration_credentials
@@ -53,6 +54,12 @@ from .image_engine import image_engine
 from .library import invalidate_library_cache, scan_components, scan_library_cached
 from .music_engine import music_engine
 from .narration_engine import narration_engine
+from .user_events import EventStore
+
+user_events = EventStore(CONFIG_DIR / "user-events.json")
+download_manager.on_finished = lambda state: user_events.notify(
+    "download" if state.status == "done" else "failed", "download", state.id, target="models"
+)
 
 app = FastAPI(title="Uncloud Engine")
 logger = logging.getLogger(__name__)
@@ -83,6 +90,15 @@ _job_owners: dict[str, dict[str, str]] = {
     "narration": {},
     "speech": {},
 }
+
+
+def _job_finished(kind, job_id, status):
+    owner = _job_owners.get(kind, {}).get(job_id, "desktop")
+    user_events.notify("completed" if status == "done" else "failed", kind, job_id,
+                       owner=owner, target="voice" if kind == "narration" else kind)
+
+
+job_events.on_finished = _job_finished
 
 
 def _same(given: str, expected: str) -> bool:
@@ -176,6 +192,8 @@ def principal_of_ws(websocket: WebSocket) -> str:
     return ""
 
 
+install_control_api(app, user_events, engine_manager, require_token, require_desktop, principal_of)
+
 # ----------------------------------------------------------------- approvals
 #
 # One gate, built once, asked by every surface. The audit log is append-only
@@ -194,7 +212,7 @@ gate = Gate(
     record=_record,
     on_policy_change=lambda policy: settings.set_permission_policy(dump_policy(policy)),
 )
-agent_tools.install_gate(gate)
+agent_tools_mod.install_gate(gate)
 
 
 async def _approve_integration_action(request: PermissionRequest):
@@ -205,6 +223,8 @@ async def _approve_integration_action(request: PermissionRequest):
     the call. An integration-specific approval system is exactly what the
     architecture rules forbid.
     """
+    if agent_approval._asker.get() is not None:
+        return await agent_approval.decide(request)
     gated(
         request.action,
         request.category,
@@ -2060,6 +2080,7 @@ def engine_status() -> dict:
 # ------------------------------------------------------------------- chat
 class ContextCountBody(BaseModel):
     messages: list[dict]
+    inference: dict = Field(default_factory=dict)
 
 
 @app.post("/api/chat/context", dependencies=[Depends(require_token)])
@@ -2070,7 +2091,7 @@ async def chat_context(body: ContextCountBody) -> dict:
     from .context_count import count
 
     try:
-        used = await count(active, body.messages)
+        used = await count(active, body.messages, body.inference)
     except Exception:  # noqa: BLE001 - the meter must not break inference
         used = None
     return {"used": used, "limit": active.context_limit, "exact": used is not None}
@@ -2080,6 +2101,10 @@ class ChatBody(BaseModel):
     messages: list[dict]
     temperature: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     sampling: dict = {}
+    inference: dict = Field(default_factory=dict)
+    inherit_defaults: bool = True
+    conversation_id: str = ""
+    project_id: str = ""
     max_tokens: int | None = Field(default=None, gt=0)
     model_path: str | None = None
     adapter_path: str | None = None
@@ -2087,6 +2112,12 @@ class ChatBody(BaseModel):
     #: stored default rather than failing the request — effort is a preference,
     #: and a preference should never be able to break a conversation.
     effort: str = ""
+
+    @field_validator("inference")
+    @classmethod
+    def valid_inference(cls, values: dict) -> dict:
+        from .inference_controls import validate
+        return validate(values)
 
     @field_validator("sampling")
     @classmethod
@@ -2154,7 +2185,8 @@ async def _run_chat(run: ChatRun, body: ChatBody, active=None) -> None:
                 **({"temperature": body.temperature} if body.temperature is not None else {}),
             },
             max_tokens=body.max_tokens,
-            effort=body.effort or settings.effort,
+            effort=body.effort,
+            inference=body.inference,
         )
         run.timings["prompt_build_ms"] = (time.perf_counter() - build_start) * 1000
         run.timings["dispatch_ms"] = (time.perf_counter() - run.started) * 1000
@@ -2208,12 +2240,16 @@ async def _run_chat(run: ChatRun, body: ChatBody, active=None) -> None:
                     except (ValueError, TypeError, KeyError):
                         pass
         run.status = "done"
+        user_events.notify("completed", "chat", run.id, owner=run.owner, target="chat",
+                         run_id=run.id, conversation_id=body.conversation_id)
     except asyncio.CancelledError:
         run.status = "cancelled"
         raise
     except Exception as exc:  # noqa: BLE001 - delivered to the owning UI
         run.status = "error"
         run.error = str(exc).strip() or type(exc).__name__
+        user_events.notify("failed", "chat", run.id, owner=run.owner, target="chat",
+                         run_id=run.id, conversation_id=body.conversation_id)
     finally:
         run.timings["total_ms"] = (time.perf_counter() - run.started) * 1000
         run.changed.set()
@@ -2235,6 +2271,18 @@ async def start_chat_run(body: ChatBody, request: Request) -> dict:
         )
     ):
         raise HTTPException(status_code=409, detail="Load the selected text model to continue.")
+    from .inference_controls import apply
+    with user_events.lock:
+        defaults = (user_events.data.get("inference", {})
+                    .get(principal_of(request), {}).get("defaults", {}))
+        if body.inherit_defaults:
+            body.inference = {**defaults.get(f"model:{active.model_path}", {}),
+                **defaults.get(f"project:{body.project_id}", {}),
+                **defaults.get(f"conversation:{body.conversation_id}", {}), **body.inference}
+    try:
+        apply(active, {}, body.inference)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     # Finished runs are useful for a reconnect, but not forever.
     cutoff = time.time() - 3600
     for old_id, old in list(_chat_runs.items()):
@@ -2309,7 +2357,8 @@ async def chat(body: ChatBody) -> StreamingResponse:
                         ),
                     },
                     max_tokens=body.max_tokens,
-                    effort=body.effort or settings.effort,
+                    effort=body.effort,
+                    inference=body.inference,
                 )
                 # Plain Chat is a direct-answer surface. Thinking-capable GGUF
                 # templates otherwise default to an unlimited private-reasoning
@@ -3623,7 +3672,7 @@ async def _execute_automation(item, update):
         ]
     from .power import keep_awake
 
-    with keep_awake("automation"), agent_tools.automation_scope(item["tools"]):
+    with keep_awake("automation"), agent_tools_mod.automation_scope(item["tools"]):
         graph = await orchestrator.plan(item["goal"], context, effort="fast")
         await update(graph.to_dict())
         blocked = [t.tool_id for t in graph.tasks.values() if t.tool_id not in item["tools"]]
@@ -3649,6 +3698,11 @@ async def _execute_automation(item, update):
 
 
 automations_service = Automations(CONFIG_DIR / "automations.enc", _execute_automation)
+
+
+automations_service.on_finished = lambda item: user_events.notify(
+    "completed" if item["status"] == "completed" else "failed", "automation",
+    item["id"] + ":" + str(item["history"][-1]["ended"]), target="automations", run_id=item["id"])
 
 
 @app.on_event("startup")
@@ -3827,10 +3881,17 @@ async def agent_ws(websocket: WebSocket) -> None:
         raw = await websocket.receive_text()
         payload = json.loads(raw)
         goal = payload.get("goal", "")
+        if not isinstance(goal, str) or not goal.strip():
+            await send({"type": "error", "message": "Empty goal"})
+            return
         run_id = str(payload.get("run_id") or uuid.uuid4().hex)
         if not re.fullmatch(r"[a-fA-F0-9-]{16,64}", run_id):
             await send({"type": "error", "message": "Invalid run id"})
             return
+        if _agent_runs:
+            await send({"type": "error", "message": "Another Chisel task is active. Stop it first"})
+            return
+        user_events.run(run_id, owner, "planning")
         current = asyncio.current_task()
         if current is not None:
             _agent_runs[run_id] = (owner, current)
@@ -3843,9 +3904,6 @@ async def agent_ws(websocket: WebSocket) -> None:
         context = payload.get("context") or None
         if not isinstance(context, list):
             context = None
-        if not goal:
-            await send({"type": "error", "message": "Empty goal"})
-            return
 
         from .power import keep_awake
 
@@ -3853,45 +3911,45 @@ async def agent_ws(websocket: WebSocket) -> None:
         wake_lock.__enter__()
 
         await send({"type": "planning"})
-        graph = await orchestrator.plan(goal, context, effort=effort)
+        inference = payload.get("inference") or {}
+        from .inference_controls import validate
+        inference = validate(inference)
+        if payload.get("inherit_defaults", True):
+            with user_events.lock:
+                defaults = user_events.data.get("inference", {}).get(owner, {}).get("defaults", {})
+                inference = {**defaults.get(f"model:{engine_manager.active.model_path}", {}),
+                             **inference} if engine_manager.active else inference
+        graph = await orchestrator.plan(goal, context, effort=effort, inference=inference)
 
         async def on_update(g: ExecutionGraph) -> None:
+            user_events.run(run_id, owner, "running", g.to_dict())
             await send({"type": "graph", "graph": g.to_dict()})
 
         async def ask(request: PermissionRequest) -> str:
-            """Put the question to whoever is watching this run.
+            details = {"action": request.action, "category": request.category.value,
+                       "summary": request.summary, "preview": request.preview,
+                       "mode": gate.mode_for(request.category).value}
 
-            Blocking on purpose: the step does not proceed until an answer
-            comes back, which is the whole point. `decide_or_refuse` puts a
-            ceiling on the wait so a closed window becomes a refusal rather
-            than a job that sits in progress for ever.
-            """
-            nonlocal connected
-            offered = await send(
-                {
-                    "type": "approval",
-                    "request": {
-                        "action": request.action,
-                        "category": request.category.value,
-                        "summary": request.summary,
-                        "preview": request.preview,
-                        "mode": gate.mode_for(request.category).value,
-                    },
-                }
-            )
-            if not offered:
-                return "no"
-            try:
-                reply = json.loads(await websocket.receive_text())
-            except (WebSocketDisconnect, RuntimeError, OSError, json.JSONDecodeError):
-                connected = False
-                return "no"
-            return str(reply.get("answer", "no"))
+            async def offer(request_id: str):
+                await send({"type": "approval", "request": {**details, "request_id": request_id}})
 
-        with agent_approval.asking(ask):
+            return await user_events.ask(owner, run_id, "permission", details, on_offer=offer)
+
+        async def question(details: dict) -> str:
+            async def offer(request_id: str):
+                await send({"type": "question", "request_id": request_id})
+            return await user_events.ask(owner, run_id, "question", details, on_offer=offer)
+
+        from .agent.questions import asking as asking_questions
+        with agent_tools_mod.tool_session(), agent_approval.asking(ask), asking_questions(question):
             await orchestrator.run(graph, on_update, effort=effort)
+        failed = any(t.status == "failed" for t in graph.tasks.values())
+        user_events.run(run_id, owner, "failed" if failed else "done", graph.to_dict())
+        user_events.notify("failed" if failed else "completed", "chisel", run_id,
+                         owner=owner, run_id=run_id)
         await send({"type": "done", "graph": graph.to_dict()})
     except asyncio.CancelledError:
+        user_events.run(run_id, owner, "cancelled", graph.to_dict() if graph else None)
         if graph is not None:
             for task in graph.tasks.values():
                 if task.status in ("pending", "in_progress"):
@@ -3905,6 +3963,9 @@ async def agent_ws(websocket: WebSocket) -> None:
         # Some exceptions (httpx timeouts especially) stringify to nothing, which
         # would surface in the UI as a blank error. Always send something useful.
         message = str(exc).strip() or f"{type(exc).__name__} (no further detail)"
+        if run_id:
+            user_events.run(run_id, owner, "failed", graph.to_dict() if graph else None)
+            user_events.notify("failed", "chisel", run_id, owner=owner, run_id=run_id)
         with contextlib.suppress(Exception):
             await send({"type": "error", "message": message})
     finally:
@@ -3913,6 +3974,102 @@ async def agent_ws(websocket: WebSocket) -> None:
         if run_id:
             _agent_runs.pop(run_id, None)
             _agent_previews.pop(run_id, None)
+
+
+class ResumeAgentBody(BaseModel):
+    run_id: str
+
+
+@app.post("/api/agent/resume", dependencies=[Depends(require_token)])
+async def resume_agent(body: ResumeAgentBody, request: Request) -> dict:
+    owner = principal_of(request)
+    with user_events.lock:
+        record = user_events.data["runs"].get(body.run_id)
+        if not record or record["owner"] != owner:
+            raise HTTPException(status_code=404, detail="Unknown saved task")
+        if record["status"] != "interrupted" or not record.get("graph"):
+            raise HTTPException(
+                status_code=409, detail="This task cannot be resumed from saved progress."
+            )
+        saved = json.loads(json.dumps(record["graph"]))
+        previously_waiting = record.get("previous_status") == "waiting"
+    if _agent_runs or automations_service.current:
+        raise HTTPException(status_code=409, detail="Another agent task is running.")
+    if not engine_manager.active:
+        raise HTTPException(status_code=409, detail="Load the planning model before resuming.")
+    from .agent.orchestrator import _active_tool_specs, _graph_from_plan
+    try:
+        graph = _graph_from_plan(saved, saved["goal"], TOOL_SPECS)
+        allowed = {spec["id"] for spec in _active_tool_specs()}
+        for ident, task in graph.tasks.items():
+            previous = saved["tasks"][ident]
+            if previous["status"] == "in_progress" and not previously_waiting:
+                raise ValueError(
+                    "A step was interrupted during execution. Review its effects and start a "
+                    "fresh task; it will not be repeated automatically."
+                )
+            task.status = "pending" if previous["status"] == "in_progress" else previous["status"]
+            if task.status not in {"pending", "completed", "failed"}:
+                raise ValueError("Unknown saved task state")
+            task.output, task.error = previous.get("output"), previous.get("error")
+            if task.status == "pending" and task.tool_id not in allowed:
+                raise ValueError("A remaining tool is no longer enabled. Review tool access first.")
+        graph.inference = saved.get("inference", {})
+    except (ValueError, KeyError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    run_id = uuid.uuid4().hex
+    user_events.run(run_id, owner, "running", graph.to_dict())
+    user_events.run(body.run_id, owner, "resumed")
+
+    async def execute():
+        async def progress(g):
+            user_events.run(run_id, owner, "running", g.to_dict())
+
+        async def ask(permission):
+            return await user_events.ask(owner, run_id, "permission", {
+                "action": permission.action, "category": permission.category.value,
+                "summary": permission.summary, "preview": permission.preview,
+                "mode": gate.mode_for(permission.category).value})
+
+        async def question(details):
+            return await user_events.ask(owner, run_id, "question", details)
+        from .agent.questions import asking as asking_questions
+        from .power import keep_awake
+        try:
+            with keep_awake("agent"), agent_tools_mod.tool_session(), agent_approval.asking(ask), \
+                    asking_questions(question):
+                await orchestrator.run(graph, progress, effort="fast")
+            failed = any(t.status == "failed" for t in graph.tasks.values())
+            user_events.run(run_id, owner, "failed" if failed else "done", graph.to_dict())
+            user_events.notify(
+                "failed" if failed else "completed", "chisel", run_id, owner=owner, run_id=run_id
+            )
+        except asyncio.CancelledError:
+            user_events.run(run_id, owner, "cancelled", graph.to_dict())
+        except Exception as exc:
+            user_events.run(run_id, owner, "failed", graph.to_dict(), error=str(exc))
+            user_events.notify("failed", "chisel", run_id, owner=owner, run_id=run_id)
+        finally:
+            _agent_runs.pop(run_id, None)
+    task = asyncio.create_task(execute())
+    _agent_runs[run_id] = (owner, task)
+    return {"run_id": run_id}
+
+
+@app.post("/api/tasks/stop", dependencies=[Depends(require_desktop)])
+async def stop_active_tasks() -> dict:
+    for run in _chat_runs.values():
+        if run.task and not run.task.done():
+            run.task.cancel()
+    for _, task in list(_agent_runs.values()):
+        task.cancel()
+    if automations_service.current:
+        automations_service.control(automations_service.current, "pause")
+    image_engine.cancel()
+    music_engine.cancel_all()
+    narration_engine.cancel_all()
+    video_engine_mod.video_engine.cancel()
+    return {"stopped": True}
 
 
 def _web_dist() -> Path | None:

@@ -70,6 +70,7 @@ class DownloadManager:
     def __init__(self, state_file: Path | None = None) -> None:
         self.state_file = state_file
         self.downloads: dict[str, DownloadState] = {}
+        self.on_finished = None
         if state_file and state_file.exists():
             try:
                 for item in json.loads(state_file.read_text()):
@@ -180,6 +181,8 @@ class DownloadManager:
             state.error = str(exc)
         finally:
             self._save()
+            if self.on_finished and state.status in {"done", "error"}:
+                self.on_finished(state)
 
     async def _download_file(
         self, state: DownloadState, repo: str, filename: str, dest: Path

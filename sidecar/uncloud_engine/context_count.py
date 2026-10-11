@@ -22,16 +22,19 @@ def _mlx_tokenizer(model_path: str):
     return load(Path(model_path), {"trust_remote_code": False, "local_files_only": True})
 
 
-def _count_mlx(model_path: str, messages: list[dict]) -> int:
+def _count_mlx(model_path: str, messages: list[dict], template_kwargs: dict | None = None) -> int:
     tokenizer = _mlx_tokenizer(model_path)
     if any(not isinstance(m.get("content"), str) for m in messages):
         raise ValueError("Multimodal context requires backend token accounting")
-    turns = [{"role": m["role"], "content": m["content"]}
-             for m in messages if m.get("role") in ("system", "user", "assistant")
-             and isinstance(m.get("content"), str)]
+    turns = [
+        {"role": m["role"], "content": m["content"]}
+        for m in messages
+        if m.get("role") in ("system", "user", "assistant") and isinstance(m.get("content"), str)
+    ]
     if tokenizer.chat_template:
         encoded = tokenizer.apply_chat_template(
-            turns, tokenize=True, add_generation_prompt=True)
+            turns, tokenize=True, add_generation_prompt=True, **(template_kwargs or {})
+        )
         # Transformers versions differ: some return IDs, others BatchEncoding.
         ids = encoded["input_ids"] if isinstance(encoded, Mapping) else encoded
         if len(ids) and isinstance(ids[0], (list, tuple)):
@@ -40,8 +43,13 @@ def _count_mlx(model_path: str, messages: list[dict]) -> int:
     raise ValueError("The model does not provide a native chat template")
 
 
-async def count(active, messages: list[dict]) -> int | None:
+async def count(active, messages: list[dict], inference: dict | None = None) -> int | None:
+    from .inference_controls import apply
+
+    kwargs = apply(active, {}, inference).get("chat_template_kwargs", {})
     if active.engine == "mlx":
+        if kwargs:
+            return await asyncio.to_thread(_count_mlx, active.model_path, messages, kwargs)
         return await asyncio.to_thread(_count_mlx, active.model_path, messages)
     if active.engine != "gguf":
         return None
@@ -49,7 +57,8 @@ async def count(active, messages: list[dict]) -> int | None:
         # Current llama.cpp counts the fully rendered chat template here.
         response = await client.post(
             f"{active.base_url}/v1/chat/completions/input_tokens",
-            json={"messages": messages})
+            json={"messages": messages, **({"chat_template_kwargs": kwargs} if kwargs else {})},
+        )
         if response.is_success:
             data = response.json()
             value = data.get("input_tokens", data.get("tokens"))
@@ -61,12 +70,14 @@ async def count(active, messages: list[dict]) -> int | None:
         # model's template, rather than counting raw message text as if it
         # were the prompt the backend receives.
         template = await client.post(
-            f"{active.base_url}/apply-template", json={"messages": messages})
+            f"{active.base_url}/apply-template",
+            json={"messages": messages, **({"chat_template_kwargs": kwargs} if kwargs else {})},
+        )
         template.raise_for_status()
         prompt = template.json()["prompt"]
         tokens = await client.post(
-            f"{active.base_url}/tokenize", json={"content": prompt,
-                                                   "add_special": False,
-                                                   "parse_special": True})
+            f"{active.base_url}/tokenize",
+            json={"content": prompt, "add_special": False, "parse_special": True},
+        )
         tokens.raise_for_status()
         return len(tokens.json()["tokens"])

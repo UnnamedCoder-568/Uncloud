@@ -1,12 +1,12 @@
 [package]
 name = "app"
-version = "0.4.26"
+version = "0.4.27"
 description = "Local-first AI studio desktop application"
 authors = ["Uncloud contributors"]
 license = ""
 repository = "https://github.com/UnnamedCoder-568/Uncloud"
 edition = "2021"
-rust-version = "1.77.2"
+rust-version = "1.90"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -21,7 +21,7 @@ tauri-build = { version = "2.6.3", features = [] }
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
-tauri = { version = "2.11.3", features = [] }
+tauri = { version = "2.11.3", features = ["tray-icon"] }
 tauri-plugin-log = "2"
 tauri-plugin-dialog = "2.7.2"
 reqwest = { version = "0.13.3", features = ["json"] }
@@ -29,6 +29,7 @@ tokio = { version = "1.53.1", features = ["rt", "time", "macros"] }
 tauri-plugin-updater = "2"
 semver = "1"
 tauri-plugin-opener = "2"
+notify-rust = { version = "4.18.2", features = ["preview-macos-un"] }
 
 # Used to signal the engine's whole process group on quit, so model
 # servers spawned by the engine do not outlive the app.

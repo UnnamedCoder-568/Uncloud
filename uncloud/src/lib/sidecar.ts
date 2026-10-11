@@ -246,9 +246,9 @@ export interface ChatContextUsage {
   exact: boolean;
 }
 
-export async function countChatContext(messages: ChatMessage[]) {
+export async function countChatContext(messages: ChatMessage[], inference: Record<string, unknown> = {}) {
   return apiPost<ChatContextUsage>('/api/chat/context', {
-    messages: messages.map(wireMessage),
+    messages: messages.map(wireMessage), inference,
   });
 }
 
@@ -402,12 +402,13 @@ export function wireMessage(message: ChatMessage) {
 
 export async function* streamChat(
   messages: ChatMessage[], signal?: AbortSignal, max_tokens?: number,
-  selection?: { path: string; engine: string; adapter?: string | null; temperature?: number },
+  selection?: { path: string; engine: string; adapter?: string | null; temperature?: number; inference?: Record<string, unknown>; conversationId?: string | null },
 ): AsyncGenerator<ChatChunk> {
   if (signal?.aborted) throw abortError();
   const body = { messages: messages.map(wireMessage), max_tokens,
     model_path: selection?.path, adapter_path: selection?.adapter ?? null,
-    temperature: selection?.temperature };
+    temperature: selection?.temperature, inference: selection?.inference ?? {}, inherit_defaults: false,
+    conversation_id: selection?.conversationId ?? '' };
   const start = () => api<ChatRunState>('/api/chat/runs', {
     method: 'POST', body: JSON.stringify(body), signal });
   let run: ChatRunState;

@@ -1,9 +1,12 @@
+import InferenceControls from '../components/InferenceControls';
+import { useInference } from '../lib/inference';
 import AgentLivePreview from '../components/AgentLivePreview';
 import AutoGrowTextarea from "../components/AutoGrowTextarea";
 import ActivityOrb from '../components/ActivityOrb';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { CheckCircle2, XCircle, Circle, Send, ShieldAlert, Cpu, Square, MessagesSquare, AudioLines, Copy, NotebookPen, Check } from 'lucide-react';
-import { agentSocket, cancelAgentRun, getLibrary, startEngine, engineStatus, saveNote } from '../lib/sidecar';
+import { apiPost, agentSocket, cancelAgentRun, getLibrary, startEngine, engineStatus, saveNote } from '../lib/sidecar';
+import { compactAvailable } from '../lib/context';
 import type { LocalModel } from '../lib/sidecar';
 import Dictate from '../components/Dictate';
 import ReplyVoice from '../components/ReplyVoice';
@@ -102,7 +105,12 @@ export default function ChiselView() {
   // invisible here, so an unloaded engine looked like a broken agent.
   const [textModels, setTextModels] = useState<LocalModel[]>([]);
   const [loaded, setLoaded] = useState<string | null>(null);
+  const inference = useInference(loaded);
   const [loading, setLoading] = useState(false);
+  const [contextUsage, setContextUsage] = useState<{ used: number | null; limit: number } | null>(null);
+  const [compacting, setCompacting] = useState(false);
+  const [compactMemory, setCompactMemory] = useState('');
+  const [originalHandoff, setOriginalHandoff] = useState('');
 
   const readState = useCallback(async () => {
     const [ms, st] = await Promise.all([
@@ -209,12 +217,15 @@ export default function ChiselView() {
       // The conversation this was handed over from, when it was. Background
       // for the planner, so it does not plan from one sentence in isolation.
       context: contextRef.current,
+      inference: inference.values,
+      inherit_defaults: false,
     }));
     ws.onmessage = (ev) => {
       if (epoch !== runEpoch.current) return;
       spoke = true;
       const msg = JSON.parse(ev.data);
       if (msg.type === 'planning') setPhase('planning');
+      if (msg.type === 'approval' || msg.type === 'question') { window.dispatchEvent(new Event('uncloud.interaction')); }
       if (msg.type === 'graph') {
         setGraph(msg.graph);
         clatter(msg.graph);
@@ -285,6 +296,34 @@ export default function ChiselView() {
   }
 
   const busy = phase === 'planning' || phase === 'running';
+  useEffect(() => {
+    if (!loaded || busy || compacting) return;
+    let alive = true;
+    const timer = setTimeout(() => {
+      void apiPost<{ used: number | null; limit: number }>('/api/agent/context', {
+        goal, context: contextRef.current, inference: inference.values,
+      }).then(value => { if (alive) setContextUsage(value); }).catch(() => { if (alive) setContextUsage(null); });
+    }, 550);
+    return () => { alive = false; clearTimeout(timer); };
+  }, [loaded, busy, compacting, goal, handedOver, inference.values]);
+
+  async function compactHandoff() {
+    setCompacting(true);
+    try {
+      const value = await apiPost<{ summary: string }>('/api/context/compact', {
+        messages: contextRef.current, inference: inference.values,
+      });
+      const proposed = [{ role: 'user', content: `Earlier conversation memory:\n${value.summary}` }];
+      const after = await apiPost<{ used: number | null; limit: number }>('/api/agent/context', {
+        goal, context: proposed, inference: inference.values,
+      });
+      if (after.used == null || contextUsage?.used == null || after.used >= contextUsage.used)
+        throw new Error('The summary did not reduce context; the original handoff is preserved.');
+      if (!originalHandoff) setOriginalHandoff(JSON.stringify(contextRef.current, null, 2));
+      contextRef.current = proposed;
+      setHandedOver(1); setCompactMemory(value.summary); setContextUsage(after);
+    } catch (e) { setError(String(e)); } finally { setCompacting(false); }
+  }
   //: A conversation handed over from Chat. The goal goes in the field so it
   //  is visible and editable, the conversation rides along as background, and
   //  the work starts — the point of handing over is not to arrive at a filled
@@ -308,6 +347,23 @@ export default function ChiselView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    const progress = (event: Event) => {
+      const runs = (event as CustomEvent<Array<{ id: string; status: string; graph?: AgentGraph }>>).detail;
+      const current = runs?.find(r => r.id === runIdRef.current) ??
+        (!runIdRef.current ? runs?.find(r => ['running', 'waiting'].includes(r.status)) : undefined);
+      if (!current) return;
+      runIdRef.current = current.id;
+      if (current.graph) setGraph(current.graph);
+      if (['running', 'waiting'].includes(current.status)) setPhase('running');
+      if (current.status === 'done') setPhase('done');
+      if (current.status === 'failed') setPhase('error');
+      if (current.status === 'cancelled') setPhase('idle');
+    };
+    window.addEventListener('uncloud.agent-progress', progress);
+    return () => window.removeEventListener('uncloud.agent-progress', progress);
+  }, []);
+
   const orderedTasks = graph ? Object.values(graph.tasks) : [];
 
   return (
@@ -325,6 +381,9 @@ export default function ChiselView() {
 
       </header>
 
+      <details className="mx-6 mt-3 text-xs"><summary className="cursor-pointer text-[var(--text-dim)]">Model controls · separate from tool permissions</summary>
+        <div className="my-3 max-w-2xl"><InferenceControls info={inference.info} values={inference.values}
+          onChange={inference.setValues} onRefresh={inference.refresh} /></div></details>
       <AgentLivePreview runId={runIdRef.current} active={busy} />
       <div className="flex-1 overflow-y-auto px-6 py-5">
         {!graph && phase === 'idle' && (
@@ -390,6 +449,13 @@ export default function ChiselView() {
       </div>
 
       <div className="p-4 border-t border-[var(--border-soft)]">
+        {loaded && <div className="flex justify-end gap-3 text-[10px] faint mb-2">
+          {compactMemory && <details className="max-w-lg"><summary>Context memory</summary><pre className="whitespace-pre-wrap">{compactMemory}</pre></details>}
+          {originalHandoff && <details className="max-w-lg"><summary>Original handoff</summary><pre className="whitespace-pre-wrap">{originalHandoff}</pre></details>}
+          {contextUsage?.used != null ? <span title="Includes native template, enabled tool descriptions and handoff context">{contextUsage.used.toLocaleString()} / {contextUsage.limit.toLocaleString()} context tokens</span> : <span>Context unavailable</span>}
+          {contextRef.current.length > 0 && compactAvailable(contextUsage?.used ?? null, contextUsage?.limit ?? null) &&
+            <button disabled={busy || compacting} onClick={() => void compactHandoff()}>{compacting ? 'Compacting…' : 'Compact context'}</button>}
+        </div>}
         <div className="chisel-model-row">
         {/* Which model does the planning. Previously invisible here, so an
             engine with nothing loaded looked like a broken agent. */}

@@ -30,6 +30,7 @@ class ExecutionGraph:
     goal: str
     tasks: dict[str, Task] = field(default_factory=dict)
     start_node_ids: list[str] = field(default_factory=list)
+    inference: dict = field(default_factory=dict)
 
     def add_task(self, task: Task) -> None:
         self.tasks[task.id] = task
@@ -51,4 +52,5 @@ class ExecutionGraph:
             "goal": self.goal,
             "tasks": {k: v.to_dict() for k, v in self.tasks.items()},
             "start_node_ids": self.start_node_ids,
+            "inference": self.inference,
         }

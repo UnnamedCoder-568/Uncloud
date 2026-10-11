@@ -13,7 +13,7 @@ import ActivityOrb from './ActivityOrb';
 
 import { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, ArrowUpCircle, Info, X } from 'lucide-react';
-import { getSettings } from '../lib/sidecar';
+import { apiPost, getSettings } from '../lib/sidecar';
 import { inDesktop } from '../lib/platform';
 import {
   RECHECK_MS, RELEASES, checkAppUpdate, dismissNotice, explain, getNotices, installAppUpdate,
@@ -32,7 +32,7 @@ export default function UpdateBanner() {
       const settings = await getSettings();
       if (!settings.check_updates) { setApp(null); setNotices([]); return; }
       await Promise.allSettled([
-        checkAppUpdate().then(setApp),
+        checkAppUpdate().then(status => { setApp(status); if (status?.available) void apiPost('/api/notifications/update', { answer: status.available.version }).catch(() => {}); }),
         getNotices().then(report => setNotices(report.items.filter(
           n => n.severity !== 'optional' && !n.is_application_update))),
       ]);

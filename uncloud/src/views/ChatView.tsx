@@ -1,3 +1,5 @@
+import InferenceControls from '../components/InferenceControls';
+import { useInference } from '../lib/inference';
 import AutoGrowTextarea from "../components/AutoGrowTextarea";
 import { useDismiss } from '../lib/useDismiss';
 import ActivityOrb from '../components/ActivityOrb';
@@ -17,10 +19,10 @@ import { splitThinking } from '../lib/thinking';
 import { Sentences, useTalk } from '../lib/useTalk';
 import { cleanReply } from '../lib/reply';
 import { MAX_ROUNDS, describe, findLookups, initialWebQuery, resultsTurn, stripLookups } from '../lib/lookup';
-import { compactAvailable, contextMessages, COMPACTION_INSTRUCTION } from '../lib/context';
+import { compactAvailable, contextMessages } from '../lib/context';
 import { fitWebContext } from '../lib/web-context';
 import { printerSound } from '../lib/printer-sound';
-import { getLibrary, getAdapters, startEngine, engineStatus, streamChat, countChatContext, transcribeAudio, speakReply, IMAGE_MARKER, chatSystemPrompt, parseReplyImages, generateReplyImage,
+import { apiPost, getLibrary, getAdapters, startEngine, engineStatus, streamChat, countChatContext, transcribeAudio, speakReply, IMAGE_MARKER, chatSystemPrompt, parseReplyImages, generateReplyImage,
   listConversations, readConversation, writeConversation, deleteConversation,
   webSearch, webRead, webImages, MANNERS, getPermissions, setPermission,
   outputBlobUrl, revealOutput, uploadChatAttachment, saveNote as saveReplyNote,
@@ -58,18 +60,14 @@ export default function ChatView() {
     catch { return {}; }
   });
   const [rawMode] = useState(() => localStorage.getItem('uncloud.debug.raw') === 'on');
-  const [temperatures, setTemperatures] = useState<Record<string, string>>(() => {
-    try { return JSON.parse(localStorage.getItem('uncloud.chat.temperatures') || '{}'); }
-    catch { return {}; }
-  });
-  const [replyBudgets, setReplyBudgets] = useState<Record<string, string>>(() => {
-    try { return JSON.parse(localStorage.getItem('uncloud.chat.replyBudgets') || '{}'); }
-    catch { return {}; }
-  });
   //: Which saved conversation this is. Made on the first send rather than on
   //  arrival, so opening Chat and changing your mind does not litter the list
   //  with empty conversations.
   const [conversationId, setConversationId] = useState<string | null>(null);
+  const inference = useInference(activeModel?.path, conversationId);
+  const systemPrompt = useCallback((options: Parameters<typeof chatSystemPrompt>[0]) =>
+    typeof inference.values.system_prompt === 'string' ? inference.values.system_prompt : chatSystemPrompt(options),
+    [inference.values.system_prompt]);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [notesOpen, setNotesOpen] = useState(false);
   const [notes, setNotes] = useState<SavedNote[]>([]);
@@ -395,6 +393,12 @@ export default function ChatView() {
     }
   }, [loadDrawn]);
 
+  useEffect(() => {
+    const open = (event: Event) => { const id = (event as CustomEvent<string>).detail;
+      if (typeof id === 'string') void openSaved(id); };
+    window.addEventListener('uncloud.open-conversation', open);
+    return () => window.removeEventListener('uncloud.open-conversation', open);
+  }, [openSaved]);
   useEffect(() => () => printerSound.stop(), []);
 
   const removeSaved = useCallback(async (id: string) => {
@@ -476,6 +480,8 @@ export default function ChatView() {
     // before loading a model, but do not actually make noise until the first
     // visible reply text arrives.
     printerSound.prepare();
+    const sendingConversationId = conversationId ?? newConversationId();
+    if (!conversationId) setConversationId(sendingConversationId);
     const images = attached;
     const files = attachedFiles;
     const next = [...messages, {
@@ -505,9 +511,9 @@ export default function ChatView() {
       let fittedReplyBudget: number | undefined;
       const fitEvidence = async (evidence: string, assemble: (text: string) => ChatMessage[]) => {
         const fitted = await fitWebContext(evidence,
-          value => contextMessages(assemble(value), chatSystemPrompt({ pictures, web, manner }), compactSummary, 0, rawMode),
-          countChatContext,
-          replyBudgets[activeModel.path]?.trim() ? Number(replyBudgets[activeModel.path]) : undefined);
+          value => contextMessages(assemble(value), systemPrompt({ pictures, web, manner }), compactSummary, 0, rawMode),
+          turns => countChatContext(turns, inference.values),
+          inference.values.max_tokens !== undefined ? Number(inference.values.max_tokens) : undefined);
         if (epoch !== generationEpoch.current || controller.signal.aborted) throw new Error('Reply stopped');
         setContextUsage(fitted.usage);
         fittedReplyBudget = fitted.replyBudget;
@@ -544,11 +550,11 @@ export default function ChatView() {
       for (let round = 0; ; round++) {
         full = '';
         for await (const chunk of streamChat(
-          contextMessages(sent, chatSystemPrompt({ pictures, web, manner }), compactSummary, 0, rawMode),
+          contextMessages(sent, systemPrompt({ pictures, web, manner }), compactSummary, 0, rawMode),
           controller.signal,
-          fittedReplyBudget ?? (replyBudgets[activeModel.path]?.trim() ? Number(replyBudgets[activeModel.path]) : undefined),
+          fittedReplyBudget,
           { path: activeModel.path, engine: activeModel.engine, adapter: activeAdapter,
-            temperature: temperatures[activeModel.path]?.trim() ? Number(temperatures[activeModel.path]) : undefined },
+            inference: { ...inference.values, ...(fittedReplyBudget ? { max_tokens: fittedReplyBudget } : {}) }, conversationId: sendingConversationId },
         )) {
           if (epoch !== generationEpoch.current) return;
           if (chunk.kind === 'text') {
@@ -692,7 +698,7 @@ export default function ChatView() {
       // Saved now the exchange is complete. The id is minted on the first
       // save rather than when the view opens, so opening Chat and changing
       // your mind does not leave an empty conversation in the list.
-      const id = conversationId ?? newConversationId();
+      const id = sendingConversationId;
       if (epoch !== generationEpoch.current) return;
       if (!conversationId) setConversationId(id);
       void persist(id, [...next, { role: 'assistant', content: full } as ChatMessage]);
@@ -797,14 +803,14 @@ export default function ChatView() {
       const turns = contextMessages([
         ...messages,
         ...(input.trim() ? [{ role: 'user' as const, content: input.trim() }] : []),
-      ], chatSystemPrompt({ pictures, web, manner }), compactSummary, compactedThrough, rawMode);
-      void countChatContext(turns).then((usage) => {
+      ], systemPrompt({ pictures, web, manner }), compactSummary, compactedThrough, rawMode);
+      void countChatContext(turns, inference.values).then((usage) => {
         if (!cancelled) setContextUsage(usage);
       }).catch(() => { if (!cancelled) setContextUsage(null); });
     }, 550);
     return () => { cancelled = true; clearTimeout(timer); };
   }, [activeModel, messages, input, compactSummary, compactedThrough, generating,
-      compacting, pictures, web, manner, rawMode]);
+      compacting, pictures, web, manner, rawMode, inference.values, systemPrompt]);
 
   async function compactConversation() {
     if (!activeModel || generating || compacting || !messages.length) return;
@@ -812,25 +818,16 @@ export default function ChatView() {
     if (through <= compactedThrough) return;
     setCompacting(true);
     try {
-      const newHistory = messages.slice(compactedThrough, through).map((m) =>
-        `${m.role.toUpperCase()}: ${m.content}${m.files?.length ?
-          `\nAttached: ${m.files.map((f) => `${f.name}\n${f.text}`).join('\n')}` : ''}`).join('\n\n');
-      const instruction = COMPACTION_INSTRUCTION + `\n\n` +
-        `Existing compacted memory (update it without losing facts):\n${compactSummary || '(none)'}\n\n` +
-        `New conversation turns:\n${newHistory}`;
-      let result = '';
-      for await (const chunk of streamChat([
-        { role: 'system', content: 'You maintain accurate, concise conversation memory.' },
-        { role: 'user', content: instruction },
-      ], undefined, undefined, { path: activeModel.path, engine: activeModel.engine, adapter: activeAdapter })) {
-        if (chunk.kind === 'text') result += chunk.text;
-      }
-      const summary = result.trim();
+      const result = await apiPost<{ summary: string }>('/api/context/compact', {
+        messages: messages.slice(compactedThrough, through), memory: compactSummary,
+        inference: inference.values,
+      });
+      const summary = result.summary.trim();
       if (!summary) throw new Error('The model returned an empty summary.');
-      const system = chatSystemPrompt({ pictures, web, manner });
+      const system = systemPrompt({ pictures, web, manner });
       const [before, after] = await Promise.all([
-        countChatContext(contextMessages(messages, system, compactSummary, compactedThrough)),
-        countChatContext(contextMessages(messages, system, summary, through)),
+        countChatContext(contextMessages(messages, system, compactSummary, compactedThrough), inference.values),
+        countChatContext(contextMessages(messages, system, summary, through), inference.values),
       ]);
       if (before.used == null || after.used == null) {
         throw new Error('Could not verify the compacted context size. Your original conversation is preserved.');
@@ -955,31 +952,13 @@ export default function ChatView() {
                       const windows = { ...contextWindows, [activeModel.path]: Number(contextLength) };
                       setContextWindows(windows);
                       localStorage.setItem('uncloud.chat.contextWindows', JSON.stringify(windows));
-                      setContextUsage(await countChatContext(contextMessages(messages, chatSystemPrompt({ pictures, web, manner }), compactSummary, compactedThrough, rawMode)));
+                      setContextUsage(await countChatContext(contextMessages(messages, systemPrompt({ pictures, web, manner }), compactSummary, compactedThrough, rawMode)));
                     } catch (error) { setNetworkError(error instanceof Error ? error.message : String(error)); }
                     finally { setLoadingModel(false); }
                   }}>Apply context window</button>
               </div>}
-              {activeModel && <label className="text-xs flex flex-col gap-1">
-                Temperature · this model
-                <input className="input" type="number" min="0" step="any" placeholder="Auto · model defaults"
-                  value={temperatures[activeModel.path] ?? ''}
-                  onChange={(e) => {
-                    const next = { ...temperatures, [activeModel.path]: e.target.value };
-                    setTemperatures(next);
-                    localStorage.setItem('uncloud.chat.temperatures', JSON.stringify(next));
-                  }} />
-              </label>}
-              {activeModel && <label className="text-xs flex flex-col gap-1">
-                Reply budget · tokens including reasoning
-                <input className="input" type="number" min="1" step="1" placeholder="Auto · model / runtime window"
-                  value={replyBudgets[activeModel.path] ?? ''}
-                  onChange={(e) => {
-                    const next = { ...replyBudgets, [activeModel.path]: e.target.value };
-                    setReplyBudgets(next);
-                    localStorage.setItem('uncloud.chat.replyBudgets', JSON.stringify(next));
-                  }} />
-              </label>}
+              {activeModel && <InferenceControls compact info={inference.info} values={inference.values}
+                onChange={inference.setValues} onRefresh={inference.refresh} conversationId={conversationId} />}
               {networkDenied && <div className="text-xs max-w-64">
                 <p>Internet access is set to Never, even when Web is on.</p>
                 <button className="pill mt-2" onClick={async () => {

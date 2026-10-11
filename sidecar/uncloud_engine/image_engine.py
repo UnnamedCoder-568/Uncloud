@@ -242,6 +242,11 @@ class ImageEngine:
             job.status = "cancelled" if job.cancelled else "error"
             job.error = None if job.cancelled else str(exc)
 
+        finally:
+            from .job_events import finished
+
+            finished("image", job)
+
     def start_edit(
         self, model_path: str, prompt: str, reference_path: str, *,
         steps: int | None = None, guidance: float | None = None,
@@ -289,6 +294,11 @@ class ImageEngine:
         except Exception as exc:  # noqa: BLE001 - surface any failure to the UI
             job.status = "cancelled" if job.cancelled else "error"
             job.error = None if job.cancelled else str(exc)
+
+        finally:
+            from .job_events import finished
+
+            finished("image", job)
 
     async def _edit_with_wake_lock(
         self, job: ImageJob, model_path: str, prompt: str, reference_path: str,

@@ -29,6 +29,7 @@ class Automations:
         self.items: dict[str, dict] = {}
         self.running: asyncio.Task | None = None
         self.current: str | None = None
+        self.on_finished = None
         self.loop: asyncio.Task | None = None
         self.error = ""
         if path.exists():
@@ -176,6 +177,8 @@ class Automations:
                 item["next_run"] = time.time() + item["interval"]
                 item["progress"] = None
             self.current = None
+            if self.on_finished:
+                self.on_finished(item)
             try:
                 self.save()
             except Exception:
