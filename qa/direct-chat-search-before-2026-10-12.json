@@ -1,0 +1,6 @@
+{
+  "case": "current search provider path",
+  "seconds": 2.428906665998511,
+  "status": "RuntimeError",
+  "detail": "Search could not return relevant sources. This does not mean the topic or product does not exist. Try a more specific query or an official page URL. The search provider returned unrelated results."
+}

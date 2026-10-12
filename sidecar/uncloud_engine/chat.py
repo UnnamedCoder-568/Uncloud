@@ -31,17 +31,18 @@ def model_payload(
         payload["max_tokens"] = max_tokens
     elif metadata.get("max_output_tokens"):
         payload["max_tokens"] = metadata["max_output_tokens"]
-    elif active.engine != "gguf" and getattr(active, "context_limit", 0):
-        # Reserve a quarter of this runtime's usable window for output when
-        # the model gives no recommendation. Avoid MLX's silent 512-token cap,
-        # which can consume the whole answer in reasoning. User budgets win.
-        payload["max_tokens"] = max(1, active.context_limit // 4)
+    elif (native_default := metadata.get("capabilities", {}).get(
+        "runtime_defaults", {}).get("max_tokens")):
+        payload["max_tokens"] = native_default
     # Legacy workflow effort is not a native reasoning budget. Do not translate
     # it into guessed template flags or token caps on the direct-model path.
     from .inference_controls import apply
 
-    return bound(active, apply(active, payload, inference),
-                 (inference or {}).get("reasoning", "auto"))
+    payload = apply(active, payload, inference)
+    limit = getattr(active, "context_limit", None)
+    if "max_tokens" in payload and isinstance(limit, int) and limit > 1:
+        payload["max_tokens"] = min(payload["max_tokens"], limit - 1)
+    return bound(active, payload, (inference or {}).get("reasoning", "auto"))
 
 
 def build_chat_payload(

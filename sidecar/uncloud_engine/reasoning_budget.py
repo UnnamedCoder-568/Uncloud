@@ -17,8 +17,16 @@ def bound(active, payload: dict, reasoning: str = "auto") -> dict:
     explicit = payload.pop("reasoning_budget", None)
     if not capability:
         return payload
+    native_default = profile.get("capabilities", {}).get("reasoning", {}).get("default")
+    # Default-Off templates need no limiter or invented output allowance.
+    if reasoning == "auto" and native_default == "off":
+        return payload
     total = payload.get("max_tokens")
     if total is None:
+        # An unbounded native server default is not a recommendation to reserve
+        # a quarter of a large context window for every ordinary Auto reply.
+        if reasoning == "auto" and explicit is None and profile.get("reasoning_budget") is None:
+            return payload
         total = max(1, active.context_limit // 4)
         payload["max_tokens"] = total
     closing = capability.get("closing_tokens", 1)
@@ -26,7 +34,6 @@ def bound(active, payload: dict, reasoning: str = "auto") -> dict:
     if capability.get("mechanism") == "mlx_vlm":
         payload["thinking_start_token"] = capability["start_sequence"]
         payload["thinking_end_token"] = capability["end_sequence"]
-    native_default = profile.get("capabilities", {}).get("reasoning", {}).get("default")
     if reasoning == "off" or (reasoning == "auto" and native_default == "off"):
         payload[field] = 0
         return payload

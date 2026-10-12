@@ -58,7 +58,7 @@ def test_configuration_auth_validation_and_owner_isolation(surface):
     ]
     for values in (
         {"reasoning": "max"},
-        {"max_tokens": 1024},
+        {"max_tokens": 0},
         {"top_k": 2.5},
         {"device_access": True},
     ):
@@ -68,6 +68,17 @@ def test_configuration_auth_validation_and_owner_isolation(surface):
             ).status_code
             == 422
         )
+
+
+def test_saved_reply_ceiling_survives_a_smaller_runtime_window(surface):
+    client, _ = surface
+    response = client.post('/api/inference', headers={'authorization': 'desktop'},
+                           json={'values': {'max_tokens': 4096}})
+    assert response.status_code == 200
+    assert client.get('/api/inference', headers={'authorization': 'desktop'}).json()[
+        'saved']['defaults']['model:/model']['max_tokens'] == 4096
+    assert client.post('/api/inference/preview', headers={'authorization': 'desktop'},
+                       json={'values': {'max_tokens': 4096}}).json()['max_tokens'] == 1023
 
 
 def test_native_delivery_and_preferences_are_desktop_only(surface):

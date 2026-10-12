@@ -42,13 +42,21 @@ def test_effort_bounds_reasoning_and_leaves_answer_space(level, expected):
 
 
 def test_budget_scales_with_model_runtime_and_user_reply_allowance():
-    assert model_payload(active(context=4096), [])["thinking_budget_tokens"] == 128
-    assert model_payload(active(context=8192), [])["thinking_budget_tokens"] == 256
+    assert model_payload(active(context=4096), [], inference={"reasoning": "high"})[
+        "thinking_budget_tokens"] == 512
+    assert model_payload(active(context=8192), [], inference={"reasoning": "high"})[
+        "thinking_budget_tokens"] == 1024
     specified = model_payload(active(), [], inference={"max_tokens": 512})
     assert specified["thinking_budget_tokens"] == 64
     explicit = model_payload(active(), [], max_tokens=512,
                              inference={"reasoning": "high", "reasoning_budget": 80})
     assert explicit["thinking_budget_tokens"] == 80
+
+
+def test_auto_preserves_unbounded_native_default_without_inventing_a_reply_ceiling():
+    payload = model_payload(active('gguf', context=131072), [{'role': 'user', 'content': 'hello'}])
+    assert 'max_tokens' not in payload
+    assert 'thinking_budget_tokens' not in payload
 
 
 def test_explicit_limit_and_off_are_authoritative():
@@ -92,7 +100,7 @@ def test_vlm_uses_its_native_budget_field_and_tokenizer_markers():
     }
     model.inference_profile["capabilities"]["reasoning"]["default"] = "off"
     auto = model_payload(model, [], max_tokens=1024)
-    assert auto["thinking_budget"] == 0
+    assert "thinking_budget" not in auto
     assert "enable_thinking" not in auto
     high = model_payload(model, [], max_tokens=1024, inference={"reasoning": "high"})
     assert high["thinking_budget"] == 512

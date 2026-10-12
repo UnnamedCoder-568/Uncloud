@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { LookupSession, MAX_ROUNDS, findLookups, initialWebQuery, resultsTurn, stripLookups } from './lookup';
+import { LookupSession, MAX_ROUNDS, findLookups, initialWebQuery, initialWebLookup, wantsPictures, resultsTurn, stripLookups } from './lookup';
 
 describe('finding lookups', () => {
   it('finds the plain form', () => {
@@ -95,6 +95,24 @@ describe('picture lookups', () => {
 
 
 describe('search before generation', () => {
+  it('does not route greetings with temporal words to outside tools', () => {
+    for (const text of ['How are we today?', 'How are you today?', 'Good morning!',
+      'Hello, how is it going today?', 'How are we doing this morning?',
+      'How are we today? Answer in one sentence.',
+      'What is your current context?', 'Summarize the latest message in this chat']) {
+      expect(initialWebQuery(text, ['What are the latest iPhone specs?'])).toBeNull();
+    }
+  });
+  it('reads an explicitly supplied source directly, without a search or model pass', () => {
+    expect(initialWebLookup('Read https://example.org/specs and summarize it'))
+      .toEqual({ kind: 'read', argument: 'https://example.org/specs' });
+  });
+  it('does not inject image tools just because image support is enabled', () => {
+    expect(wantsPictures('Hello, how are you?')).toBe(false);
+    expect(wantsPictures('Explain image compression')).toBe(false);
+    expect(wantsPictures('Draw a diagram of how a transformer works')).toBe(true);
+    expect(wantsPictures('Show me a photo of this building')).toBe(true);
+  });
   it('routes the reported specification wording before invoking the model', () => {
     expect(initialWebQuery('Ok. So, iPhone 18. tell me the specs'))
       .toBe('Ok. So, iPhone 18. tell me the specs');

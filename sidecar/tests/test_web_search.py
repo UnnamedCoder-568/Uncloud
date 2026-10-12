@@ -97,6 +97,51 @@ def test_search_reads_pages_and_reports_blocked_sources(monkeypatch):
     assert 'https://example.org/soil' in result
 
 
+def test_working_provider_does_not_wait_for_blocked_provider(monkeypatch):
+    import asyncio
+
+    import httpx
+
+    from uncloud_engine.agent import tools
+
+    cancelled = []
+    async def respond(request):
+        if request.url.host == 'lite.duckduckgo.com':
+            try:
+                await asyncio.sleep(60)
+            finally:
+                cancelled.append(True)
+        return httpx.Response(200, text='<rss><channel><item><title>iPhone specifications</title>'
+            '<link>https://apple.com/iphone/</link></item></channel></rss>')
+    client = httpx.AsyncClient
+    monkeypatch.setattr(tools.httpx, 'AsyncClient',
+        lambda **kwargs: client(transport=httpx.MockTransport(respond), **kwargs))
+    async def check():
+        return await asyncio.wait_for(tools._search_snippets('iPhone specifications'), timeout=1)
+    assert 'apple.com/iphone' in asyncio.run(check())
+    assert cancelled == [True]
+
+
+def test_search_failure_has_only_one_topic_fallback(monkeypatch):
+    import asyncio
+
+    import httpx
+    import pytest
+
+    from uncloud_engine.agent import tools
+
+    calls = []
+    def respond(request):
+        calls.append(str(request.url))
+        return httpx.Response(403)
+    client = httpx.AsyncClient
+    monkeypatch.setattr(tools.httpx, 'AsyncClient',
+        lambda **kwargs: client(transport=httpx.MockTransport(respond), **kwargs))
+    with pytest.raises(RuntimeError, match='could not return relevant sources'):
+        asyncio.run(tools._search_snippets('latest iPhone 18 Pro specs'))
+    assert len(calls) == 3
+
+
 def test_excerpts_include_relevant_content_beyond_header():
     from uncloud_engine.agent.tools import _page_excerpts
     page = 'Navigation ' * 900 + '\nBattery capacity is 5000 mAh. Charging takes 40 minutes.'
