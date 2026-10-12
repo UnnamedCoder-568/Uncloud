@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, apiPost } from './sidecar';
 import { onLibraryChange } from './library-changed';
+import { isSocialGreeting } from './lookup';
 
 export type InferenceValues = Record<string, number | string | boolean | string[] | Record<string, unknown>>;
 export interface InferenceInfo {
@@ -11,6 +12,7 @@ export interface InferenceInfo {
     mode_parameters?: Record<string, Record<string, number>>;
     explicit_parameters?: Record<string, number>;
     capabilities: { fields: string[]; backend_version: string; template: string;
+      runtime_defaults?: { max_tokens?: number };
       reasoning: { levels: string[]; explanation: string; mechanism: string;
         budget?: { mechanism: string; closing_tokens: number } } };
   } };
@@ -18,6 +20,16 @@ export interface InferenceInfo {
 export const getInference = () => api<InferenceInfo>('/api/inference');
 export const saveInference = (values: InferenceValues, preset = '', scope = 'model', scope_id = '') =>
   apiPost<InferenceInfo['saved']>('/api/inference', { values, preset, scope, scope_id });
+
+/** Auto can use a discovered native non-thinking template for a plain greeting.
+ * No prompt rewrite, model pass or saved-setting mutation. Explicit controls,
+ * custom prompts, unsupported templates and developer raw mode remain native. */
+export function chatTurnInference(text: string, values: InferenceValues, levels: string[], raw = false): InferenceValues {
+  if (raw || (values.reasoning !== undefined && values.reasoning !== 'auto')
+      || values.reasoning_budget !== undefined || values.system_prompt !== undefined
+      || !levels.includes('off') || !isSocialGreeting(text)) return values;
+  return { ...values, reasoning: 'off' };
+}
 
 export function resolvedDefaults(report: InferenceInfo, modelPath?: string | null, conversationId?: string | null): InferenceValues {
   let legacy: InferenceValues = {};

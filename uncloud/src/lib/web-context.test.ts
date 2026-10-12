@@ -17,8 +17,14 @@ it('leaves evidence unchanged when the full request fits', async () => {
   expect(fitted.evidence).toBe('small evidence');
   expect(fitted.replyBudget).toBe(100);
 });
-it('preserves an authoritative reply budget and refuses to truncate conversation', async () => {
-  await expect(fitWebContext('source', assemble, count, 1024)).rejects.toThrow('Compact');
+it('bounds a saved ceiling that exceeds the newly selected runtime window', async () => {
+  const fitted = await fitWebContext('source', assemble, count, 4096);
+  expect(fitted.replyBudget).toBe(256);
+  expect(fitted.usage.used! + fitted.replyBudget).toBeLessThanOrEqual(1024);
+});
+it('never drops conversation to make room for outside evidence', async () => {
+  const full = (text: string): ChatMessage[] => [{ role: 'user', content: 'intent '.repeat(200) + text }];
+  await expect(fitWebContext('source', full, count, 100)).rejects.toThrow('Compact');
 });
 it('does not guess when native token accounting fails', async () => {
   await expect(fitWebContext('source', assemble, async () => ({ used: null, limit: 1024, exact: false }))).rejects.toThrow('Could not check');

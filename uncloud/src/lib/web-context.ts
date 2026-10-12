@@ -12,7 +12,11 @@ export async function fitWebContext(
   if (original.used == null || !original.limit) {
     throw new Error('Could not check the model’s available context for web results. Your conversation is preserved.');
   }
-  const reserve = replyBudget ?? Math.max(1, Math.floor(original.limit / 4));
+  // Saved ceilings can exceed a newly selected runtime window. They are
+  // maxima, not reservations that should make every request impossible.
+  const automatic = Math.min(original.reply_limit ?? Math.max(1, Math.floor(original.limit / 4)),
+    Math.max(1, Math.floor(original.limit / 4)));
+  const reserve = replyBudget != null && replyBudget < original.limit ? replyBudget : automatic;
   const fits = (usage: ChatContextUsage) => usage.used != null && usage.used + reserve <= original.limit!;
   if (fits(original)) return { evidence, usage: original, replyBudget: reserve };
   const blocks = evidence.split(/\n\n+/);

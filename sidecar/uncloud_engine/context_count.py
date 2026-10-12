@@ -46,7 +46,12 @@ def _count_mlx(model_path: str, messages: list[dict], template_kwargs: dict | No
 async def count(active, messages: list[dict], inference: dict | None = None) -> int | None:
     from .inference_controls import apply
 
-    controls = apply(active, {}, inference)
+    # Input tokenization depends on the native template, not on sampling or
+    # output ceilings. A stale reply preference must not disable the meter.
+    template_controls = (
+        {"reasoning": inference["reasoning"]} if inference and "reasoning" in inference else {}
+    )
+    controls = apply(active, {}, template_controls)
     kwargs = controls.get("chat_template_kwargs", {})
     if active.engine == "mlx":
         if kwargs:

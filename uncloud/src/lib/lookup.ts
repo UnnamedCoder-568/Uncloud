@@ -145,8 +145,20 @@ export function resultsTurn(parts: { lookup: Lookup; text: string }[]): string {
 
 /** Explicit web requests and current-information questions search before generation.
  * The user's Web switch and the server permission gate still apply. */
+export function isSocialGreeting(text: string): boolean {
+  const social = text.trim()
+    .replace(/(?:answer|reply|respond)\s+(?:in\s+(?:one|a|1)\s+(?:short\s+)?sentence|briefly|concisely)[.!?\s]*$/i, '')
+    .replace(/[!?,.]+/g, ' ').replace(/\s+/g, ' ').trim();
+  return /^(?:(?:hello|hi|hey)\s+)?how\s+(?:are\s+(?:we|you|things)|is\s+(?:it|everything))\s*(?:(?:doing|going|feeling)\s*)?(?:today|this\s+(?:morning|afternoon|evening))?$|^(?:hello|hi|hey|good\s+(?:morning|afternoon|evening))$/i.test(social);
+}
+
 export function initialWebQuery(text: string, previous: string[] = []): string | null {
+  // Time words in social conversation or references to this chat are not a
+  // request for outside information. Do not revive an unrelated prior topic.
+  const localContext = /\b(?:your|this|our|my|the)\s+(?:current\s+|latest\s+)?(?:context|conversation|chat|message|reply|prompt)\b/i;
+  if (isSocialGreeting(text)) return null;
   const asks = /\b(search|look\s+up|check\s+(online|the\s+(web|internet))|browse)\b/i;
+  if (localContext.test(text) && !asks.test(text)) return null;
   const current = /\b(latest|current|today|recent|newest|released|release|prices?|news)\b/i;
   const specifications = /\b(specs?|specifications|technical\s+(details|characteristics))\b/i;
   // A request to write a specification is a drafting task, not a factual
@@ -163,4 +175,20 @@ export function initialWebQuery(text: string, previous: string[] = []): string |
   // from the user's earlier request, not the assistant's possibly false answer.
   const followup = retry.test(text) || contextual.test(text.trim());
   return (followup && history ? history : text).trim().slice(0, 500);
+}
+
+/** An explicitly supplied source can be read immediately, without search. */
+export function initialWebLookup(text: string, previous: string[] = []): Lookup | null {
+  const url = text.match(/https?:\/\/[^\s<>"'`]+/)?.[0]?.replace(/[.,;)]+$/, '');
+  if (url && /\b(read|summarize|inspect|check|look\s+at)\b/i.test(text)) {
+    return { kind: 'read', argument: url };
+  }
+  const query = initialWebQuery(text, previous);
+  return query ? { kind: 'search', argument: query } : null;
+}
+
+/** Availability of images is not a reason to inject their protocol every turn. */
+export function wantsPictures(text: string): boolean {
+  return /\b(draw|illustrate|sketch|render)\b/i.test(text)
+    || /\b(make|create|generate|show|find|display)\b.{0,50}\b(image|picture|photo|photograph|illustration|diagram|wallpaper|poster)\b/i.test(text);
 }

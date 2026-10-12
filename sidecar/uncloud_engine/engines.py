@@ -120,6 +120,11 @@ class EngineManager:
                             )
                             if isinstance(effective, int) and effective > 0:
                                 active.context_limit = min(active.context_limit, effective)
+                            predicted = response.json().get("default_generation_settings", {}).get(
+                                "params", {}).get("n_predict")
+                            if isinstance(predicted, int) and predicted > 0:
+                                inference_profile["capabilities"].setdefault(
+                                    "runtime_defaults", {})["max_tokens"] = predicted
                             # Count this model's native boundary once at load.
                             # Never assume every tokenizer closes thinking in one token.
                             budget = inference_profile["capabilities"]["reasoning"].get("budget")

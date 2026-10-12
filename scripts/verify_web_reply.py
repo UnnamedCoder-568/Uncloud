@@ -32,6 +32,16 @@ def contains_expected(answer, value):
     return str(value).casefold() in normalized.casefold()
 
 
+def correct_probability(answer, expected):
+    """Reject a contradictory stated result, but allow intermediate fractions."""
+    normalized = re.sub(r"\\frac\s*\{\s*(\d+)\s*\}\s*\{\s*(\d+)\s*\}",
+                        r"\1/\2", answer).replace('**', '').replace('$', '')
+    stated = re.search(r"(?:the probability is|answer\s*:)\s*(\d+\s*/\s*\d+)",
+                       normalized, re.IGNORECASE)
+    return contains_expected(answer, expected) and (
+        stated is None or stated.group(1).replace(' ', '') == expected)
+
+
 def other_models(owned_pid=None):
     rows = subprocess.check_output(["ps", "-axo", "pid=,ppid=,command="], text=True)
     return [int(parts[0]) for row in rows.splitlines()
@@ -48,6 +58,7 @@ async def measure(active, case, maximum, deadline):
         active = dataclasses.replace(active, inference_profile=profile)
     messages = case["messages"]
     inference = {**({} if case.get("unseeded") else {"seed": 42}), **case.get("inference", {})}
+    maximum = None if case.get("use_default_output") else maximum
     payload = model_payload(active, messages, max_tokens=maximum, inference=inference)
     started = time.perf_counter()
     first = None
@@ -104,6 +115,7 @@ async def measure(active, case, maximum, deadline):
     finish = next(((f.get("choices") or [{}])[0].get("finish_reason") for f in reversed(frames)
                    if (f.get("choices") or [{}])[0].get("finish_reason")), None)
     expected = case.get("expected", [])
+    probability = case.get("expected_probability")
     return {
         "case": case["name"], "payload": payload, "status": run.status, "error": run.error,
         "first_frame_ms": first, "first_answer_ms": final_first,
@@ -115,7 +127,9 @@ async def measure(active, case, maximum, deadline):
         "checks": ({"cancelled": run.status == "cancelled", "stream_started": first is not None}
                    if case.get("cancel_after_first_token") else {
                        "final_answer": bool(answer.strip()), "finished": finish == "stop",
-                       "expected": all(contains_expected(answer, value) for value in expected)}),
+                       "expected": all(contains_expected(answer, value) for value in expected),
+                       **({"probability": correct_probability(answer, probability)}
+                          if probability else {})}),
         "expected_failure": bool(case.get("expected_failure")),
     }
 

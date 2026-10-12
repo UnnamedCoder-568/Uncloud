@@ -423,7 +423,7 @@ body {
 .training-start { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 20px 0; }
 @media (max-width: 600px) { .training-presets, .training-controls { grid-template-columns: minmax(0, 1fr); } .training-start { align-items: stretch; flex-direction: column; } }
 
-.chat-context-footer { display: flex; align-items: center; justify-content: flex-end; gap: 12px; min-height: 22px; padding: 3px 12px 0; font-size: 11px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.chat-context-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 12px; min-height: 22px; padding: 3px 12px 0; font-size: 11px; color: var(--text-3); font-variant-numeric: tabular-nums; }
 .chat-context-footer button, .chat-context-memory summary { cursor: pointer; color: var(--text-2); }
 .chat-context-footer button:hover, .chat-context-memory summary:hover { color: var(--text-1); }
 .chat-context-footer button:disabled { opacity: .5; cursor: default; }

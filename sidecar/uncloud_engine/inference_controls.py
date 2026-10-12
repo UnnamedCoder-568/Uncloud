@@ -6,10 +6,12 @@ Capabilities are established at model load; unsupported overrides are errors.
 
 from __future__ import annotations
 
+import ast
 import contextlib
 import importlib.metadata
 import json
 import math
+import os
 import re
 import subprocess
 from functools import lru_cache
@@ -163,6 +165,31 @@ def _native_budget_support(executable: str, stamp: int, size: int) -> bool:
     return False
 
 
+def native_output_default(source: str, constant: str = "") -> int | None:
+    """Read a declared default without importing a model runtime or executing it."""
+    try:
+        tree = ast.parse(source)
+        for node in ast.walk(tree):
+            value = None
+            if constant and isinstance(node, ast.Assign) and any(
+                isinstance(target, ast.Name) and target.id == constant for target in node.targets
+            ):
+                value = ast.literal_eval(node.value)
+            elif (not constant and isinstance(node, ast.Call)
+                  and isinstance(node.func, ast.Attribute)
+                  and node.func.attr == "add_argument" and any(
+                    isinstance(arg, ast.Constant) and arg.value == "--max-tokens"
+                    for arg in node.args
+                  )):
+                value = next((ast.literal_eval(kw.value) for kw in node.keywords
+                              if kw.arg == "default"), None)
+            if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+                return value
+    except (SyntaxError, ValueError, TypeError):
+        pass
+    return None
+
+
 def discover(model_path: str, engine: str, *, native: bool = False) -> dict:
     """One-time discovery. Template variables, never filename guesses, enable thinking."""
     path = Path(model_path)
@@ -193,11 +220,15 @@ def discover(model_path: str, engine: str, *, native: bool = False) -> dict:
     mlx_budget = False
     vlm_budget = False
     vlm_tokens = None
+    runtime_defaults = {}
     if engine == "mlx":
         try:
             dist = importlib.metadata.distribution("mlx-lm")
             version = dist.version
             source = Path(dist.locate_file("mlx_lm/server.py")).read_text()
+            output_default = native_output_default(source)
+            if output_default:
+                runtime_defaults["max_tokens"] = output_default
             from .mlx_server import compatible_source
 
             mlx_budget = compatible_source(source)
@@ -216,6 +247,13 @@ def discover(model_path: str, engine: str, *, native: bool = False) -> dict:
             source = Path(dist.locate_file("mlx_vlm/server/generation.py")).read_text()
             normalization = Path(dist.locate_file(
                 "mlx_vlm/server/request_normalization.py")).read_text()
+            with contextlib.suppress(OSError, ValueError):
+                generation = Path(dist.locate_file("mlx_vlm/generate/ar.py")).read_text()
+                output_default = native_output_default(generation, "DEFAULT_MAX_TOKENS")
+                if output_default and "MLX_VLM_MAX_TOKENS" in schema:
+                    output_default = int(os.environ.get("MLX_VLM_MAX_TOKENS", output_default))
+                if output_default and output_default > 0:
+                    runtime_defaults["max_tokens"] = output_default
             fields = {key for key in CORE if f"{key}:" in schema and f'"{key}"' in source}
             vlm_budget = all(marker in source for marker in (
                 "def _make_thinking_budget_criteria", 'kw["thinking_budget"]',
@@ -298,6 +336,7 @@ def discover(model_path: str, engine: str, *, native: bool = False) -> dict:
         },
         "family": family,
         "backend_version": version,
+        "runtime_defaults": runtime_defaults,
         "template_available": bool(template),
         "template": template,
         "optimizations": "Native backend configuration; no speculative flags enabled.",
@@ -326,10 +365,11 @@ def apply(active, payload: dict, overrides: dict | None = None) -> dict:
     unsupported = set(values) - supported
     if unsupported:
         raise ValueError("Unsupported by this backend: " + ", ".join(sorted(unsupported)))
-    if "max_tokens" in values and values["max_tokens"] >= getattr(
-        active, "context_limit", float("inf")
-    ):
-        raise ValueError("Reply budget must leave room for input in the effective context window.")
+    # A maximum is a ceiling, not an allocation of the entire context. Keep
+    # the saved preference; expose the runtime-bounded value in preview/send.
+    limit = getattr(active, "context_limit", None)
+    if "max_tokens" in values and isinstance(limit, int) and limit > 1:
+        values["max_tokens"] = min(values["max_tokens"], limit - 1)
     if active.engine == "gguf" and "repetition_penalty" in values:
         values["repeat_penalty"] = values.pop("repetition_penalty")
     payload.update(values)

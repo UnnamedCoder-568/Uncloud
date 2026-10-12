@@ -1,5 +1,5 @@
 import InferenceControls from '../components/InferenceControls';
-import { useInference } from '../lib/inference';
+import { chatTurnInference, useInference } from '../lib/inference';
 import AutoGrowTextarea from "../components/AutoGrowTextarea";
 import { useDismiss } from '../lib/useDismiss';
 import ActivityOrb from '../components/ActivityOrb';
@@ -18,7 +18,7 @@ import { useLibraryVersion } from '../lib/library-changed';
 import { splitThinking } from '../lib/thinking';
 import { Sentences, useTalk } from '../lib/useTalk';
 import { cleanReply } from '../lib/reply';
-import { LookupSession, describe, initialWebQuery, resultsTurn, stripLookups } from '../lib/lookup';
+import { LookupSession, describe, initialWebLookup, wantsPictures, resultsTurn, stripLookups } from '../lib/lookup';
 import { compactAvailable, contextMessages } from '../lib/context';
 import { fitWebContext } from '../lib/web-context';
 import { printerSound } from '../lib/printer-sound';
@@ -65,6 +65,8 @@ export default function ChatView() {
   //  with empty conversations.
   const [conversationId, setConversationId] = useState<string | null>(null);
   const inference = useInference(activeModel?.path, conversationId);
+  const reasoningLevels = inference.info?.active?.model_path === activeModel?.path
+    ? inference.info?.active?.profile.capabilities.reasoning.levels ?? [] : [];
   const systemPrompt = useCallback((options: Parameters<typeof chatSystemPrompt>[0]) =>
     typeof inference.values.system_prompt === 'string' ? inference.values.system_prompt : chatSystemPrompt(options),
     [inference.values.system_prompt]);
@@ -510,11 +512,17 @@ export default function ChatView() {
       ];
       let fittedReplyBudget: number | undefined;
       const lookups = new LookupSession();
-      const replyPrompt = () => systemPrompt({ pictures, web, manner, webPhase: lookups.phase });
+      const requestedLookup = web && !rawMode ? initialWebLookup(text,
+        messages.filter(m => m.role === 'user').map(m => m.content)) : null;
+      const requestedPictures = pictures && !rawMode && wantsPictures(text);
+      const turnInference = chatTurnInference(text, inference.values,
+        reasoningLevels, rawMode);
+      const replyPrompt = () => systemPrompt({ pictures: requestedPictures, web, manner,
+        webPhase: requestedLookup ? lookups.phase : undefined });
       const fitEvidence = async (evidence: string, assemble: (text: string) => ChatMessage[]) => {
         const fitted = await fitWebContext(evidence,
           value => contextMessages(assemble(value), replyPrompt(), compactSummary, 0, rawMode),
-          turns => countChatContext(turns, inference.values),
+          turns => countChatContext(turns, turnInference),
           inference.values.max_tokens !== undefined ? Number(inference.values.max_tokens) : undefined);
         if (epoch !== generationEpoch.current || controller.signal.aborted) throw new Error('Reply stopped');
         setContextUsage(fitted.usage);
@@ -524,18 +532,18 @@ export default function ChatView() {
       //: Hands-free only: the reply is cut into sentences as it is written so
       //  each can be spoken while the rest is still coming.
       const sentences = say ? new Sentences() : null;
-      const query = web && !rawMode ? initialWebQuery(text, messages.filter((m) => m.role === 'user').map((m) => m.content)) : null;
-      if (query) {
-        const lookup = { kind: 'search' as const, argument: query };
+      if (requestedLookup) {
+        const lookup = requestedLookup;
         setLooking([describe(lookup)]);
         let evidence: string;
-        try { evidence = (await webSearch(query)).results; }
+        try { evidence = lookup.kind === 'read' ? (await webRead(lookup.argument)).text
+          : (await webSearch(lookup.argument)).results; }
         catch (e) {
           throw new Error(`Web lookup failed, so I could not verify this answer. ${e instanceof Error ? e.message : String(e)}`);
         } finally { setLooking([]); }
         if (epoch !== generationEpoch.current || controller.signal.aborted) return;
         setLooking([]);
-        setConsulted([query]);
+        setConsulted([lookup.argument]);
         lookups.record([lookup]);
         // Keep the evidence beside the latest user request to suit local models
         // that require alternating user/assistant turns.
@@ -557,7 +565,7 @@ export default function ChatView() {
           controller.signal,
           fittedReplyBudget,
           { path: activeModel.path, engine: activeModel.engine, adapter: activeAdapter,
-            inference: { ...inference.values, ...(fittedReplyBudget ? { max_tokens: fittedReplyBudget } : {}) }, conversationId: sendingConversationId },
+            inference: { ...turnInference, ...(fittedReplyBudget ? { max_tokens: fittedReplyBudget } : {}) }, conversationId: sendingConversationId },
         )) {
           if (epoch !== generationEpoch.current) return;
           if (chunk.kind === 'text') {
@@ -593,7 +601,8 @@ export default function ChatView() {
         // Both switches hold whatever the model wrote. A model told it is
         // offline will occasionally ask to search anyway, and the setting has
         // to win that argument rather than merely take part in it.
-        const plan = web && !rawMode ? lookups.next(full, pictures) : { kind: 'done' as const, lookups: [] };
+        const plan = web && !rawMode && (requestedLookup || requestedPictures)
+          ? lookups.next(full, requestedPictures) : { kind: 'done' as const, lookups: [] };
         if (plan.kind === 'done') break;
         if (plan.kind === 'answer') {
           setMessages(current => current.map((message, index) => index === assistantIndex
@@ -698,7 +707,7 @@ export default function ChatView() {
       // Fire and forget: the reply is already readable, and a render may take
       // minutes. Pass the freshly minted id explicitly; state has not rerendered
       // yet on the first turn, and closing the phone must not orphan the file.
-      if (!rawMode) void renderPreviews(assistantIndex, rawReply, epoch, id);
+      if (requestedPictures) void renderPreviews(assistantIndex, rawReply, epoch, id);
 
       // The tail: an answer that ends without punctuation, or a last clause
       // too short to have been spoken on its own.
@@ -795,17 +804,24 @@ export default function ChatView() {
     if (!activeModel || generating || compacting) return;
     let cancelled = false;
     const timer = setTimeout(() => {
+      const currentText = input.trim() || [...messages].reverse().find(m => m.role === 'user')?.content || '';
+      const needsWeb = web && !rawMode && initialWebLookup(currentText,
+        messages.filter(m => m.role === 'user').map(m => m.content));
       const turns = contextMessages([
         ...messages,
         ...(input.trim() ? [{ role: 'user' as const, content: input.trim() }] : []),
-      ], systemPrompt({ pictures, web, manner }), compactSummary, compactedThrough, rawMode);
-      void countChatContext(turns, inference.values).then((usage) => {
+      ], systemPrompt({ pictures: pictures && wantsPictures(currentText), web, manner,
+        webPhase: needsWeb ? 'results' : undefined }), compactSummary, compactedThrough, rawMode);
+      const values = chatTurnInference(currentText, inference.values,
+        inference.info?.active?.model_path === activeModel.path
+          ? inference.info.active.profile.capabilities.reasoning.levels : [], rawMode);
+      void countChatContext(turns, values).then((usage) => {
         if (!cancelled) setContextUsage(usage);
       }).catch(() => { if (!cancelled) setContextUsage(null); });
     }, 550);
     return () => { cancelled = true; clearTimeout(timer); };
   }, [activeModel, messages, input, compactSummary, compactedThrough, generating,
-      compacting, pictures, web, manner, rawMode, inference.values, systemPrompt]);
+      compacting, pictures, web, manner, rawMode, inference.values, inference.info, systemPrompt]);
 
   async function compactConversation() {
     if (!activeModel || generating || compacting || !messages.length) return;
@@ -819,7 +835,7 @@ export default function ChatView() {
       });
       const summary = result.summary.trim();
       if (!summary) throw new Error('The model returned an empty summary.');
-      const system = systemPrompt({ pictures, web, manner });
+      const system = systemPrompt({ pictures: false, web: false, manner });
       const [before, after] = await Promise.all([
         countChatContext(contextMessages(messages, system, compactSummary, compactedThrough), inference.values),
         countChatContext(contextMessages(messages, system, summary, through), inference.values),
@@ -947,7 +963,7 @@ export default function ChatView() {
                       const windows = { ...contextWindows, [activeModel.path]: Number(contextLength) };
                       setContextWindows(windows);
                       localStorage.setItem('uncloud.chat.contextWindows', JSON.stringify(windows));
-                      setContextUsage(await countChatContext(contextMessages(messages, systemPrompt({ pictures, web, manner }), compactSummary, compactedThrough, rawMode)));
+                      setContextUsage(await countChatContext(contextMessages(messages, systemPrompt({ pictures: false, web: false, manner }), compactSummary, compactedThrough, rawMode)));
                     } catch (error) { setNetworkError(error instanceof Error ? error.message : String(error)); }
                     finally { setLoadingModel(false); }
                   }}>Apply context window</button>
@@ -1175,6 +1191,9 @@ export default function ChatView() {
       </div>}
       {activeModel && (contextUsage?.limit || compactSummary) && (
         <div className="chat-context-footer">
+          {chatTurnInference(input || [...messages].reverse().find(m => m.role === 'user')?.content || '',
+            inference.values, reasoningLevels, rawMode) !== inference.values &&
+            <span className="mr-auto" title="Auto uses the model’s native non-thinking template for this greeting. Choose explicit effort to override.">Auto · quick greeting</span>}
           {compactSummary && <details className="chat-context-memory">
             <summary>Compacted memory</summary>
             <div>{compactSummary}</div>

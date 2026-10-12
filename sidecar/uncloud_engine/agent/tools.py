@@ -999,7 +999,7 @@ async def _search_snippets(query: str) -> str:
         ),
         "Accept-Language": "en-US,en;q=0.9",
     }
-    async with httpx.AsyncClient(follow_redirects=True, timeout=15, headers=headers) as client:
+    async with httpx.AsyncClient(follow_redirects=True, timeout=8, headers=headers) as client:
         attempts = [
             ("https://lite.duckduckgo.com/lite/", {"q": query}, _parse_web_search),
             ("https://www.bing.com/search", {"format": "rss", "q": query}, _parse_bing_rss),
@@ -1012,30 +1012,34 @@ async def _search_snippets(query: str) -> str:
             attempts.append(
                 ("https://www.bing.com/search", {"format": "rss", "q": compact}, _parse_bing_rss)
             )
-        if len(topic) >= 2:
-            attempts.append(
-                (
-                    "https://www.bing.com/search",
-                    {"format": "rss", "q": " ".join(f'"{word}"' for word in topic)},
-                    _parse_bing_rss,
-                )
-            )
-        if len(topic) >= 3:
-            attempts.append(
-                (
-                    "https://www.bing.com/search",
-                    {"format": "rss", "q": f'"{topic[0]} {topic[1]}" {topic[2]}'},
-                    _parse_bing_rss,
-                )
-            )
         failures = []
-        for url, params, parse in attempts:
-            try:
+
+        async def fetch(attempt, deadline):
+            url, params, parse = attempt
+            async with asyncio.timeout(deadline):
                 resp = await client.get(url, params=params)
                 resp.raise_for_status()
                 return _relevant_search_results(query, parse(resp.text))
-            except (httpx.HTTPError, RuntimeError) as exc:
-                failures.append(str(exc))
+
+        # Use the first relevant provider response; a slow/blocked provider must
+        # not delay a working one. Close every losing request before returning.
+        pending = [asyncio.create_task(fetch(attempt, 8)) for attempt in attempts[:2]]
+        try:
+            for response in asyncio.as_completed(pending):
+                try:
+                    return await response
+                except (httpx.HTTPError, RuntimeError, TimeoutError) as exc:
+                    failures.append(str(exc) or "Search provider timed out.")
+        finally:
+            for task in pending:
+                task.cancel()
+            await asyncio.gather(*pending, return_exceptions=True)
+        # One topic-only fallback, rather than several serial query variations.
+        if len(attempts) > 2:
+            try:
+                return await fetch(attempts[2], 6)
+            except (httpx.HTTPError, RuntimeError, TimeoutError) as exc:
+                failures.append(str(exc) or "Search provider timed out.")
         raise RuntimeError(
             "Search could not return relevant sources. This does not mean the topic or "
             "product does not exist. Try a more specific query or an official page URL. "

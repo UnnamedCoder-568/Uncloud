@@ -56,6 +56,22 @@ def test_gguf_native_counter_accepts_zero_without_falling_back(monkeypatch):
     assert requests == ["/v1/chat/completions/input_tokens"]
 
 
+def test_input_counter_is_independent_of_an_oversized_reply_ceiling(monkeypatch):
+    def handler(request):
+        body = json.loads(request.content)
+        assert 'max_tokens' not in body
+        assert body['chat_template_kwargs'] == {'enable_thinking': False}
+        return httpx.Response(200, json={'input_tokens': 15})
+    client = httpx.AsyncClient
+    monkeypatch.setattr(context_count.httpx, 'AsyncClient',
+        lambda **kw: client(transport=httpx.MockTransport(handler), **kw))
+    active = SimpleNamespace(engine='gguf', base_url='http://native', context_limit=1024,
+        inference_profile={'capabilities': {'fields': ['max_tokens'], 'reasoning': {
+            'mechanism': 'template_toggle', 'levels': ['auto', 'off', 'high']}}})
+    assert asyncio.run(context_count.count(active, [{'role': 'user', 'content': 'Hi'}],
+        {'max_tokens': 4096, 'reasoning': 'off'})) == 15
+
+
 def test_vlm_counts_native_prompt_and_preserves_thinking_and_images(monkeypatch):
     def handler(request):
         assert request.url.path == '/v1/responses/input_tokens'

@@ -100,6 +100,7 @@ export default function InferenceControls({ info, values, onChange, onRefresh, c
         {LABELS[key]}<input className="input" type="number" step={['seed', 'top_k', 'max_tokens', 'reasoning_budget'].includes(key) ? '1' : 'any'}
           value={values[key] === undefined ? '' : String(values[key])}
           placeholder={key === 'reasoning_budget' ? `Auto · ${effectiveThinking ?? 'effort level'}`
+            : key === 'max_tokens' ? `Auto · ${active.profile.max_output_tokens ?? cap.runtime_defaults?.max_tokens ?? 'native stop'}`
             : recommendations[key] === undefined ? 'Auto · backend' : `Auto · ${recommendations[key]}`}
           onChange={e => update(key, e.target.value === '' ? undefined : Number(e.target.value))} />
       </label>)}</div>
@@ -108,8 +109,11 @@ export default function InferenceControls({ info, values, onChange, onRefresh, c
           onChange={e => update('stop', e.target.value ? e.target.value.split('\n').filter(Boolean) : undefined)} />
       </label>}
     </details>
+    {typeof values.max_tokens === 'number' && values.max_tokens >= active.context_limit &&
+      <p className="faint text-[11px]" role="status">The saved reply ceiling exceeds this runtime’s context window.
+        {' '}The effective ceiling is {active.context_limit - 1} tokens or less. Your saved value is preserved.</p>}
     <details><summary className="cursor-pointer text-[var(--text-dim)]">System prompt</summary>
-      <p className="text-[11px] faint mt-2">Custom replaces the Chat prompt. An empty custom prompt sends no system message. Chisel retains its required tool contract.</p>
+      <p className="text-[11px] faint mt-2">Ordinary Chat adds no default system message. Custom replaces optional style or lookup instructions; an empty custom prompt sends none. Chisel retains its required tool contract.</p>
       <label className="flex gap-2 mt-2"><input type="checkbox" checked={values.system_prompt !== undefined}
         onChange={e => update('system_prompt', e.target.checked ? '' : undefined)} /> Use custom prompt</label>
       {values.system_prompt !== undefined && <textarea className="input mt-2" rows={4} value={String(values.system_prompt)}

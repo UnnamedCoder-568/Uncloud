@@ -2094,7 +2094,11 @@ async def chat_context(body: ContextCountBody) -> dict:
         used = await count(active, body.messages, body.inference)
     except Exception:  # noqa: BLE001 - the meter must not break inference
         used = None
-    return {"used": used, "limit": active.context_limit, "exact": used is not None}
+    profile = getattr(active, "inference_profile", {})
+    reply_limit = profile.get("max_output_tokens") or profile.get("capabilities", {}).get(
+        "runtime_defaults", {}).get("max_tokens")
+    return {"used": used, "limit": active.context_limit, "exact": used is not None,
+            "reply_limit": reply_limit}
 
 
 class ChatBody(BaseModel):
@@ -2272,10 +2276,10 @@ async def start_chat_run(body: ChatBody, request: Request) -> dict:
     ):
         raise HTTPException(status_code=409, detail="Load the selected text model to continue.")
     from .inference_controls import apply
-    with user_events.lock:
-        defaults = (user_events.data.get("inference", {})
-                    .get(principal_of(request), {}).get("defaults", {}))
-        if body.inherit_defaults:
+    if body.inherit_defaults:
+        with user_events.lock:
+            defaults = (user_events.data.get("inference", {})
+                        .get(principal_of(request), {}).get("defaults", {}))
             body.inference = {**defaults.get(f"model:{active.model_path}", {}),
                 **defaults.get(f"project:{body.project_id}", {}),
                 **defaults.get(f"conversation:{body.conversation_id}", {}), **body.inference}

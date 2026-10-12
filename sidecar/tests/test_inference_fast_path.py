@@ -179,7 +179,7 @@ def test_waiting_client_wakes_on_first_frame(monkeypatch):
     asyncio.run(exercise())
 
 
-def test_output_budget_uses_metadata_then_runtime_window_with_user_override(tmp_path):
+def test_output_budget_uses_metadata_then_native_default_with_user_override(tmp_path):
     (tmp_path / "generation_config.json").write_text('{"max_new_tokens": 4096}')
     model, profile = inference_profile.load(str(tmp_path), "mlx")
     active = SimpleNamespace(
@@ -189,13 +189,40 @@ def test_output_budget_uses_metadata_then_runtime_window_with_user_override(tmp_
     assert model_payload(active, [], max_tokens=3072)["max_tokens"] == 3072
     profile["max_output_tokens"] = None
     active.context_limit = 32768
-    assert model_payload(active, [])["max_tokens"] == 8192
+    assert 'max_tokens' not in model_payload(active, [])
+    profile['capabilities'] = {'fields': ['max_tokens'], 'reasoning': {'levels': ['auto']},
+                               'runtime_defaults': {'max_tokens': 512}}
+    assert model_payload(active, [])['max_tokens'] == 512
+
+
+def test_native_output_default_reads_literals_without_executing_source():
+    from uncloud_engine.inference_controls import native_output_default
+    source = 'raise RuntimeError("Never execute")\nparser.add_argument("--max-tokens", default=768)'
+    assert native_output_default(source) == 768
+    assert native_output_default('parser.add_argument("--max-tokens", default=read_file())') is None
+    assert native_output_default('DEFAULT_MAX_TOKENS = 2048', 'DEFAULT_MAX_TOKENS') == 2048
+    assert native_output_default('DEFAULT_MAX_TOKENS = True', 'DEFAULT_MAX_TOKENS') is None
 
 
 def test_gguf_automatic_budget_uses_native_eos_not_quarter_context():
     active = SimpleNamespace(engine="gguf", inference_profile={}, context_limit=1024)
     assert "max_tokens" not in model_payload(active, [{"role": "user", "content": "Hi"}])
     assert model_payload(active, [], max_tokens=256)["max_tokens"] == 256
+
+
+def test_reply_ceiling_cannot_block_a_greeting_in_a_smaller_runtime_window():
+    active = SimpleNamespace(engine='gguf', inference_profile={}, context_limit=1024)
+    messages = [{'role': 'user', 'content': 'How are we today?'}]
+    payload = model_payload(active, messages, inference={'max_tokens': 4096})
+    assert payload['messages'] is messages
+    assert payload['max_tokens'] == 1023
+
+
+def test_auto_uses_cached_backend_output_default_not_a_large_share_of_context():
+    active = SimpleNamespace(engine='mlx', context_limit=57344,
+        inference_profile={'capabilities': {'fields': ['max_tokens'],
+            'runtime_defaults': {'max_tokens': 512}, 'reasoning': {'levels': ['auto']}}})
+    assert model_payload(active, [{'role': 'user', 'content': 'Hi'}])['max_tokens'] == 512
 
 
 def test_backend_rejection_preserves_actual_reason_without_httpx_url(monkeypatch):
