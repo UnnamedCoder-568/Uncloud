@@ -1100,6 +1100,7 @@ def _search_query(query: str) -> str:
     text = re.sub(r"\b(what|where|when|how|it|let)'s\b", r"\1", text, flags=re.I)
     text = re.sub(r"^.*?\b(?:check|search for|look up|find out)\s+", "", text, flags=re.I)
     noise = {
+        "so",
         "alrighty",
         "alright",
         "okay",
@@ -1131,6 +1132,7 @@ def _search_query(query: str) -> str:
 
 def _search_terms(query: str) -> list[str]:
     ignored = {
+        "so",
         "the",
         "a",
         "an",
@@ -1227,9 +1229,13 @@ def _parse_web_search(html: str) -> str:
     from html import unescape
 
     pattern = re.compile(
-        r'<a[^>]*class=["\'](?:result__a|result-link)["\'][^>]*href=["\']'
-        r'(?P<url>[^"\']+)["\'][^>]*>(?P<title>.*?)</a>'
-        r'.*?class=["\'](?:result__snippet|result-snippet)["\'][^>]*>'
+        # Attribute order and extra CSS classes vary between HTML and lite.
+        r'<a\b(?=[^>]*\bclass\s*=\s*["\'][^"\']*\b'
+        r'(?:result__a|result-link)\b[^"\']*["\'])'
+        r'(?=[^>]*\bhref\s*=\s*["\'](?P<url>[^"\']+)["\'])'
+        r'[^>]*>(?P<title>.*?)</a>'
+        r'.*?class\s*=\s*["\'][^"\']*\b'
+        r'(?:result__snippet|result-snippet)\b[^"\']*["\'][^>]*>'
         r"(?P<snippet>.*?)(?:</a>|</td>)",
         re.DOTALL | re.IGNORECASE,
     )

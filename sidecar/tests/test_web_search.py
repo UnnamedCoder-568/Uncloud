@@ -16,6 +16,33 @@ def test_parses_duckduckgo_lite_results() -> None:
     assert "A useful answer." in result
 
 
+def test_parses_live_lite_attribute_order_and_extra_classes() -> None:
+    # The provider puts href before class; HTML attribute order has no meaning.
+    html = """
+      <a rel="nofollow" href="https://www.apple.com/iphone-18-pro/specs/"
+         class='featured result-link'>iPhone 18 Pro - Technical Specifications</a>
+      <td class='result-snippet highlighted'>
+        View all technical specifications for <b>iPhone</b> <b>18</b> Pro.
+      </td>
+      <a href="https://example.org/iphone" class="result__a selected">Second source</a>
+      <a class="result__snippet">A second <b>useful</b> source.</a>
+    """
+    result = _parse_web_search(html)
+    assert "https://www.apple.com/iphone-18-pro/specs/" in result
+    assert "technical specifications for iPhone 18 Pro." in result
+    assert "Second source" in result
+    assert "A second useful source." in result
+    assert len(result.split("\n\n")) == 2
+
+
+def test_so_is_not_the_subject_of_a_conversational_query() -> None:
+    from uncloud_engine.agent.tools import _search_query, _search_terms
+
+    query = _search_query("So the new iPhone 18, What's it's specs?")
+    assert query == "new iPhone 18 specs"
+    assert _search_terms(query) == ["iphone", "18"]
+
+
 def test_refuses_an_empty_or_denial_page() -> None:
     try:
         _parse_web_search("Automated requests are denied")
