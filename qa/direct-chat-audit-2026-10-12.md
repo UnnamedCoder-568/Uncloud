@@ -72,6 +72,8 @@ Provider requests have an 8-second concurrent deadline and one 6-second topic fa
 
 ## Validation and remaining boundaries
 
+Search follow-up for v0.4.31: inspecting the actual provider responses found that DuckDuckGo had returned relevant results, but the reader assumed `class` came before `href`. Bing's query also retained conversational “So” and returned dictionary entries. Both failures reproduced in added tests. The reader now tolerates attribute order and extra classes, and the normalized query drops “So”. The same live query succeeded, including four destination reads, in 2.068 seconds. See `public-search-2026-10-12.json`. The earlier failure measurements above remain unchanged. This corrects the confirmed parsing/query bugs, not every possible public-provider availability failure.
+
 - Local CPU regression suite: **1,072 passed, 10 skipped**; skips concern unavailable platform/optional dependencies. Backend lint passed.
 - Frontend regression suite and production build passed. Existing frontend lint warnings and large-bundle warnings remain outside this inference fix.
 - Native examples cover Qwen, MiniCPM and Llama MLX files. Model metadata and native chat templates were preserved. Context/oversized saved-ceiling and source-fitting regression tests passed; existing structured compaction and retained-context tests remain included.
