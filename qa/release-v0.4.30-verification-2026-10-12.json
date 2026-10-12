@@ -1,0 +1,60 @@
+{
+  "release": "v0.4.30",
+  "commit": "21ddf303f233b02c034feedf31c8c1ffae5c555d",
+  "release_url": "https://github.com/UnnamedCoder-568/Uncloud/releases/tag/v0.4.30",
+  "published": true,
+  "workflow_url": "https://github.com/UnnamedCoder-568/Uncloud/actions/runs/38204428401",
+  "workflow_conclusion": "success",
+  "canonical_updater_version": "0.4.30",
+  "updater_platforms": {
+    "darwin-aarch64": {
+      "url": "https://github.com/UnnamedCoder-568/Uncloud/releases/download/v0.4.30/Uncloud-macOS-Apple-Silicon.app.tar.gz",
+      "signature_present": true
+    },
+    "linux-x86_64": {
+      "url": "https://github.com/UnnamedCoder-568/Uncloud/releases/download/v0.4.30/Uncloud-Linux-x64.AppImage",
+      "signature_present": true
+    },
+    "windows-x86_64": {
+      "url": "https://github.com/UnnamedCoder-568/Uncloud/releases/download/v0.4.30/Uncloud-Windows-x64.exe",
+      "signature_present": true
+    }
+  },
+  "download_checks": [
+    {
+      "name": "Uncloud-Windows-x64.exe",
+      "url": "https://github.com/UnnamedCoder-568/Uncloud/releases/download/v0.4.30/Uncloud-Windows-x64.exe",
+      "bytes": 26643850,
+      "http_status": 200
+    },
+    {
+      "name": "Uncloud-Linux-x64.AppImage",
+      "url": "https://github.com/UnnamedCoder-568/Uncloud/releases/download/v0.4.30/Uncloud-Linux-x64.AppImage",
+      "bytes": 104479224,
+      "http_status": 200
+    },
+    {
+      "name": "Uncloud-macOS-Apple-Silicon.dmg",
+      "url": "https://github.com/UnnamedCoder-568/Uncloud/releases/download/v0.4.30/Uncloud-macOS-Apple-Silicon.dmg",
+      "bytes": 24223568,
+      "http_status": 200
+    },
+    {
+      "name": "Uncloud-macOS-Apple-Silicon.app.tar.gz",
+      "url": "https://github.com/UnnamedCoder-568/Uncloud/releases/download/v0.4.30/Uncloud-macOS-Apple-Silicon.app.tar.gz",
+      "bytes": 24906824,
+      "http_status": 200
+    }
+  ],
+  "installed_mac_version": "0.4.29",
+  "installed_app_note": "No manual installation or GUI/Chrome interaction during this run. The published update must be applied in the app.",
+  "local_tests": {
+    "backend_passed": 1072,
+    "backend_skipped": 10,
+    "frontend_passed": 148,
+    "production_build": "passed",
+    "backend_lint": "passed",
+    "release_resources": 138
+  },
+  "native_model_report": "qa/direct-chat-audit-2026-10-12.md"
+}
