@@ -56,6 +56,16 @@ def manifest(folder: Path, tag: str, notes: str = "", platforms: list[str] | Non
 
 
 def main(argv: list[str]) -> int:
+    if argv[1] == "--notes-only":
+        path, tag, notes_path = Path(argv[2]), argv[3], Path(argv[4])
+        result = json.loads(path.read_text())
+        if result.get("version") != tag.removeprefix("v"):
+            raise SystemExit("Refusing to change notes for another release version.")
+        # Only prose changes. Asset URLs, signatures and publication time stay
+        # exactly as published; tested installers are never replaced here.
+        result["notes"] = notes_path.read_text().strip()
+        path.write_text(json.dumps(result, indent=2) + "\n")
+        return 0
     folder, tag = Path(argv[1]), argv[2]
     notes = Path(argv[3]).read_text() if len(argv) > 3 and Path(argv[3]).is_file() else ""
     result = manifest(folder, tag, notes, argv[4:] or None)

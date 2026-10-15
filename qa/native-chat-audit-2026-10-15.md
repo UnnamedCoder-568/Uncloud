@@ -55,7 +55,7 @@ This release removes app-created inference policies and fixes a reproduced runti
 - MiniCPM: Auto reply, square function and context recall complete/correct. Its deliberately capped 32-token cold warmup ends at length, as expected for that diagnostic ceiling.
 - Actual app path: identity/probability checks passed. Cancelling after the first frame completed in 508.3 ms total; no model worker remained after test cleanup.
 - Explicit native Qwen thinking On: first reasoning token 430.4 ms, no final answer by the 60-second diagnostic. This was already direct native HTTP using the app-built payload, with no system prompt or app thinking budget. The record remains a failure/limitation. On/off support is presented as On/off, not a fictional graded High slider. High thinking is not a guarantee of a fast or correct answer.
-- Context compaction on the same Qwen file: 1,819 tokens → 691 tokens for memory plus recall request, 25.41 seconds to summarize/count. Original history is retained; inspectable JSON preserves Cedar, budget 48, Tuesday, no publishing, and completed review state. Recall after compaction is correct. This uses structured summarization of selected new context, not blind token/history truncation.
+- Context compaction on the same Qwen file: 1,819 tokens → 691 tokens for memory plus recall request, 25.41 seconds to summarize/count. Original history is retained; inspectable JSON preserves Cedar, budget 48, Tuesday, no publishing, and completed review state. Recall after compaction preserves those four checked fields, but the summary omitted the original currency label ("dollars"). This is a lossy-memory limitation; the sample does not establish lossless continuity for arbitrary conversations. This uses structured summarization of selected new context, not blind token/history truncation.
 
 ## Recorded backend timings and remaining bottlenecks
 
@@ -75,7 +75,7 @@ Next work in evidence order:
 - Exact selected release source: 1,086 backend tests passed, 3 skipped in the isolated source archive.
 - Frontend: 148 tests passed; production TypeScript/Vite build passed; lint has existing warnings and no errors.
 - Python lint and release-resource checks passed (139 runtime files).
-- Five desktop shell tests passed. Platform packaging is recorded in the release workflow.
+- Five desktop shell tests passed. GitHub Linux source CI also passed: 1,064 backend tests, 12 optional dependency/platform skips, frontend checks and five desktop tests. Platform packaging is recorded in the release workflow.
 - See all adjacent `native-chat-*-2026-10-15.json` files for preserved before, intermediate, final and failed observations.
 
 The native inference changes do not require project, file, retrieval, agent or orchestration preparation for an ordinary direct chat turn. Optional features remain available on demand.

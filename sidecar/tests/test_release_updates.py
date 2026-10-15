@@ -100,3 +100,20 @@ def test_explicit_platforms_still_require_every_signature(tmp_path: Path) -> Non
     with pytest.raises(SystemExit, match="linux-x86_64"):
         _script().manifest(_release(tmp_path, signed={"darwin-aarch64"}), "v0.4.9",
                            platforms=["darwin-aarch64", "linux-x86_64"])
+
+
+def test_notes_refresh_preserves_published_artifact_identity(tmp_path):
+    script = _script()
+    result = script.manifest(_release(tmp_path, signed=set(script.PLATFORMS)), "v0.4.32", "Old")
+    path, notes = tmp_path / "latest.json", tmp_path / "notes.md"
+    path.write_text(json.dumps(result))
+    notes.write_text("  Native inference defaults.\n")
+    assert script.main(['script', '--notes-only', str(path), 'v0.4.32', str(notes)]) == 0
+    refreshed = json.loads(path.read_text())
+    assert refreshed.pop('notes') == 'Native inference defaults.'
+    result.pop('notes')
+    assert refreshed == result
+    previous = path.read_bytes()
+    with pytest.raises(SystemExit, match='another release'):
+        script.main(['script', '--notes-only', str(path), 'v0.4.31', str(notes)])
+    assert path.read_bytes() == previous

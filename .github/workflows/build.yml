@@ -338,8 +338,13 @@ jobs:
         run: |
           tag="v$(python3 -c 'import json; print(json.load(open("uncloud/package.json"))["version"])')"
           # Refuse to publish notes into a draft or another version's release.
-          gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft,tagName > /tmp/uncloud-release.json
+          gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft,tagName,assets > /tmp/uncloud-release.json
           python3 -c 'import json,sys; r=json.load(open("/tmp/uncloud-release.json")); assert not r["isDraft"] and r["tagName"] == sys.argv[1]' "$tag"
+          if python3 -c 'import json,sys; r=json.load(open("/tmp/uncloud-release.json")); sys.exit(0 if any(a["name"] == "latest.json" for a in r["assets"]) else 1)'; then
+            gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern latest.json --dir /tmp/uncloud-notes
+            python3 scripts/write_updater_manifest.py --notes-only /tmp/uncloud-notes/latest.json "$tag" .github/release-notes.md
+            gh release upload "$tag" /tmp/uncloud-notes/latest.json --repo "$GITHUB_REPOSITORY" --clobber
+          fi
           gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --notes-file .github/release-notes.md
 
   release:
