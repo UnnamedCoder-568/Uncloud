@@ -1,14 +1,9 @@
-/** Letting a conversation look things up.
+/** Portable lookup handoff for local servers with differing native tool support.
+ *  The model requests a lookup in its answer; the app fetches the evidence.
+ *  This is an application protocol, not a claim of universal native tool calling.
  *
- *  Chat has no tool-calling protocol, deliberately: local servers vary in
- *  whether they support one at all, and a feature that works on a third of the
- *  models a customer might install is worse than one that works everywhere.
- *  So the model asks in the only way every model can — by writing it — and the
- *  application does the fetching. The same shape the image preview already
- *  uses, which is why it is spelled the same way.
- *
- *      [[search: what is in iOS 27]]
- *      [[read: https://www.apple.com/ios/]]
+ *      [[search: orbital period of Mars]]
+ *      [[read: https://example.org/source]]
  *
  *  Parsing is here and tested, because the failure that matters is silent: a
  *  marker the parser misses is a lookup that never happens, and the model
@@ -143,48 +138,14 @@ export function resultsTurn(parts: { lookup: Lookup; text: string }[]): string {
   );
 }
 
-/** Explicit web requests and current-information questions search before generation.
- * The user's Web switch and the server permission gate still apply. */
-export function isSocialGreeting(text: string): boolean {
-  const social = text.trim()
-    .replace(/(?:answer|reply|respond)\s+(?:in\s+(?:one|a|1)\s+(?:short\s+)?sentence|briefly|concisely)[.!?\s]*$/i, '')
-    .replace(/[!?,.]+/g, ' ').replace(/\s+/g, ' ').trim();
-  return /^(?:(?:hello|hi|hey)\s+)?how\s+(?:are\s+(?:we|you|things)|is\s+(?:it|everything))\s*(?:(?:doing|going|feeling)\s*)?(?:today|this\s+(?:morning|afternoon|evening))?$|^(?:hello|hi|hey|good\s+(?:morning|afternoon|evening))$/i.test(social);
-}
-
-export function initialWebQuery(text: string, previous: string[] = []): string | null {
-  // Time words in social conversation or references to this chat are not a
-  // request for outside information. Do not revive an unrelated prior topic.
-  const localContext = /\b(?:your|this|our|my|the)\s+(?:current\s+|latest\s+)?(?:context|conversation|chat|message|reply|prompt)\b/i;
-  if (isSocialGreeting(text)) return null;
-  const asks = /\b(search|look\s+up|check\s+(online|the\s+(web|internet))|browse)\b/i;
-  if (localContext.test(text) && !asks.test(text)) return null;
-  const current = /\b(latest|current|today|recent|newest|released|release|prices?|news)\b/i;
-  const specifications = /\b(specs?|specifications|technical\s+(details|characteristics))\b/i;
-  // A request to write a specification is a drafting task, not a factual
-  // lookup. All brands/model families use the same routing rule.
-  const drafting = /\b(write|draft|create|design)\b.*\b(specs?|specifications)\b/i;
-  const needsWeb = (value: string) => asks.test(value) || current.test(value)
-    || (specifications.test(value) && !drafting.test(value));
-  const retry = /^(please\s+)?(try|check|search|look)(\s+it)?\s+again\b/i;
-  const contextual = /^(it['’]?s|it is|that|they|check online|search online)\b/i;
-  const history = [...previous].reverse().find((turn) =>
-    needsWeb(turn) && !retry.test(turn) && !contextual.test(turn.trim()));
-  if (!needsWeb(text) && !(retry.test(text) && history)) return null;
-  // A follow-up such as "It's already released. Check online" needs the subject
-  // from the user's earlier request, not the assistant's possibly false answer.
-  const followup = retry.test(text) || contextual.test(text.trim());
-  return (followup && history ? history : text).trim().slice(0, 500);
-}
-
-/** An explicitly supplied source can be read immediately, without search. */
-export function initialWebLookup(text: string, previous: string[] = []): Lookup | null {
+/** Read an explicitly supplied source immediately. Search decisions belong
+ * to the model with the actual conversation, never a topic/keyword classifier. */
+export function initialWebLookup(text: string): Lookup | null {
   const url = text.match(/https?:\/\/[^\s<>"'`]+/)?.[0]?.replace(/[.,;)]+$/, '');
   if (url && /\b(read|summarize|inspect|check|look\s+at)\b/i.test(text)) {
     return { kind: 'read', argument: url };
   }
-  const query = initialWebQuery(text, previous);
-  return query ? { kind: 'search', argument: query } : null;
+  return null;
 }
 
 /** Availability of images is not a reason to inject their protocol every turn. */

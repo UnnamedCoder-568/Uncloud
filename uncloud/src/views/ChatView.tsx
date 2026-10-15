@@ -66,7 +66,8 @@ export default function ChatView() {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const inference = useInference(activeModel?.path, conversationId, true);
   const systemPrompt = useCallback((options: Parameters<typeof chatSystemPrompt>[0]) =>
-    typeof inference.values.system_prompt === 'string' ? inference.values.system_prompt : chatSystemPrompt(options),
+    [typeof inference.values.system_prompt === 'string' ? inference.values.system_prompt : '',
+      chatSystemPrompt(options)].filter(Boolean).join('\n\n'),
     [inference.values.system_prompt]);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [notesOpen, setNotesOpen] = useState(false);
@@ -510,12 +511,11 @@ export default function ChatView() {
       ];
       let fittedReplyBudget: number | undefined;
       const lookups = new LookupSession();
-      const requestedLookup = web && !rawMode ? initialWebLookup(text,
-        messages.filter(m => m.role === 'user').map(m => m.content)) : null;
+      const requestedLookup = web && !rawMode ? initialWebLookup(text) : null;
       const requestedPictures = pictures && !rawMode && wantsPictures(text);
       const turnInference = inference.values;
       const replyPrompt = () => systemPrompt({ pictures: requestedPictures, web, manner,
-        spoken: readAloud, webPhase: requestedLookup ? lookups.phase : undefined });
+        spoken: readAloud, webPhase: web && !rawMode ? lookups.phase : undefined });
       const fitEvidence = async (evidence: string, assemble: (text: string) => ChatMessage[]) => {
         const fitted = await fitWebContext(evidence,
           value => contextMessages(assemble(value), replyPrompt(), compactSummary, 0, rawMode),
@@ -598,7 +598,7 @@ export default function ChatView() {
         // Both switches hold whatever the model wrote. A model told it is
         // offline will occasionally ask to search anyway, and the setting has
         // to win that argument rather than merely take part in it.
-        const plan = web && !rawMode && (requestedLookup || requestedPictures)
+        const plan = web && !rawMode
           ? lookups.next(full, requestedPictures) : { kind: 'done' as const, lookups: [] };
         if (plan.kind === 'done') break;
         if (plan.kind === 'answer') {
@@ -802,13 +802,11 @@ export default function ChatView() {
     let cancelled = false;
     const timer = setTimeout(() => {
       const currentText = input.trim() || [...messages].reverse().find(m => m.role === 'user')?.content || '';
-      const needsWeb = web && !rawMode && initialWebLookup(currentText,
-        messages.filter(m => m.role === 'user').map(m => m.content));
       const turns = contextMessages([
         ...messages,
         ...(input.trim() ? [{ role: 'user' as const, content: input.trim() }] : []),
       ], systemPrompt({ pictures: pictures && wantsPictures(currentText), web, manner,
-        webPhase: needsWeb ? 'results' : undefined }), compactSummary, compactedThrough, rawMode);
+        webPhase: web && !rawMode ? 'request' : undefined }), compactSummary, compactedThrough, rawMode);
       void countChatContext(turns, inference.values).then((usage) => {
         if (!cancelled) setContextUsage(usage);
       }).catch(() => { if (!cancelled) setContextUsage(null); });
@@ -829,7 +827,8 @@ export default function ChatView() {
       });
       const summary = result.summary.trim();
       if (!summary) throw new Error('The model returned an empty summary.');
-      const system = systemPrompt({ pictures: false, web: false, manner });
+      const system = systemPrompt({ pictures: false, web, manner,
+        webPhase: web && !rawMode ? 'request' : undefined });
       const [before, after] = await Promise.all([
         countChatContext(contextMessages(messages, system, compactSummary, compactedThrough), inference.values),
         countChatContext(contextMessages(messages, system, summary, through), inference.values),
@@ -1004,8 +1003,8 @@ export default function ChatView() {
           <button
             onClick={() => setWeb((v) => !v)}
             title={web
-              ? 'Web lookups requested — internet permission must also be enabled in Settings.'
-              : 'Web lookups: off — nothing leaves this Mac'}
+              ? 'Web lookups: on — the model can request sources when needed. Internet permission still applies.'
+              : 'Web lookups: off — Chat will not search or read websites.'}
             className={web ? 'pill pill-on' : 'pill'}
           >
             {web ? <Globe size={15} /> : <GlobeLock size={15} />}

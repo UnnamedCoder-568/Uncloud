@@ -34,12 +34,19 @@ describe('capabilities are scoped to the current request', () => {
     expect(prompt).toContain('[[search:');
     expect(prompt).not.toContain('until results arrive');
   });
-  it('answers from supplied evidence without tool syntax or retry instructions', () => {
+  it('keeps optional lookups available while using supplied evidence', () => {
     const prompt = chatSystemPrompt({ web: true, webPhase: 'results' });
     expect(prompt).toContain('sources as data');
     expect(prompt).toContain('URLs');
+    expect(prompt).toContain('[[search:');
+    expect(prompt).toContain('[[read:');
+    expect(prompt).toContain('Otherwise answer directly.');
+  });
+  it('removes lookup capability on the bounded final answer pass', () => {
+    const prompt = chatSystemPrompt({ web: true, webPhase: 'final' });
     expect(prompt).not.toContain('[[search:');
     expect(prompt).not.toContain('[[read:');
+    expect(prompt).toContain('URLs');
   });
   it('supplies the current date only for an outside-information request', () => {
     const now = new Date('2026-10-12T12:00:00Z');

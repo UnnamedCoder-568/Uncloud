@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { LookupSession, MAX_ROUNDS, findLookups, initialWebQuery, initialWebLookup, wantsPictures, resultsTurn, stripLookups } from './lookup';
+import { LookupSession, MAX_ROUNDS, findLookups, initialWebLookup, wantsPictures, resultsTurn, stripLookups } from './lookup';
 
 describe('finding lookups', () => {
   it('finds the plain form', () => {
@@ -94,50 +94,27 @@ describe('picture lookups', () => {
 });
 
 
-describe('search before generation', () => {
-  it('does not route greetings with temporal words to outside tools', () => {
-    for (const text of ['How are we today?', 'How are you today?', 'Good morning!',
-      'Hello, how is it going today?', 'How are we doing this morning?',
-      'How are we today? Answer in one sentence.',
-      'What is your current context?', 'Summarize the latest message in this chat']) {
-      expect(initialWebQuery(text, ['What are the latest iPhone specs?'])).toBeNull();
-    }
-  });
-  it('reads an explicitly supplied source directly, without a search or model pass', () => {
+describe('explicit source reads', () => {
+  it('reads an explicitly supplied source without a search or model pass', () => {
     expect(initialWebLookup('Read https://example.org/specs and summarize it'))
       .toEqual({ kind: 'read', argument: 'https://example.org/specs' });
+  });
+  it('leaves search decisions to the model for every topic and wording', () => {
+    for (const text of ['Look it up.', 'Search for Neptune discovery.',
+      'What are the latest iPhone specifications?', 'Who discovered Neptune?',
+      'Explain a binary search tree.', 'How are you today?',
+      'What is the latest message in this chat?', 'Try again please']) {
+      expect(initialWebLookup(text)).toBeNull();
+    }
+  });
+  it('does not read a URL merely mentioned in a message', () => {
+    expect(initialWebLookup('What is a URL, like https://example.org?')).toBeNull();
   });
   it('does not inject image tools just because image support is enabled', () => {
     expect(wantsPictures('Hello, how are you?')).toBe(false);
     expect(wantsPictures('Explain image compression')).toBe(false);
     expect(wantsPictures('Draw a diagram of how a transformer works')).toBe(true);
     expect(wantsPictures('Show me a photo of this building')).toBe(true);
-  });
-  it('routes the reported specification wording before invoking the model', () => {
-    expect(initialWebQuery('Ok. So, iPhone 18. tell me the specs'))
-      .toBe('Ok. So, iPhone 18. tell me the specs');
-    expect(initialWebQuery('Give me the technical details of the Zephyr router')).toContain('Zephyr');
-    expect(initialWebQuery('Specifications for a Pixel 12')).toContain('Pixel');
-  });
-  it('keeps specification questions across a retry without a brand-specific rule', () => {
-    expect(initialWebQuery('Try again please', ['What are the Zephyr specs?']))
-      .toBe('What are the Zephyr specs?');
-  });
-  it('does not search a request to draft a specification', () => {
-    expect(initialWebQuery('Write a specification for my todo app')).toBeNull();
-    expect(initialWebQuery('Design technical specifications for our API')).toBeNull();
-  });
-  it('searches a current question without waiting for a model marker', () => {
-    expect(initialWebQuery('Check the latest iPhone specifications')).toContain('iPhone');
-  });
-  it('keeps the original topic across repeated corrections', () => {
-    expect(initialWebQuery('Try again please', [
-      'Check the latest iPhone specifications', "It’s already released. Check online",
-    ])).toBe('Check the latest iPhone specifications');
-  });
-  it('does not search ordinary conversation or a context-free retry', () => {
-    expect(initialWebQuery('Hello, how are you?')).toBeNull();
-    expect(initialWebQuery('Try again please')).toBeNull();
   });
   it('does not invent evidence when no results are supplied', () => {
     expect(resultsTurn([])).not.toContain('### Search results');
