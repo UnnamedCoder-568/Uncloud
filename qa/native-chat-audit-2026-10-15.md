@@ -1,5 +1,9 @@
 # Native inference cleanup — v0.4.32, 2026-10-15
 
+Raw run records and screenshots are retained privately rather than published
+with the source. References to capture filenames below identify those private
+records; the reported measurements and failure summaries are unchanged.
+
 ## Scope and evidence boundary
 
 This release removes app-created inference policies and fixes a reproduced runtime mismatch. No model files or weights were changed. All native tests ran sequentially on one Apple Silicon Mac; each test owned one worker and stopped it in `finally`. Chrome was not opened or controlled. Raw results include failures, prompts, sampling, configuration SHA-256 and weight sizes/mtime. Weight contents were not rehashed. This is a small regression sample, not proof of broad intelligence or Windows/GGUF performance.
@@ -76,6 +80,6 @@ Next work in evidence order:
 - Frontend: 148 tests passed; production TypeScript/Vite build passed; lint has existing warnings and no errors.
 - Python lint and release-resource checks passed (139 runtime files).
 - Five desktop shell tests passed. GitHub Linux source CI also passed: 1,064 backend tests, 12 optional dependency/platform skips, frontend checks and five desktop tests. Platform packaging is recorded in the release workflow.
-- See all adjacent `native-chat-*-2026-10-15.json` files for preserved before, intermediate, final and failed observations.
+- See the privately archived `native-chat-*-2026-10-15.json` files for preserved before, intermediate, final and failed observations.
 
 The native inference changes do not require project, file, retrieval, agent or orchestration preparation for an ordinary direct chat turn. Optional features remain available on demand.

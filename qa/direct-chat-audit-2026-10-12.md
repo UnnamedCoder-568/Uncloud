@@ -1,5 +1,9 @@
 # Direct Chat audit — 2026-10-12
 
+Raw run records and screenshots are retained privately rather than published
+with the source. References to capture filenames below identify those private
+records; the reported measurements and failure summaries are unchanged.
+
 ## What changed
 
 Ordinary Chat sends the conversation and user input through the model's embedded native template. It adds no application name, mode descriptions, date, lookup syntax, image-generation instructions or default system message. Explicit custom prompts, selected writing styles, retained compacted memory and requested attachments remain authoritative.

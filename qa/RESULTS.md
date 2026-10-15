@@ -1,5 +1,9 @@
 # Uncloud bounded stress pass — 6 October 2026
 
+Raw run records and screenshots are retained privately rather than published
+with the source. References to capture filenames below identify those private
+records; the reported measurements and failure summaries are unchanged.
+
 ## Automated result
 
 - Backend: **1,008 passed, 1 skipped**. Isolated temporary configuration; local socket tests enabled. The skip is preserved rather than counted as passed.

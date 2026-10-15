@@ -1,5 +1,9 @@
 # Local inference audit — v0.4.13
 
+Raw run records and screenshots are retained privately rather than published
+with the source. References to capture filenames below identify those private
+records; the reported measurements and failure summaries are unchanged.
+
 This is a measured first pass, not a completed audit of every supported model and device. Measurements below use the same resident MiniCPM5 2B 8-bit MLX checkpoint on this Apple Silicon Mac. No weights were downloaded or trained. GGUF, CUDA, Windows, Linux and other model families still need equivalent live runs.
 
 ## Current path

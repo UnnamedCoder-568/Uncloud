@@ -1,5 +1,9 @@
 # Chat presentation and Chisel regression check — 2026-10-15
 
+Raw run records and screenshots are retained privately rather than published
+with the source. References to capture filenames below identify those private
+records; the reported measurements and failure summaries are unchanged.
+
 ## Scope
 
 Keep Copy, Note and Chisel quiet until the answer is hovered, with consistent
@@ -49,10 +53,8 @@ model or operating the owner's Chrome session.
 - Real browser CSS fixture: desktop idle, hover, unhover, keyboard focus/blur,
   adjacent-message isolation, pointer access to controls, equal message gaps,
   touch access and narrow-screen overflow passed.
-  [Measured boxes](chat-actions-2026-10-15/results.json),
-  [idle](chat-actions-2026-10-15/desktop-idle.png),
-  [hover](chat-actions-2026-10-15/desktop-hover.png),
-  [touch](chat-actions-2026-10-15/touch.png).
+  Coordinate records and screenshots are retained privately, outside the
+  published file list. The measurements above are unchanged.
   Reproduce with `python qa/check-chat-actions.py` while the isolated Vite
   preview runs at `127.0.0.1:1437`; the script requires Playwright and its
   installed Chromium test browser, and never attaches to a user profile.

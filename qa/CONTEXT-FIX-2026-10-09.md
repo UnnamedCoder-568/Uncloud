@@ -1,5 +1,9 @@
 # Context overflow regression
 
+Raw run records and screenshots are retained privately rather than published
+with the source. References to capture filenames below identify those private
+records; the reported measurements and failure summaries are unchanged.
+
 Reported Windows Gemma request: 4,656–4,808 input tokens against a 1,024-token runtime. The UI showed conversation-only usage. The exact Windows model file and hardware are unavailable on this Mac; do not treat automated checks as target-device reproduction.
 
 Fixed: web evidence is sized using the active native tokenizer and chat template, reserving reply capacity. Original history is never silently truncated. Source URLs survive excerpt shortening. When even conversation plus sources cannot fit, a clear compaction/larger-window message replaces an oversized dispatch. Retained evidence is saved with the user turn and included in subsequent prompt assembly and the meter. This is source-excerpt budgeting, not conversation compaction; existing structured Compact remains separate.

@@ -66,6 +66,27 @@ uncloud/src-tauri/vendor/
 .idea/
 .vscode/
 .claude/
+.codex/
+.agents/
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa
+id_ed25519
+
+# Internal plans and generated run captures stay on the developer's machine.
+# Keep reproducible tests and sanitized public summaries in source control.
+/design-plans/
+/qa/**/*.json
+/qa/**/*.png
+/qa/**/*.jpg
+/qa/**/*.jpeg
+/qa/**/*.webm
+/qa/**/*.mp4
+/qa/**/*.wav
+/uncloud/docs/benchmarks/
+/scripts/install-desktop-shortcut.sh
 
 # `models/` above keeps downloaded weights out of git. It also matched Core's
 # source package for identifying models, which is code and must be committed.

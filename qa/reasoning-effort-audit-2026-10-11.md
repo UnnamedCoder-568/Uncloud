@@ -1,5 +1,9 @@
 # Thinking effort investigation — 2026-10-11
 
+Raw run records and screenshots are retained privately rather than published
+with the source. References to capture filenames below identify those private
+records; the reported measurements and failure summaries are unchanged.
+
 Scope: inspect the installed Uncloud app, its MLX runtime, the selected Qwen3.5 9B MLX Q4 model, production source, and previously saved diagnostic results. Tests remained stopped until the user explicitly authorized them again. The following validation was then performed serially with one resident model at a time; Chrome was not used.
 
 ## Confirmed control mismatch
