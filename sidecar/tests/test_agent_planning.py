@@ -101,6 +101,87 @@ def test_reasoning_without_an_answer_is_not_executed(monkeypatch):
         asyncio.run(module.Orchestrator().plan("goal"))
 
 
+@pytest.mark.parametrize("approved", [True, False])
+def test_coding_plan_applies_real_files_only_after_approval(tmp_path, monkeypatch, approved):
+    """Chat presentation changes must not turn Chisel into code-only replies."""
+    from uncloud_engine.agent import approval, tools
+    from uncloud_engine.core import Gate
+
+    monkeypatch.setattr(tools, "WORKSPACE_DIR", tmp_path)
+    monkeypatch.setattr(tools.settings, "_data", {"agent_device_access": False})
+    monkeypatch.setattr(
+        module.engine_manager, "active", SimpleNamespace(base_url="http://model", engine="gguf")
+    )
+    specs = [spec for spec in tools.TOOL_SPECS if spec["id"] in {"fs_write", "fs_read"}]
+    monkeypatch.setattr(module, "_active_tool_specs", lambda: specs)
+    monkeypatch.setattr(module.Orchestrator, "_persist_plan", lambda *args: None)
+    content = "def square(number):\n    return number * number\n"
+    plan = {"tasks": {
+        "write": {"tool_id": "fs_write", "args": {"path": "src/square.py", "content": content}},
+        "verify": {"tool_id": "fs_read", "args": {"path": "src/square.py"},
+                   "dependencies": ["write"]},
+    }}
+
+    async def post(self, url, json):
+        return httpx.Response(200, request=httpx.Request("POST", url), json={
+            "choices": [{"message": {"content": __import__("json").dumps(plan)}}],
+        })
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", post)
+    target = tmp_path / "src/square.py"
+    asked = []
+
+    async def ask(request):
+        assert not target.exists()  # Still a proposal when permission is requested.
+        asked.append(request.action)
+        return "yes" if approved else "no"
+
+    async def exercise():
+        planner = module.Orchestrator()
+        graph = await planner.plan("Create src/square.py with a square function")
+        assert not target.exists()  # Planning does not perform the write.
+
+        async def update(graph):
+            pass
+
+        with approval.asking(ask):
+            await planner._execute(graph, update)
+        return graph
+
+    tools.install_gate(Gate())
+    try:
+        graph = asyncio.run(exercise())
+    finally:
+        tools.install_gate(None)
+    assert asked == ["fs_write"]
+    if approved:
+        assert target.read_text() == content
+        assert graph.tasks["verify"].output == content
+        assert all(task.status == "completed" for task in graph.tasks.values())
+    else:
+        assert not target.exists()
+        assert all(task.status == "failed" for task in graph.tasks.values())
+
+
+def test_code_example_is_not_reported_as_an_executed_coding_task(monkeypatch):
+    monkeypatch.setattr(
+        module.engine_manager, "active", SimpleNamespace(base_url="http://model", engine="gguf")
+    )
+    monkeypatch.setattr(module, "_active_tool_specs", lambda: SPECS)
+    runner = AsyncMock()
+    monkeypatch.setattr(module, "run_tool", runner)
+
+    async def post(self, url, json):
+        return httpx.Response(200, request=httpx.Request("POST", url), json={
+            "choices": [{"message": {"content": "```python\ndef square(n): return n * n\n```"}}],
+        })
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", post)
+    with pytest.raises(RuntimeError, match="No tools were run"):
+        asyncio.run(module.Orchestrator().plan("Create src/square.py"))
+    runner.assert_not_called()
+
+
 def test_failed_dependency_is_reported_and_recovery_keeps_distinct_steps(monkeypatch):
     first = module._graph_from_plan(
         {

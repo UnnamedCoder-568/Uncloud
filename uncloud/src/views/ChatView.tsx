@@ -1241,9 +1241,9 @@ export default function ChatView() {
       ) : (
         <>
           <div ref={scrollRef} className="flex-1 chassis-scroll" style={{ padding: '8px 24px 0' }}>
-            <div className="column flex flex-col gap-5 py-4">
+            <div className="chat-message-list column flex flex-col pt-4 pb-12">
             {messages.map((m, i) => (
-              <div key={i} className={m.role === 'user' ? 'self-end max-w-[80%]' : 'self-start max-w-[85%]'}>
+              <div key={`${conversationId ?? 'draft'}:${i}`} className={`chat-message ${m.role === 'user' ? 'self-end max-w-[80%]' : 'self-start max-w-[85%]'}`}>
                 {/* A reasoning model produces most of its tokens here before
                     answering. Hidden, it reads as a hung app; shown in full it
                     buries the answer. Collapsed, with a live hint while it is
@@ -1335,7 +1335,7 @@ export default function ChatView() {
                 {m.error && <p role="status" className="mt-2 px-1 text-xs text-[var(--text-dim)]">{m.error}</p>}
                 {m.role === 'assistant' && cleanReply(m.content).trim()
                   && !(i === messages.length - 1 && generating) && (
-                  <div className="mt-2 flex items-center gap-1 px-1 text-[10px]
+                  <div className="chat-message-actions flex items-center gap-1 px-1 text-[10px]
                                   text-[var(--text-faint)]">
                     <button className="pill h-7 px-2" title="Copy reply"
                             onClick={() => void copyReply(i, m.content)}>

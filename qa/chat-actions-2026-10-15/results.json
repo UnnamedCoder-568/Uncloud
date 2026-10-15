@@ -1,0 +1,195 @@
+{
+  "scope": "Actual app CSS in an isolated browser fixture; no inference or user browser session.",
+  "desktop_idle": {
+    "opacity": [
+      "0",
+      "0"
+    ],
+    "pointers": [
+      "none",
+      "none"
+    ],
+    "boxes": [
+      {
+        "id": "first",
+        "x": 216,
+        "y": 64,
+        "width": 332.078125,
+        "height": 18.5625
+      },
+      {
+        "id": "actions1",
+        "x": 216,
+        "y": 82.5625,
+        "width": 193.53125,
+        "height": 36
+      },
+      {
+        "id": "user",
+        "x": 718.46875,
+        "y": 122.5625,
+        "width": 265.53125,
+        "height": 40.5625
+      },
+      {
+        "id": "second",
+        "x": 216,
+        "y": 203.125,
+        "width": 298.390625,
+        "height": 18.5625
+      },
+      {
+        "id": "actions2",
+        "x": 216,
+        "y": 221.6875,
+        "width": 193.53125,
+        "height": 36
+      }
+    ]
+  },
+  "desktop_hover": {
+    "opacity": [
+      "1",
+      "0"
+    ],
+    "pointers": [
+      "auto",
+      "none"
+    ],
+    "boxes": [
+      {
+        "id": "first",
+        "x": 216,
+        "y": 64,
+        "width": 332.078125,
+        "height": 18.5625
+      },
+      {
+        "id": "actions1",
+        "x": 216,
+        "y": 82.5625,
+        "width": 193.53125,
+        "height": 36
+      },
+      {
+        "id": "user",
+        "x": 718.46875,
+        "y": 122.5625,
+        "width": 265.53125,
+        "height": 40.5625
+      },
+      {
+        "id": "second",
+        "x": 216,
+        "y": 203.125,
+        "width": 298.390625,
+        "height": 18.5625
+      },
+      {
+        "id": "actions2",
+        "x": 216,
+        "y": 221.6875,
+        "width": 193.53125,
+        "height": 36
+      }
+    ]
+  },
+  "keyboard_focus": {
+    "opacity": [
+      "0",
+      "1"
+    ],
+    "pointers": [
+      "none",
+      "auto"
+    ],
+    "boxes": [
+      {
+        "id": "first",
+        "x": 216,
+        "y": 64,
+        "width": 332.078125,
+        "height": 18.5625
+      },
+      {
+        "id": "actions1",
+        "x": 216,
+        "y": 82.5625,
+        "width": 193.53125,
+        "height": 36
+      },
+      {
+        "id": "user",
+        "x": 718.46875,
+        "y": 122.5625,
+        "width": 265.53125,
+        "height": 40.5625
+      },
+      {
+        "id": "second",
+        "x": 216,
+        "y": 203.125,
+        "width": 298.390625,
+        "height": 18.5625
+      },
+      {
+        "id": "actions2",
+        "x": 216,
+        "y": 221.6875,
+        "width": 193.53125,
+        "height": 36
+      }
+    ]
+  },
+  "touch": {
+    "opacity": [
+      "1",
+      "1"
+    ],
+    "pointers": [
+      "auto",
+      "auto"
+    ],
+    "boxes": [
+      {
+        "id": "first",
+        "x": 48,
+        "y": 64,
+        "width": 249.890625,
+        "height": 37.125
+      },
+      {
+        "id": "actions1",
+        "x": 48,
+        "y": 101.125,
+        "width": 193.53125,
+        "height": 48
+      },
+      {
+        "id": "user",
+        "x": 106.8125,
+        "y": 157.125,
+        "width": 235.1875,
+        "height": 59.125
+      },
+      {
+        "id": "second",
+        "x": 48,
+        "y": 272.25,
+        "width": 249.890625,
+        "height": 37.125
+      },
+      {
+        "id": "actions2",
+        "x": 48,
+        "y": 309.375,
+        "width": 193.53125,
+        "height": 48
+      }
+    ]
+  },
+  "layout_shift_px": 0,
+  "desktop_gap_px": 40,
+  "mobile_gap_px": 56,
+  "passed": true
+}

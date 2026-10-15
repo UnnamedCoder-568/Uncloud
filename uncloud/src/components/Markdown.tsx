@@ -53,10 +53,12 @@ function Inlines({ nodes }: { nodes: Inline[] }) {
 function CodeBlock({ block }: { block: Extract<Block, { kind: 'code' }> }) {
   const [copied, setCopied] = useState(false);
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(block.text);
+  const [draft, setDraft] = useState<string | null>(null);
+  // Follow the incoming stream until the user actually edits a working copy.
+  const text = draft ?? block.text;
   const copy = async () => {
     try {
-      await navigator.clipboard.writeText(draft);
+      await navigator.clipboard.writeText(text);
       setCopied(true);
       setTimeout(() => setCopied(false), 1400);
     } catch {
@@ -67,7 +69,7 @@ function CodeBlock({ block }: { block: Extract<Block, { kind: 'code' }> }) {
 
   const download = () => {
     const extension = (block.lang || 'txt').replace(/[^a-z0-9]+/gi, '') || 'txt';
-    const url = URL.createObjectURL(new Blob([draft], { type: 'text/plain;charset=utf-8' }));
+    const url = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }));
     const link = document.createElement('a');
     link.href = url;
     link.download = `uncloud-code.${extension}`;
@@ -95,11 +97,11 @@ function CodeBlock({ block }: { block: Extract<Block, { kind: 'code' }> }) {
         </span>
       </div>
       {editing ? (
-        <textarea value={draft} onChange={(event) => setDraft(event.target.value)}
+        <textarea value={text} onChange={(event) => setDraft(event.target.value)}
                   spellCheck={false} aria-label="Editable code artifact"
                   className="w-full min-h-56 resize-y bg-transparent p-4 outline-none
                              font-mono text-xs text-[var(--text)]" />
-      ) : <pre><code>{draft}</code></pre>}
+      ) : <pre><code>{text}</code></pre>}
     </div>
   );
 }

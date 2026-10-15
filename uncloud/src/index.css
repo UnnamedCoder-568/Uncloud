@@ -427,6 +427,23 @@ body {
 .chat-context-footer button, .chat-context-memory summary { cursor: pointer; color: var(--text-2); }
 .chat-context-footer button:hover, .chat-context-memory summary:hover { color: var(--text-1); }
 .chat-context-footer button:disabled { opacity: .5; cursor: default; }
+
+/* Float controls in the normal gap between messages, without adding an empty
+   row to the answer. Padding bridges the pointer path from text to controls. */
+.chat-message-list { gap: 40px; }
+.chat-message { position: relative; }
+.chat-message-actions { position: absolute; top: 100%; left: 0; width: max-content; padding-top: 4px; }
+@media (max-width: 767.98px) {
+  /* Match the existing 44px touch buttons without overlapping the next turn. */
+  .chat-message-list { gap: 56px; padding-bottom: 64px; }
+}
+/* Touch devices have no hover; keyboard focus also reveals the controls. */
+@media (hover: hover) and (pointer: fine) {
+  .chat-message-actions { opacity: 0; pointer-events: none; }
+  .chat-message:hover .chat-message-actions,
+  .chat-message:focus-within .chat-message-actions { opacity: 1; pointer-events: auto; }
+}
+
 .chat-context-memory { position: relative; }
 .chat-context-memory > div { position: absolute; z-index: 20; bottom: 24px; right: 0; width: min(480px, calc(100vw - 40px)); max-height: 50vh; overflow: auto; white-space: pre-wrap; padding: 16px; border-radius: 12px; background: var(--bg-raised); border: 1px solid var(--border-strong); box-shadow: var(--shadow-lg); color: var(--text-2); line-height: 1.5; }
 
