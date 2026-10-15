@@ -144,6 +144,8 @@ def test_compaction_packs_full_template_and_never_silently_cuts_off(monkeypatch)
     )
 
     async def count(active, messages, inference):
+        # Real native templates such as Qwen reject system-only prompts.
+        assert any(message["role"] == "user" for message in messages)
         return sum(len(m["content"]) for m in messages) // 4 + 40
 
     async def post(self, url, json):

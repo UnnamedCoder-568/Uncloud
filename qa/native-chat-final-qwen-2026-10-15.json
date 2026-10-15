@@ -1,0 +1,482 @@
+{
+  "phase": "after",
+  "model": "/Volumes/AI Folder/New Models/qwen3.5-9b-mlx-q4",
+  "config_sha256": "a96942cb6a8a1d3f1d17514d81a1925d04362a6a3233b389d13012211baaa9f8",
+  "weights": {
+    "model-00001-of-00002.safetensors": {
+      "bytes": 5349771222,
+      "mtime_ns": 1790239483864166131
+    },
+    "model-00002-of-00002.safetensors": {
+      "bytes": 600449850,
+      "mtime_ns": 1790239425912878548
+    }
+  },
+  "context_limit": 57344,
+  "requested_engine": "mlx",
+  "records": [
+    {
+      "case": "cold_warmup",
+      "payload": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "Hello"
+          }
+        ],
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        },
+        "model": "/Volumes/AI Folder/New Models/qwen3.5-9b-mlx-q4",
+        "min_p": 0.0,
+        "top_k": 20,
+        "temperature": 0.7,
+        "presence_penalty": 1.5,
+        "repetition_penalty": 1.0,
+        "top_p": 0.8,
+        "max_tokens": 32,
+        "enable_thinking": false,
+        "seed": 42
+      },
+      "error": null,
+      "first_token_ms": 913.0537500004721,
+      "first_answer_ms": 913.0537500004721,
+      "total_ms": 1644.5370000001276,
+      "answer": "Hello! How can I help you today?",
+      "thinking": "",
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 13,
+        "completion_tokens": 10,
+        "total_tokens": 23,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      }
+    },
+    {
+      "case": "auto_greeting",
+      "payload": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "Hi. How are we doing today?"
+          }
+        ],
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        },
+        "model": "/Volumes/AI Folder/New Models/qwen3.5-9b-mlx-q4",
+        "min_p": 0.0,
+        "top_k": 20,
+        "temperature": 0.7,
+        "presence_penalty": 1.5,
+        "repetition_penalty": 1.0,
+        "top_p": 0.8,
+        "max_tokens": 2048,
+        "seed": 42
+      },
+      "error": null,
+      "first_token_ms": 358.902042000409,
+      "first_answer_ms": 358.902042000409,
+      "total_ms": 3531.092709001314,
+      "answer": "Hello! I'm doing well, thanks for asking. How about you? Is there anything specific on your mind today, or would you like to dive into a particular topic? \ud83d\ude0a",
+      "thinking": "",
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 20,
+        "completion_tokens": 38,
+        "total_tokens": 58,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      }
+    },
+    {
+      "case": "auto_identity_followup",
+      "payload": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "Hi. How are we doing today?"
+          },
+          {
+            "role": "assistant",
+            "content": "We are doing well, thank you for asking! How about you?"
+          },
+          {
+            "role": "user",
+            "content": "I'm doing good. Who are you?"
+          }
+        ],
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        },
+        "model": "/Volumes/AI Folder/New Models/qwen3.5-9b-mlx-q4",
+        "min_p": 0.0,
+        "top_k": 20,
+        "temperature": 0.7,
+        "presence_penalty": 1.5,
+        "repetition_penalty": 1.0,
+        "top_p": 0.8,
+        "max_tokens": 2048,
+        "seed": 42
+      },
+      "error": null,
+      "first_token_ms": 431.88091600131884,
+      "first_answer_ms": 431.88091600131884,
+      "total_ms": 6800.233833000675,
+      "answer": "Hello! I'm **Qwen3.5**, the latest large language model developed by Tongyi Lab. I can assist you with a wide range of tasks, from answering questions and creating content (like stories, emails, or scripts) to analyzing data, writing code, and even handling complex logical reasoning or multi-step planning. How can I help you today? \ud83d\ude0a",
+      "thinking": "",
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 53,
+        "completion_tokens": 76,
+        "total_tokens": 129,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      }
+    },
+    {
+      "case": "matched_native_identity",
+      "payload": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "Hi. How are we doing today?"
+          },
+          {
+            "role": "assistant",
+            "content": "We are doing well, thank you for asking! How about you?"
+          },
+          {
+            "role": "user",
+            "content": "I'm doing good. Who are you?"
+          }
+        ],
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        },
+        "model": "/Volumes/AI Folder/New Models/qwen3.5-9b-mlx-q4",
+        "min_p": 0.0,
+        "top_k": 20,
+        "temperature": 0.7,
+        "presence_penalty": 1.5,
+        "repetition_penalty": 1.0,
+        "top_p": 0.8,
+        "max_tokens": 2048,
+        "seed": 42
+      },
+      "error": null,
+      "first_token_ms": 482.3463329994411,
+      "first_answer_ms": 482.3463329994411,
+      "total_ms": 6891.463457999635,
+      "answer": "Hello! I'm **Qwen3.5**, the latest large language model developed by Tongyi Lab. I can assist you with a wide range of tasks, from answering questions and creating content (like stories, emails, or scripts) to analyzing data, writing code, and even handling complex logical reasoning or multi-step planning. How can I help you today? \ud83d\ude0a",
+      "thinking": "",
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 53,
+        "completion_tokens": 76,
+        "total_tokens": 129,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "same_answer": true
+    },
+    {
+      "case": "auto_probability",
+      "payload": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "A bag has 3 red balls and 2 blue balls. Draw two without replacement. What is the probability both are red? Give the exact fraction and one short explanation."
+          }
+        ],
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        },
+        "model": "/Volumes/AI Folder/New Models/qwen3.5-9b-mlx-q4",
+        "min_p": 0.0,
+        "top_k": 20,
+        "temperature": 0.7,
+        "presence_penalty": 1.5,
+        "repetition_penalty": 1.0,
+        "top_p": 0.8,
+        "max_tokens": 2048,
+        "seed": 42
+      },
+      "error": null,
+      "first_token_ms": 421.92954100028146,
+      "first_answer_ms": 421.92954100028146,
+      "total_ms": 10127.998040999955,
+      "answer": "**Probability:** $\\frac{3}{10}$\n\n**Explanation:** There are 5 balls total. The probability the first ball is red is $\\frac{3}{5}$. After drawing one red ball, 4 balls remain with only 2 red ones left, making the probability of the second being red $\\frac{2}{4}$. Multiplying these gives $\\frac{3}{5} \\times \\frac{2}{4} = \\frac{6}{20}$, which simplifies to $\\frac{3}{10}$.",
+      "thinking": "",
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 47,
+        "completion_tokens": 116,
+        "total_tokens": 163,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      }
+    },
+    {
+      "case": "auto_code",
+      "payload": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "Write a Python function square(x) that returns x multiplied by itself. Return only code."
+          }
+        ],
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        },
+        "model": "/Volumes/AI Folder/New Models/qwen3.5-9b-mlx-q4",
+        "min_p": 0.0,
+        "top_k": 20,
+        "temperature": 0.7,
+        "presence_penalty": 1.5,
+        "repetition_penalty": 1.0,
+        "top_p": 0.8,
+        "max_tokens": 2048,
+        "seed": 42
+      },
+      "error": null,
+      "first_token_ms": 352.43291599908844,
+      "first_answer_ms": 352.43291599908844,
+      "total_ms": 1648.908457998914,
+      "answer": "```python\ndef square(x):\n    return x * x\n```",
+      "thinking": "",
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 30,
+        "completion_tokens": 16,
+        "total_tokens": 46,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      }
+    },
+    {
+      "case": "manual_identity",
+      "payload": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "Hi. How are we doing today?"
+          },
+          {
+            "role": "assistant",
+            "content": "We are doing well, thank you for asking! How about you?"
+          },
+          {
+            "role": "user",
+            "content": "I'm doing good. Who are you?"
+          }
+        ],
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        },
+        "model": "/Volumes/AI Folder/New Models/qwen3.5-9b-mlx-q4",
+        "min_p": 0.0,
+        "top_k": 20,
+        "temperature": 0.7,
+        "presence_penalty": 1.5,
+        "repetition_penalty": 1.0,
+        "top_p": 0.8,
+        "max_tokens": 128,
+        "enable_thinking": false,
+        "seed": 42
+      },
+      "error": null,
+      "first_token_ms": 424.41970899926673,
+      "first_answer_ms": 424.41970899926673,
+      "total_ms": 6968.3496249999735,
+      "answer": "Hello! I'm **Qwen3.5**, the latest large language model developed by Tongyi Lab. I can assist you with a wide range of tasks, from answering questions and creating content (like stories, emails, or scripts) to analyzing data, writing code, and even handling complex logical reasoning or multi-step planning. How can I help you today? \ud83d\ude0a",
+      "thinking": "",
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 53,
+        "completion_tokens": 76,
+        "total_tokens": 129,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      }
+    },
+    {
+      "case": "context_recall",
+      "payload": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "The project is Cedar, the budget is 48 dollars, and the deadline is Tuesday. Publishing is prohibited."
+          },
+          {
+            "role": "assistant",
+            "content": "Understood."
+          },
+          {
+            "role": "user",
+            "content": "State the project, budget, deadline, and whether publishing is permitted."
+          }
+        ],
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        },
+        "model": "/Volumes/AI Folder/New Models/qwen3.5-9b-mlx-q4",
+        "min_p": 0.0,
+        "top_k": 20,
+        "temperature": 0.7,
+        "presence_penalty": 1.5,
+        "repetition_penalty": 1.0,
+        "top_p": 0.8,
+        "max_tokens": 2048,
+        "seed": 42
+      },
+      "error": null,
+      "first_token_ms": 445.507667000129,
+      "first_answer_ms": 445.507667000129,
+      "total_ms": 4173.745834001238,
+      "answer": "Based on the details provided:\n\n*   **Project**: Cedar\n*   **Budget**: 48 dollars\n*   **Deadline**: Tuesday\n*   **Publishing Permitted**: No (prohibited)",
+      "thinking": "",
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 62,
+        "completion_tokens": 45,
+        "total_tokens": 107,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      }
+    },
+    {
+      "case": "native_thinking_probability",
+      "payload": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "A bag has 3 red balls and 2 blue balls. Draw two without replacement. What is the probability both are red? Give the exact fraction and one short explanation."
+          }
+        ],
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        },
+        "model": "/Volumes/AI Folder/New Models/qwen3.5-9b-mlx-q4",
+        "min_p": 0.0,
+        "top_k": 20,
+        "temperature": 1.0,
+        "presence_penalty": 1.5,
+        "repetition_penalty": 1.0,
+        "top_p": 0.95,
+        "max_tokens": 2048,
+        "enable_thinking": true,
+        "seed": 42
+      },
+      "error": "TimeoutError",
+      "first_token_ms": 430.44345900125336,
+      "first_answer_ms": null,
+      "total_ms": 60002.90929200128,
+      "answer": "",
+      "thinking": "Thinking Process:\n\n1.  **Analyze the Request:**\n    *   Scenario: A bag contains 3 red balls and 2 blue balls.\n    *   Action: Draw two balls without replacement.\n    *   Question: What is the probability that both are red?\n    *   Output Requirements: Exact fraction and one short explanation.\n\n2.  **Determine the Total Number of Balls:**\n    *   Red balls ($R$) = 3\n    *   Blue balls ($B$) = 2\n    *   Total balls ($T$) = $3 + 2 = 5$\n\n3.  **Determine the Number of Ways to Draw Two Balls:**\n    *   Since order doesn't matter for probability calculation in this context (drawing two simultaneously or sequentially without replacement yields the same combination count), we look at combinations.\n    *   Total ways to choose 2 balls from 5: $\\binom{5}{2}$\n    *   $\\binom{5}{2} = \\frac{5 \\times 4}{2 \\times 1} = 10$\n\n4.  **Determine the Number of Ways to Draw Two Red Balls:**\n    *   We need to choose 2 red balls from the 3 available red balls.\n    *   Ways: $\\binom{3}{2}$\n    *   $\\binom{3}{2} = \\frac{3 \\times 2}{2 \\times 1} = 3$\n\n5.  **Calculate the Probability:**\n    *   $P(\\text{Both Red}) = \\frac{\\text{Ways to choose 2 Red}}{\\text{Total Ways to choose 2 balls}}$\n    *   $P = \\frac{3}{10}$\n\n6.  **Alternative Method (Sequential Probability):**\n    *   $P(\\text{1st Red}) = \\frac{3}{5}$\n    *   $P(\\text{2nd Red} | \\text{1st Red}) = \\frac{2}{4}$ (since one red is gone)\n    *   $P(\\text{Both Red}) = \\frac{3}{5} \\times \\frac{2}{4} = \\frac{6}{20}$\n    *   Simplify $\\frac{6}{20} = \\frac{3}{10}$\n\n7.  **Format the Output:**\n    *   Exact fraction: $\\frac{3}{10}$\n    *   One short explanation: Mention picking two from the three reds out of the total five.\n\n8.  **Draft the Response:**\n    *   Fraction: $3/10$\n    *   Explanation: The total number of ways to pick 2 balls from 5 is 10, and the number of ways to pick 2 reds from 3 is 3.\n\n9.  **Refine for Constraints:**\n    *   \"Exact fraction\": $3/10$ is exact.\n    *   \"One short explanation\": Needs to be concise.\n\n10. **Final Check:**\n    *   Total balls = 5.\n    *   Red balls = 3.\n    *   Draw 2 without replacement.\n    *  ",
+      "finish_reason": null,
+      "usage": {}
+    }
+  ],
+  "limitations": [
+    "One Apple Silicon device",
+    "Fixed seed 42",
+    "Small regression sample, not a broad intelligence benchmark"
+  ],
+  "engine": "mlx-vlm",
+  "profile": {
+    "parameters": {
+      "min_p": 0.0,
+      "top_k": 20,
+      "temperature": 1.0,
+      "presence_penalty": 1.5,
+      "repetition_penalty": 1.0,
+      "top_p": 0.95
+    },
+    "sources": {
+      "min_p": "https://huggingface.co/Qwen/Qwen3.5-9B#best-practices",
+      "top_k": "https://huggingface.co/Qwen/Qwen3.5-9B#best-practices",
+      "temperature": "https://huggingface.co/Qwen/Qwen3.5-9B#best-practices",
+      "presence_penalty": "https://huggingface.co/Qwen/Qwen3.5-9B#best-practices",
+      "repetition_penalty": "https://huggingface.co/Qwen/Qwen3.5-9B#best-practices",
+      "top_p": "https://huggingface.co/Qwen/Qwen3.5-9B#best-practices"
+    },
+    "explicit_parameters": {},
+    "mode_parameters": {
+      "thinking": {
+        "min_p": 0.0,
+        "top_k": 20,
+        "temperature": 1.0,
+        "presence_penalty": 1.5,
+        "repetition_penalty": 1.0,
+        "top_p": 0.95
+      },
+      "off": {
+        "min_p": 0.0,
+        "top_k": 20,
+        "temperature": 0.7,
+        "presence_penalty": 1.5,
+        "repetition_penalty": 1.0,
+        "top_p": 0.8
+      }
+    },
+    "recommendation": {
+      "id": "qwen3.5-9b",
+      "source": "https://huggingface.co/Qwen/Qwen3.5-9B#best-practices",
+      "verified": "2026-10-11",
+      "native_mode": "thinking"
+    },
+    "max_output_tokens": null,
+    "fallback": "Native backend defaults for unspecified parameters",
+    "template": "Native model chat template",
+    "capabilities": {
+      "fields": [
+        "frequency_penalty",
+        "max_tokens",
+        "min_p",
+        "presence_penalty",
+        "repetition_penalty",
+        "seed",
+        "temperature",
+        "top_k",
+        "top_p"
+      ],
+      "reasoning": {
+        "mechanism": "template_toggle",
+        "default": "off",
+        "levels": [
+          "auto",
+          "off",
+          "high"
+        ],
+        "explanation": "This model supports thinking on/off, not graded effort."
+      },
+      "family": "qwen3_5",
+      "backend_version": "0.6.15",
+      "runtime_defaults": {
+        "max_tokens": 2048
+      },
+      "template_available": true,
+      "template": "{%- set image_count = namespace(value=0) %}\n{%- set video_count = namespace(value=0) %}\n{%- macro render_content(content, do_vision_count, is_system_content=false) %}\n    {%- if content is string %}\n        {{- content }}\n    {%- elif content is iterable and content is not mapping %}\n        {%- for item in content %}\n            {%- if 'image' in item or 'image_url' in item or item.type == 'image' %}\n                {%- if is_system_content %}\n                    {{- raise_exception('System message cannot contain images.') }}\n                {%- endif %}\n                {%- if do_vision_count %}\n                    {%- set image_count.value = image_count.value + 1 %}\n                {%- endif %}\n                {%- if add_vision_id %}\n                    {{- 'Picture ' ~ image_count.value ~ ': ' }}\n                {%- endif %}\n                {{- '<|vision_start|><|image_pad|><|vision_end|>' }}\n            {%- elif 'video' in item or item.type == 'video' %}\n                {%- if is_system_content %}\n                    {{- raise_exception('System message cannot contain videos.') }}\n                {%- endif %}\n                {%- if do_vision_count %}\n                    {%- set video_count.value = video_count.value + 1 %}\n                {%- endif %}\n                {%- if add_vision_id %}\n                    {{- 'Video ' ~ video_count.value ~ ': ' }}\n                {%- endif %}\n                {{- '<|vision_start|><|video_pad|><|vision_end|>' }}\n            {%- elif 'text' in item %}\n                {{- item.text }}\n            {%- else %}\n                {{- raise_exception('Unexpected item type in content.') }}\n            {%- endif %}\n        {%- endfor %}\n    {%- elif content is none or content is undefined %}\n        {{- '' }}\n    {%- else %}\n        {{- raise_exception('Unexpected content type.') }}\n    {%- endif %}\n{%- endmacro %}\n{%- if not messages %}\n    {{- raise_exception('No messages provided.') }}\n{%- endif %}\n{%- if tools and tools is iterable and tools is not mapping %}\n    {{- '<|im_start|>system\\n' }}\n    {{- \"# Tools\\n\\nYou have access to the following functions:\\n\\n<tools>\" }}\n    {%- for tool in tools %}\n        {{- \"\\n\" }}\n        {{- tool | tojson }}\n    {%- endfor %}\n    {{- \"\\n</tools>\" }}\n    {{- '\\n\\nIf you choose to call a function ONLY reply in the following format with NO suffix:\\n\\n<tool_call>\\n<function=example_function_name>\\n<parameter=example_parameter_1>\\nvalue_1\\n</parameter>\\n<parameter=example_parameter_2>\\nThis is the value for the second parameter\\nthat can span\\nmultiple lines\\n</parameter>\\n</function>\\n</tool_call>\\n\\n<IMPORTANT>\\nReminder:\\n- Function calls MUST follow the specified format: an inner <function=...></function> block must be nested within <tool_call></tool_call> XML tags\\n- Required parameters MUST be specified\\n- You may provide optional reasoning for your function call in natural language BEFORE the function call, but NOT after\\n- If there is no function call available, answer the question like normal with your current knowledge and do not tell the user about function calls\\n</IMPORTANT>' }}\n    {%- if messages[0].role == 'system' %}\n        {%- set content = render_content(messages[0].content, false, true)|trim %}\n        {%- if content %}\n            {{- '\\n\\n' + content }}\n        {%- endif %}\n    {%- endif %}\n    {{- '<|im_end|>\\n' }}\n{%- else %}\n    {%- if messages[0].role == 'system' %}\n        {%- set content = render_content(messages[0].content, false, true)|trim %}\n        {{- '<|im_start|>system\\n' + content + '<|im_end|>\\n' }}\n    {%- endif %}\n{%- endif %}\n{%- set ns = namespace(multi_step_tool=true, last_query_index=messages|length - 1) %}\n{%- for message in messages[::-1] %}\n    {%- set index = (messages|length - 1) - loop.index0 %}\n    {%- if ns.multi_step_tool and message.role == \"user\" %}\n        {%- set content = render_content(message.content, false)|trim %}\n        {%- if not(content.startswith('<tool_response>') and content.endswith('</tool_response>')) %}\n            {%- set ns.multi_step_tool = false %}\n            {%- set ns.last_query_index = index %}\n        {%- endif %}\n    {%- endif %}\n{%- endfor %}\n{%- if ns.multi_step_tool %}\n    {{- raise_exception('No user query found in messages.') }}\n{%- endif %}\n{%- for message in messages %}\n    {%- set content = render_content(message.content, true)|trim %}\n    {%- if message.role == \"system\" %}\n        {%- if not loop.first %}\n            {{- raise_exception('System message must be at the beginning.') }}\n        {%- endif %}\n    {%- elif message.role == \"user\" %}\n        {{- '<|im_start|>' + message.role + '\\n' + content + '<|im_end|>' + '\\n' }}\n    {%- elif message.role == \"assistant\" %}\n        {%- set reasoning_content = '' %}\n        {%- if message.reasoning_content is string %}\n            {%- set reasoning_content = message.reasoning_content %}\n        {%- else %}\n            {%- if '</think>' in content %}\n                {%- set reasoning_content = content.split('</think>')[0].rstrip('\\n').split('<think>')[-1].lstrip('\\n') %}\n                {%- set content = content.split('</think>')[-1].lstrip('\\n') %}\n            {%- endif %}\n        {%- endif %}\n        {%- set reasoning_content = reasoning_content|trim %}\n        {%- if loop.index0 > ns.last_query_index %}\n            {{- '<|im_start|>' + message.role + '\\n<think>\\n' + reasoning_content + '\\n</think>\\n\\n' + content }}\n        {%- else %}\n            {{- '<|im_start|>' + message.role + '\\n' + content }}\n        {%- endif %}\n        {%- if message.tool_calls and message.tool_calls is iterable and message.tool_calls is not mapping %}\n            {%- for tool_call in message.tool_calls %}\n                {%- if tool_call.function is defined %}\n                    {%- set tool_call = tool_call.function %}\n                {%- endif %}\n                {%- if loop.first %}\n                    {%- if content|trim %}\n                        {{- '\\n\\n<tool_call>\\n<function=' + tool_call.name + '>\\n' }}\n                    {%- else %}\n                        {{- '<tool_call>\\n<function=' + tool_call.name + '>\\n' }}\n                    {%- endif %}\n                {%- else %}\n                    {{- '\\n<tool_call>\\n<function=' + tool_call.name + '>\\n' }}\n                {%- endif %}\n                {%- if tool_call.arguments is defined %}\n                    {%- for args_name, args_value in tool_call.arguments|items %}\n                        {{- '<parameter=' + args_name + '>\\n' }}\n                        {%- set args_value = args_value | tojson | safe if args_value is mapping or (args_value is sequence and args_value is not string) else args_value | string %}\n                        {{- args_value }}\n                        {{- '\\n</parameter>\\n' }}\n                    {%- endfor %}\n                {%- endif %}\n                {{- '</function>\\n</tool_call>' }}\n            {%- endfor %}\n        {%- endif %}\n        {{- '<|im_end|>\\n' }}\n    {%- elif message.role == \"tool\" %}\n        {%- if loop.previtem and loop.previtem.role != \"tool\" %}\n            {{- '<|im_start|>user' }}\n        {%- endif %}\n        {{- '\\n<tool_response>\\n' }}\n        {{- content }}\n        {{- '\\n</tool_response>' }}\n        {%- if not loop.last and loop.nextitem.role != \"tool\" %}\n            {{- '<|im_end|>\\n' }}\n        {%- elif loop.last %}\n            {{- '<|im_end|>\\n' }}\n        {%- endif %}\n    {%- else %}\n        {{- raise_exception('Unexpected message role.') }}\n    {%- endif %}\n{%- endfor %}\n{%- if add_generation_prompt %}\n    {{- '<|im_start|>assistant\\n' }}\n    {%- if enable_thinking is defined and enable_thinking is false %}\n        {{- '<think>\\n\\n</think>\\n\\n' }}\n    {%- else %}\n        {{- '<think>\\n' }}\n    {%- endif %}\n{%- endif %}",
+      "optimizations": "Native backend configuration; no speculative flags enabled."
+    }
+  }
+}

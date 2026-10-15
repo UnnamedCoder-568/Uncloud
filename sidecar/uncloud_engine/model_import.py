@@ -73,9 +73,13 @@ def verdict(i: Identification) -> Verdict:
         if layout is Layout.GGUF:
             return Verdict(True, "text", "gguf", capabilities=["chat"])
         if layout is Layout.MLX:
-            ok = engine_runs_here("mlx")
-            return Verdict(ok, "text", "mlx", "" if ok else
-                           "MLX weights run only on Apple Silicon.", ["chat"])
+            from .text_runtime import for_mlx_model
+
+            engine = for_mlx_model(i.path)
+            ok = engine_runs_here(engine)
+            return Verdict(ok, "text", engine, "" if ok else
+                           "MLX weights run only on Apple Silicon.",
+                           ["chat", "vision"] if engine == "mlx-vlm" else ["chat"])
         return Verdict(False, "text", "unsupported",
                        f"A {layout} language model. Uncloud chats through GGUF (llama.cpp) "
                        "and MLX weights; this format would need converting first.")

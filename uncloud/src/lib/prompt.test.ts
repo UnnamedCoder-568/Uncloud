@@ -17,10 +17,13 @@ describe('direct chat uses the native model conversation', () => {
       expect(prompt).not.toMatch(/Uncloud|Chisel|Chat settings|local assistant/);
     }
   });
-  it('adds only a chosen writing style for direct chat', () => {
+  it('never injects a saved voice manner into typed chat', () => {
     const prompt = chatSystemPrompt({ web: false, manner: 'brief' });
-    expect(prompt).not.toContain('[[search:');
-    expect(prompt).not.toContain('Today is');
+    expect(prompt).toBe('');
+    expect(chatSystemPrompt({ manner: 'butler' })).toBe('');
+  });
+  it('uses a spoken manner only for an explicitly spoken response', () => {
+    expect(chatSystemPrompt({ manner: 'brief', spoken: true })).toContain('read aloud');
   });
 });
 

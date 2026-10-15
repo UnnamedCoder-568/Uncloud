@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, apiPost } from '../lib/sidecar';
-import { presetValues, saveInference } from '../lib/inference';
+import { saveInference } from '../lib/inference';
 import type { InferenceInfo, InferenceValues } from '../lib/inference';
 
 const CORE = ['temperature', 'top_p', 'top_k', 'min_p', 'repetition_penalty',
@@ -30,14 +30,15 @@ export default function InferenceControls({ info, values, onChange, onRefresh, c
   }, [values, active?.model_path]);
   if (!active) return <p className="text-xs faint">Load a model to see its supported controls.</p>;
   const cap = active.profile.capabilities;
-  const mode = values.reasoning === 'off' ? 'off' : active.profile.recommendation?.native_mode;
+  if (!cap) return <p className="text-xs faint">Reload this model to discover its supported controls.</p>;
+  const mode = values.reasoning === 'off' || (values.reasoning ?? 'auto') === 'auto'
+    && cap.reasoning.default === 'off' ? 'off' : active.profile.recommendation?.native_mode;
   const recommendations = active.profile.mode_parameters && mode
     ? { ...active.profile.mode_parameters[mode], ...active.profile.explicit_parameters }
     : active.profile.parameters;
-  if (!cap) return <p className="text-xs faint">Reload this model to discover its supported controls.</p>;
   const boundedThinking = !!cap.reasoning.budget;
-  const thinkingToggle = cap.reasoning.mechanism === 'template_toggle' && !boundedThinking;
-  const thinkingLabel = boundedThinking || cap.reasoning.mechanism === 'template_effort' ? 'Thinking effort' : 'Thinking';
+  const thinkingToggle = cap.reasoning.mechanism === 'template_toggle';
+  const thinkingLabel = cap.reasoning.mechanism === 'template_effort' ? 'Thinking effort' : 'Thinking';
   const effectiveThinking = effective?.thinking_budget_tokens ?? effective?.thinking_budget;
   const update = (key: string, value: InferenceValues[string] | undefined) => {
     const next = { ...values };
@@ -52,16 +53,13 @@ export default function InferenceControls({ info, values, onChange, onRefresh, c
     } catch (e) { setStatus(e instanceof Error ? e.message : String(e)); }
   };
   const choose = (preset: string) => {
-    setSelected(preset); onChange(info!.saved.presets[preset] ?? presetValues(preset, info!));
+    setSelected(preset); onChange(info!.saved.presets[preset] ?? {});
   };
   return <section className={`flex flex-col gap-3 ${compact ? 'text-xs' : 'card p-5'}`}>
     <div className="flex items-center justify-between gap-3"><h2 className="text-sm">Model controls</h2>
-      <select className="input !w-auto" aria-label="Inference preset" value={selected} onChange={e => choose(e.target.value)}>
-        {['Auto', 'Fast', 'Balanced', 'Deep', 'Creative', 'Deterministic', 'Custom', ...Object.keys(info!.saved.presets)].map(label =>
-          <option key={label} value={label} disabled={(label === 'Deep' && !cap.reasoning.levels.includes('high')) ||
-            (label === 'Fast' && !cap.reasoning.levels.includes('off')) ||
-            (label === 'Creative' && active.profile.parameters.temperature === undefined)}>
-            {label === 'Deep' && thinkingToggle ? 'Thinking on' : label}</option>)}
+      <select className="input !w-auto" aria-label="Inference preset" value={selected === 'Auto' && Object.keys(values).length ? 'Custom' : selected} onChange={e => choose(e.target.value)}>
+        {['Auto', 'Custom', ...Object.keys(info!.saved.presets)].map(label =>
+          <option key={label} value={label}>{label === 'Auto' ? 'Model defaults' : label}</option>)}
       </select>
     </div>
     <div className="flex flex-col gap-2">
@@ -77,9 +75,7 @@ export default function InferenceControls({ info, values, onChange, onRefresh, c
         value={Math.max(0, cap.reasoning.levels.indexOf(String(values.reasoning ?? 'auto')))}
         onChange={e => {
           const next: InferenceValues = { ...values, reasoning: cap.reasoning.levels[Number(e.target.value)] };
-          delete next.reasoning_budget;
           setSelected('Custom'); onChange(next);
-          if (values.reasoning_budget !== undefined) setStatus('Effort selected. The custom thinking token limit was cleared.');
         }} />
       <div className="flex justify-between gap-1 text-[10px] text-[var(--text-faint)]" aria-hidden="true">
         {cap.reasoning.levels.map(level => <span key={level}>{thinkingToggle && level === 'high' ? 'On'
@@ -90,16 +86,17 @@ export default function InferenceControls({ info, values, onChange, onRefresh, c
         Thinking and the answer share the reply budget. This control turns thinking on or off; it does not set a separate thinking limit.
       </span>}
       {boundedThinking && <span className="faint text-[11px]">
-        Higher effort allows more thinking. At the limit, the model continues with its answer in the same reply.
+        A separate thinking limit is sent only when you set one and this runtime supports it.
         {typeof effectiveThinking === 'number' &&
           ` Current thinking limit: ${effectiveThinking.toLocaleString()} tokens.`}
       </span>}
     </div>
+    <p className="text-[11px] faint">Auto uses the model’s defaults. Manual overrides follow model switches until you reset them.</p>
     <details><summary className="cursor-pointer text-[var(--text-dim)]">Sampling and reply budget</summary>
       <div className="grid grid-cols-2 gap-3 mt-3">{CORE.filter(key => cap.fields.includes(key)).map(key => <label key={key} className="flex flex-col gap-1 text-xs">
         {LABELS[key]}<input className="input" type="number" step={['seed', 'top_k', 'max_tokens', 'reasoning_budget'].includes(key) ? '1' : 'any'}
           value={values[key] === undefined ? '' : String(values[key])}
-          placeholder={key === 'reasoning_budget' ? `Auto · ${effectiveThinking ?? 'effort level'}`
+          placeholder={key === 'reasoning_budget' ? `Auto · ${effectiveThinking ?? 'native default'}`
             : key === 'max_tokens' ? `Auto · ${active.profile.max_output_tokens ?? cap.runtime_defaults?.max_tokens ?? 'native stop'}`
             : recommendations[key] === undefined ? 'Auto · backend' : `Auto · ${recommendations[key]}`}
           onChange={e => update(key, e.target.value === '' ? undefined : Number(e.target.value))} />

@@ -184,7 +184,11 @@ async def compact(active, messages: list[dict], memory: str = "", inference: dic
     if quotations:
         structured["retained_user_context"] = quotations
     memory = json.dumps(structured, ensure_ascii=False, indent=2)
-    used = await count(active, [{"role": "system", "content": memory}], settings)
+    # Native templates can require a user turn. Measure memory as it will be
+    # used in the continued conversation, rather than an invalid system-only
+    # request that can make a successful summary look like an overflow.
+    used = await count(active, [{"role": "system", "content": memory},
+                                {"role": "user", "content": ""}], settings)
     if used is None or used + reserve > active.context_limit:
         raise ValueError(
             "Retained constraints fill this runtime window. Original history is preserved."

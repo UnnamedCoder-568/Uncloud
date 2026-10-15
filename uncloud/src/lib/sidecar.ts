@@ -1153,8 +1153,8 @@ export async function webImages(query: string) {
  * A writing style, source evidence or requested picture may need a short
  * instruction; application identity and unrelated capabilities never do. */
 export function chatSystemPrompt(
-  { now = new Date(), pictures = false, web = true, manner = '', webPhase }:
-    { now?: Date; pictures?: boolean; web?: boolean; manner?: string; webPhase?: WebPhase } = {},
+  { now = new Date(), pictures = false, web = true, manner = '', spoken = false, webPhase }:
+    { now?: Date; pictures?: boolean; web?: boolean; manner?: string; spoken?: boolean; webPhase?: WebPhase } = {},
 ): string {
   // Ordinary chat is the native conversation. Merely enabling a capability
   // does not add an identity, tool contract or synthetic system message.
@@ -1173,7 +1173,7 @@ export function chatSystemPrompt(
       + 'use [[image high 1024x1024: description]] for a finished result. '
       + 'Use requested dimensions between 256 and 2048 in multiples of 64. A picture accompanies the answer.');
   }
-  const style = MANNERS.find(m => m.id === manner)?.prompt;
+  const style = spoken ? MANNERS.find(m => m.id === manner)?.prompt : '';
   if (style) parts.push(style);
   return parts.join('\n\n');
 }

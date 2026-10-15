@@ -217,9 +217,9 @@ def discover(model_path: str, engine: str, *, native: bool = False) -> dict:
             family = str(header.fields.get("general.architecture", ""))
     fields = set(CORE)
     version = "unknown"
-    mlx_budget = False
     vlm_budget = False
     vlm_tokens = None
+    native_thinking_default = None
     runtime_defaults = {}
     if engine == "mlx":
         try:
@@ -229,9 +229,6 @@ def discover(model_path: str, engine: str, *, native: bool = False) -> dict:
             output_default = native_output_default(source)
             if output_default:
                 runtime_defaults["max_tokens"] = output_default
-            from .mlx_server import compatible_source
-
-            mlx_budget = compatible_source(source)
             consumed = set(re.findall(r'\bself\.body\.get\("([a-z_]+)"', source))
             fields &= consumed
             fields |= ADVANCED & consumed
@@ -245,6 +242,10 @@ def discover(model_path: str, engine: str, *, native: bool = False) -> dict:
             version = dist.version
             schema = Path(dist.locate_file("mlx_vlm/server/schemas.py")).read_text()
             source = Path(dist.locate_file("mlx_vlm/server/generation.py")).read_text()
+            declared_thinking = re.search(
+                r"(?m)^DEFAULT_ENABLE_THINKING\s*=\s*(True|False)\b", source)
+            if declared_thinking:
+                native_thinking_default = "on" if declared_thinking[1] == "True" else "off"
             normalization = Path(dist.locate_file(
                 "mlx_vlm/server/request_normalization.py")).read_text()
             with contextlib.suppress(OSError, ValueError):
@@ -284,9 +285,7 @@ def discover(model_path: str, engine: str, *, native: bool = False) -> dict:
     boundary = next((end for start, end in (
         ("<think>", "</think>"), ("<longcat_think>", "</longcat_think>"),
     ) if start in template and end in template), None)
-    if boundary and engine == "mlx" and mlx_budget:
-        budget = {"mechanism": "mlx_sampler", "closing_tokens": 1}
-    elif boundary and engine == "gguf" and native:
+    if boundary and engine == "gguf" and native:
         from .native_chat import server_path
 
         executable = server_path()
@@ -302,8 +301,6 @@ def discover(model_path: str, engine: str, *, native: bool = False) -> dict:
     if budget:
         fields.add("reasoning_budget")
     levels = ["auto", "off", "high"] if toggle else ["auto"]
-    if budget:
-        levels = ["auto", *(["off"] if toggle else []), "low", "medium", "high", "max"]
     if native_effort:
         levels = ["auto"] + [
             level
@@ -316,19 +313,12 @@ def discover(model_path: str, engine: str, *, native: bool = False) -> dict:
             "mechanism": "template_effort"
             if native_effort
             else ("template_toggle" if toggle else "native_fixed_or_unknown"),
-            **({"default": "off"} if engine == "mlx-vlm" and re.search(
-                r"enable_thinking\s*\|\s*default\(false\)", template) else {}),
+            **({"default": native_thinking_default} if native_thinking_default else {}),
             "levels": levels,
             **({"budget": budget} if budget else {}),
             "explanation": (
                 "This native template declares graded reasoning effort."
                 if native_effort
-                else "Uncloud effort levels limit thinking tokens and leave room for an answer. "
-                     "The model's native template uses thinking on/off."
-                if toggle and budget
-                else "Uncloud effort levels limit this model's native thinking tokens "
-                     "and leave room for an answer."
-                if budget
                 else "This model supports thinking on/off, not graded effort."
                 if toggle
                 else "Native behavior is preserved. No adjustable thinking mechanism verified."

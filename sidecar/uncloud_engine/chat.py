@@ -17,14 +17,19 @@ def model_payload(
 ) -> dict:
     """Native model recommendations with explicit request overrides.
 
-    Keep the model's native template and sampling. Compatible thinking runtimes
-    receive a separate, visible reasoning allowance that leaves answer space.
-    Effort never launches additional model passes.
+    Keep the model's native template and sampling. Only explicit, supported
+    thinking controls are forwarded. Effort never launches additional passes.
     """
     from .inference_profile import for_backend, parameters
 
     metadata = getattr(active, "inference_profile", {})
     payload = {"messages": messages, "stream": True, "stream_options": {"include_usage": True}}
+    if active.engine == "mlx-vlm":
+        # Its native chat API requires the model identifier even when the
+        # selected weights were already configured on the server command line.
+        payload["model"] = active.model_path
+        if getattr(active, "adapter_path", None):
+            payload["adapter_path"] = active.adapter_path
     payload.update(for_backend(parameters(metadata, (inference or {}).get("reasoning", "auto")),
                                overrides or {}, active.engine))
     if max_tokens is not None:

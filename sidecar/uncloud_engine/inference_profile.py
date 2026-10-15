@@ -83,7 +83,9 @@ def parameters(profile: dict, reasoning: str = "auto") -> dict:
     modes = profile.get("mode_parameters", {})
     if not modes:
         return profile.get("parameters", {})
-    mode = "off" if reasoning == "off" else profile["recommendation"]["native_mode"]
+    native_default = profile.get("capabilities", {}).get("reasoning", {}).get("default")
+    mode = "off" if reasoning == "off" or reasoning == "auto" and native_default == "off" \
+        else profile["recommendation"]["native_mode"]
     return {**modes.get(mode, {}), **profile.get("explicit_parameters", {})}
 
 

@@ -20,7 +20,6 @@ const server = await createServer({ root: fileURLToPath(new URL('../uncloud/', i
 try {
   const { chatSystemPrompt } = await server.ssrLoadModule('/src/lib/sidecar.ts');
   const { resultsTurn } = await server.ssrLoadModule('/src/lib/lookup.ts');
-  const { chatTurnInference } = await server.ssrLoadModule('/src/lib/inference.ts');
   const options = { web: true, pictures: false, manner: 'plain', now: new Date('2026-10-12T04:30:00Z') };
   const math = 'A bag has 3 red balls and 2 blue balls. Draw two without replacement. What is the probability both are red? Give the exact fraction and one short explanation.';
   const turns = (prompt, text) => [...(prompt ? [{ role: 'system', content: prompt }] : []), { role: 'user', content: text }];
@@ -33,7 +32,7 @@ try {
     { name: 'native_baseline', messages: turns('', math), inference: deterministic, native_baseline: true, expected: ['3/10'], expected_probability: '3/10' },
     { name: 'after_direct_repeat', messages: turns(chatSystemPrompt(options), math), inference: deterministic, expected: ['3/10'], expected_probability: '3/10' },
     { name: 'auto_greeting', messages: turns(chatSystemPrompt(options), 'How are we today? Answer in one sentence.'), use_default_output: true,
-      inference: chatTurnInference('How are we today? Answer in one sentence.', {}, ['auto', 'off', 'high']) },
+      inference: {} },
     { name: 'auto_code', messages: turns('', 'Write a Python function named square that returns x multiplied by itself. Return only the code.'), use_default_output: true, expected: ['def square', 'return'] },
     { name: 'high_reasoning', messages: turns('', math), inference: { reasoning: 'high' }, use_default_output: true, expected: ['3/10'], expected_probability: '3/10' },
     { name: 'context_recall', messages: [

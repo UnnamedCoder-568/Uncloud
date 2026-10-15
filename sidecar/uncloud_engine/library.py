@@ -7,6 +7,7 @@ from pathlib import Path
 
 from .catalog import get_catalog
 from .flux2_profile import read_profile
+from .text_runtime import for_mlx_model
 
 DIFFUSION_HINTS = ("qwen-image", "hidream", "flux", "sdxl", "sd3", "stable-diffusion",
                    "video", "wan2", "cogvideo", "ltx", "krea", "klein", "pony")
@@ -432,7 +433,8 @@ def _scan_library(models_dir: Path) -> list[LocalModel]:
         seen_paths.add(path_str)
         found.append(LocalModel(
             id=f"local:{path_str}", name=entry.name, category=entry.category,
-            engine=entry.engine, path=path_str, size_gb=size_gb,
+            engine=for_mlx_model(path_str) if entry.category == "text" and entry.engine == "mlx"
+            else entry.engine, path=path_str, size_gb=size_gb,
             catalog_id=entry.id, tags=entry.tags, note=entry.note,
             mflux_cli=entry.mflux_cli, mflux_base=entry.mflux_base,
             defaults=entry.defaults or None, capabilities=entry.capabilities,
@@ -617,10 +619,13 @@ def _scan_library(models_dir: Path) -> list[LocalModel]:
                 entry = catalog_by_repo.get(repo)
             except (json.JSONDecodeError, OSError):
                 pass
+            selected_category = entry.category if entry else category
+            selected_engine = entry.engine if entry else engine
+            if selected_category == "text" and selected_engine == "mlx":
+                selected_engine = for_mlx_model(path_str)
             found.append(LocalModel(
                 id=f"local:{child}", name=entry.name if entry else display_name,
-                category=entry.category if entry else category,
-                engine=entry.engine if entry else engine,
+                category=selected_category, engine=selected_engine,
                 path=path_str, size_gb=_dir_size_gb(child),
                 catalog_id=entry.id if entry else None,
                 tags=entry.tags if entry else None,

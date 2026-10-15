@@ -1,5 +1,5 @@
 import InferenceControls from '../components/InferenceControls';
-import { chatTurnInference, useInference } from '../lib/inference';
+import { useInference } from '../lib/inference';
 import AutoGrowTextarea from "../components/AutoGrowTextarea";
 import { useDismiss } from '../lib/useDismiss';
 import ActivityOrb from '../components/ActivityOrb';
@@ -64,9 +64,7 @@ export default function ChatView() {
   //  arrival, so opening Chat and changing your mind does not litter the list
   //  with empty conversations.
   const [conversationId, setConversationId] = useState<string | null>(null);
-  const inference = useInference(activeModel?.path, conversationId);
-  const reasoningLevels = inference.info?.active?.model_path === activeModel?.path
-    ? inference.info?.active?.profile.capabilities.reasoning.levels ?? [] : [];
+  const inference = useInference(activeModel?.path, conversationId, true);
   const systemPrompt = useCallback((options: Parameters<typeof chatSystemPrompt>[0]) =>
     typeof inference.values.system_prompt === 'string' ? inference.values.system_prompt : chatSystemPrompt(options),
     [inference.values.system_prompt]);
@@ -515,10 +513,9 @@ export default function ChatView() {
       const requestedLookup = web && !rawMode ? initialWebLookup(text,
         messages.filter(m => m.role === 'user').map(m => m.content)) : null;
       const requestedPictures = pictures && !rawMode && wantsPictures(text);
-      const turnInference = chatTurnInference(text, inference.values,
-        reasoningLevels, rawMode);
+      const turnInference = inference.values;
       const replyPrompt = () => systemPrompt({ pictures: requestedPictures, web, manner,
-        webPhase: requestedLookup ? lookups.phase : undefined });
+        spoken: readAloud, webPhase: requestedLookup ? lookups.phase : undefined });
       const fitEvidence = async (evidence: string, assemble: (text: string) => ChatMessage[]) => {
         const fitted = await fitWebContext(evidence,
           value => contextMessages(assemble(value), replyPrompt(), compactSummary, 0, rawMode),
@@ -812,10 +809,7 @@ export default function ChatView() {
         ...(input.trim() ? [{ role: 'user' as const, content: input.trim() }] : []),
       ], systemPrompt({ pictures: pictures && wantsPictures(currentText), web, manner,
         webPhase: needsWeb ? 'results' : undefined }), compactSummary, compactedThrough, rawMode);
-      const values = chatTurnInference(currentText, inference.values,
-        inference.info?.active?.model_path === activeModel.path
-          ? inference.info.active.profile.capabilities.reasoning.levels : [], rawMode);
-      void countChatContext(turns, values).then((usage) => {
+      void countChatContext(turns, inference.values).then((usage) => {
         if (!cancelled) setContextUsage(usage);
       }).catch(() => { if (!cancelled) setContextUsage(null); });
     }, 550);
@@ -1065,7 +1059,7 @@ export default function ChatView() {
                 <ReplyVoice className="input" value={voice} onChange={setVoice} />
               </label>
               <label className="field">
-                <span className="label" style={{ fontSize: 11 }}>Manner</span>
+                <span className="label" style={{ fontSize: 11 }}>Spoken manner</span>
                 <select className="input" value={manner}
                         onChange={(e) => setManner(e.target.value)}>
                   {MANNERS.map((m) => (
@@ -1074,8 +1068,8 @@ export default function ChatView() {
                 </select>
               </label>
               <p className="faint" style={{ fontSize: 10, lineHeight: 1.5 }}>
-                Manner changes how the assistant writes, so it reads well aloud —
-                short sentences, no lists or markdown. Voices you save in
+                Applies only when a reply is read aloud. Typed chat uses no voice formatting.
+                Voices you save in
                 Voice → Text to voice appear here too.
               </p>
               </div>
@@ -1191,9 +1185,6 @@ export default function ChatView() {
       </div>}
       {activeModel && (contextUsage?.limit || compactSummary) && (
         <div className="chat-context-footer">
-          {chatTurnInference(input || [...messages].reverse().find(m => m.role === 'user')?.content || '',
-            inference.values, reasoningLevels, rawMode) !== inference.values &&
-            <span className="mr-auto" title="Auto uses the model’s native non-thinking template for this greeting. Choose explicit effort to override.">Auto · quick greeting</span>}
           {compactSummary && <details className="chat-context-memory">
             <summary>Compacted memory</summary>
             <div>{compactSummary}</div>

@@ -345,12 +345,12 @@ CATALOG: list[CatalogEntry] = [
     CatalogEntry(
         id="qwen3.5-9b-mlx-q4",
         name="Qwen3.5 9B (MLX, Q4)",
-        category="text", engine="mlx",
+        category="text", engine="mlx-vlm",
         repo="mlx-community/Qwen3.5-9B-MLX-4bit",
-        size_gb=6.0, context_length=32768,
-        description="Fast general-purpose model, small enough to stay loaded alongside an image "
-                    "model.",
-        tags=["general", "fast", "apple-silicon"],
+        size_gb=6.0, context_length=262144,
+        description="General-purpose vision-language model. Uses its native processor for text "
+                    "and image input.",
+        tags=["general", "vision", "apple-silicon"],
     ),
     CatalogEntry(
         id="llama-3.1-8b-instruct-mlx",

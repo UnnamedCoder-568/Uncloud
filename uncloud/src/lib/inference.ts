@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, apiPost } from './sidecar';
 import { onLibraryChange } from './library-changed';
-import { isSocialGreeting } from './lookup';
 
 export type InferenceValues = Record<string, number | string | boolean | string[] | Record<string, unknown>>;
 export interface InferenceInfo {
@@ -13,7 +12,7 @@ export interface InferenceInfo {
     explicit_parameters?: Record<string, number>;
     capabilities: { fields: string[]; backend_version: string; template: string;
       runtime_defaults?: { max_tokens?: number };
-      reasoning: { levels: string[]; explanation: string; mechanism: string;
+      reasoning: { levels: string[]; explanation: string; mechanism: string; default?: string;
         budget?: { mechanism: string; closing_tokens: number } } };
   } };
 }
@@ -21,17 +20,8 @@ export const getInference = () => api<InferenceInfo>('/api/inference');
 export const saveInference = (values: InferenceValues, preset = '', scope = 'model', scope_id = '') =>
   apiPost<InferenceInfo['saved']>('/api/inference', { values, preset, scope, scope_id });
 
-/** Auto can use a discovered native non-thinking template for a plain greeting.
- * No prompt rewrite, model pass or saved-setting mutation. Explicit controls,
- * custom prompts, unsupported templates and developer raw mode remain native. */
-export function chatTurnInference(text: string, values: InferenceValues, levels: string[], raw = false): InferenceValues {
-  if (raw || (values.reasoning !== undefined && values.reasoning !== 'auto')
-      || values.reasoning_budget !== undefined || values.system_prompt !== undefined
-      || !levels.includes('off') || !isSocialGreeting(text)) return values;
-  return { ...values, reasoning: 'off' };
-}
-
-export function resolvedDefaults(report: InferenceInfo, modelPath?: string | null, conversationId?: string | null): InferenceValues {
+export function resolvedDefaults(report: InferenceInfo, modelPath?: string | null, conversationId?: string | null,
+  manual: InferenceValues = {}): InferenceValues {
   let legacy: InferenceValues = {};
   if (!Object.hasOwn(report.saved.defaults, `model:${modelPath}`)) {
     try {
@@ -42,13 +32,30 @@ export function resolvedDefaults(report: InferenceInfo, modelPath?: string | nul
     } catch { legacy = {}; }
   }
   return { ...legacy, ...(report.saved.defaults[`model:${modelPath}`] ?? {}),
-    ...(report.saved.defaults[`conversation:${conversationId}`] ?? {}) };
+    ...(report.saved.defaults[`conversation:${conversationId}`] ?? {}), ...manual };
 }
 
-export function useInference(modelPath?: string | null, conversationId?: string | null) {
+export function useInference(modelPath?: string | null, conversationId?: string | null, rememberManual = false) {
   const [info, setInfo] = useState<InferenceInfo | null>(null);
-  const [values, setValues] = useState<InferenceValues>({});
-  const previous = useRef({ modelPath, conversationId });
+  const [initialManual] = useState<InferenceValues | null>(() => {
+    try {
+      if (!rememberManual) return {};
+      const stored = localStorage.getItem('uncloud.chat.manualInference');
+      if (stored === null) return null; // Migrate the current model's saved overrides once.
+      const saved = JSON.parse(stored);
+      return saved && typeof saved === 'object' && !Array.isArray(saved) ? saved : {};
+    } catch { return null; }
+  });
+  const [values, setValues] = useState<InferenceValues>(initialManual ?? {});
+  const manual = useRef<InferenceValues | null>(initialManual);
+  const changeValues = useCallback((next: InferenceValues) => {
+    manual.current = next;
+    setValues(next);
+    if (rememberManual) {
+      try { localStorage.setItem('uncloud.chat.manualInference', JSON.stringify(next)); }
+      catch { /* Controls remain usable without storage. */ }
+    }
+  }, [rememberManual]);
   const refresh = useCallback(async () => {
     const report = await getInference();
     setInfo(report);
@@ -56,32 +63,23 @@ export function useInference(modelPath?: string | null, conversationId?: string 
   }, []);
   useEffect(() => {
     let alive = true;
-    const freshConversation = previous.current.modelPath === modelPath &&
-      !previous.current.conversationId && !!conversationId;
-    previous.current = { modelPath, conversationId };
     getInference().then(report => {
       if (!alive) return;
       setInfo(report);
-      if (!freshConversation || report.saved.defaults[`conversation:${conversationId}`])
-        setValues(resolvedDefaults(report, modelPath, conversationId));
+      if (rememberManual) {
+        if (!modelPath) return;
+        if (manual.current === null) {
+          manual.current = resolvedDefaults(report, modelPath, conversationId);
+          try { localStorage.setItem('uncloud.chat.manualInference', JSON.stringify(manual.current)); }
+          catch { /* Session overrides still work. */ }
+        }
+        setValues(manual.current);
+      } else {
+        setValues(resolvedDefaults(report, modelPath, conversationId, manual.current ?? {}));
+      }
     }).catch(() => {});
     return () => { alive = false; };
-  }, [modelPath, conversationId]);
+  }, [modelPath, conversationId, rememberManual]);
   useEffect(() => onLibraryChange(() => { void refresh().catch(() => {}); }), [refresh]);
-  return { info, values, setValues, refresh };
-}
-
-/** Presets use discovered recommendations; settings are always shown before sending. */
-export function presetValues(name: string, info: InferenceInfo): InferenceValues {
-  const profile = info.active?.profile;
-  if (!profile) return {};
-  const fields = profile.capabilities.fields;
-  const thinking = profile.capabilities.reasoning.levels;
-  if (name === 'Fast') return thinking.includes('off') ? { reasoning: 'off' } : {};
-  if (name === 'Deep') return thinking.includes('high') ? { reasoning: 'high' } : {};
-  if (name === 'Deterministic') return { ...(fields.includes('temperature') ? { temperature: 0 } : {}),
-    ...(fields.includes('seed') ? { seed: 0 } : {}) };
-  if (name === 'Creative' && profile.parameters.temperature !== undefined)
-    return { temperature: profile.parameters.temperature * 1.2 };
-  return {};
+  return { info, values, setValues: changeValues, refresh };
 }

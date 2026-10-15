@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import os
 import socket
 import subprocess
 import sys
@@ -57,6 +58,10 @@ class EngineManager:
         context_length: int | None = None,
     ) -> ActiveEngine:
         async with self._lock:
+            if engine == "mlx":
+                from .text_runtime import for_mlx_model
+
+                engine = for_mlx_model(model_path)
             if (
                 self.active
                 and self.active.model_path == model_path
@@ -89,9 +94,14 @@ class EngineManager:
             if engine == "gguf":
                 proc = self._spawn_llama_cpp(model_path, port, profile["effective_limit"])
             elif engine == "mlx":
-                proc = self._spawn_mlx(model_path, port, adapter_path)
+                proc = self._spawn_mlx(model_path, port, adapter_path, profile["effective_limit"])
+                # The library's generic 512-token default is not a model limit.
+                # Auto may use the available native window; EOS still ends early.
+                defaults = inference_profile["capabilities"].setdefault("runtime_defaults", {})
+                defaults["max_tokens"] = profile["effective_limit"]
             elif engine == "mlx-vlm":
-                proc = self._spawn_mlx_vlm(model_path, port)
+                proc = self._spawn_mlx_vlm(
+                    model_path, port, profile["effective_limit"], adapter_path)
             else:
                 raise ValueError(f"No text-inference launcher for engine: {engine}")
 
@@ -209,7 +219,8 @@ class EngineManager:
         )
 
     def _spawn_mlx(
-        self, model_path: str, port: int, adapter_path: str | None = None
+        self, model_path: str, port: int, adapter_path: str | None = None,
+        context_limit: int | None = None,
     ) -> subprocess.Popen:
         command = [
             sys.executable,
@@ -224,28 +235,34 @@ class EngineManager:
         ]
         if adapter_path:
             command += ["--adapter-path", adapter_path]
+        if context_limit is not None:
+            command += ["--max-tokens", str(context_limit)]
+        environment = dict(os.environ)
+        if context_limit is not None:
+            environment["UNCLOUD_CONTEXT_LIMIT"] = str(context_limit)
         return subprocess.Popen(
             command,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
+            env=environment,
         )
 
-    def _spawn_mlx_vlm(self, model_path: str, port: int) -> subprocess.Popen:
+    def _spawn_mlx_vlm(self, model_path: str, port: int,
+                       context_limit: int | None = None,
+                       adapter_path: str | None = None) -> subprocess.Popen:
         """Vision-language models carry an image encoder alongside the text stack,
         which mlx_lm's server can't drive — mlx_vlm serves the same OpenAI-shaped
         API but accepts image content parts in messages."""
+        command = [
+            sys.executable, "-m", "mlx_vlm.server", "--model", model_path,
+            "--port", str(port), "--host", "127.0.0.1",
+        ]
+        if context_limit is not None:
+            command += ["--max-kv-size", str(context_limit)]
+        if adapter_path:
+            command += ["--adapter-path", adapter_path]
         return subprocess.Popen(
-            [
-                sys.executable,
-                "-m",
-                "mlx_vlm.server",
-                "--model",
-                model_path,
-                "--port",
-                str(port),
-                "--host",
-                "127.0.0.1",
-            ],
+            command,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
         )
