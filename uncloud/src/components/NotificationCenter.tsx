@@ -6,8 +6,9 @@ import { api, apiPost } from '../lib/sidecar';
 import { inDesktop } from '../lib/platform';
 import { useDismiss } from '../lib/useDismiss';
 import type { View } from './Sidebar';
+import { resolveView } from '../lib/workspaces';
 
-export interface UserEvent { id: string; category: string; title: string; body: string; target: View;
+export interface UserEvent { id: string; category: string; title: string; body: string; target: string;
   run_id: string; request_id: string; conversation_id: string; created: number; read: boolean; delivery: string; }
 interface Interaction { id: string; run_id: string; kind: 'permission' | 'question'; status: string;
   expires: number; details: { category?: string; summary?: string; preview?: Record<string, unknown>;
@@ -37,9 +38,9 @@ export default function NotificationCenter({ navigate }: { navigate: (view: View
     const event = history.events.find(e => e.id === id);
     setReport(history);
     if (!event) return;
-    const destinations: View[] = ['chat', 'chisel', 'automations', 'models', 'settings', 'image', 'video', 'music', 'voice'];
-    if (!destinations.includes(event.target)) return;
-    navigate(event.target);
+    const destination = resolveView(event.target);
+    if (!destination) return;
+    navigate(destination);
     if (event.conversation_id) window.dispatchEvent(new CustomEvent('uncloud.open-conversation', { detail: event.conversation_id }));
     if (event.request_id || event.target === 'chisel') setOpen(true);
     await apiPost('/api/notifications/mark', { operation: 'read', id });

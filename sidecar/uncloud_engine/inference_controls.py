@@ -221,6 +221,7 @@ def discover(model_path: str, engine: str, *, native: bool = False) -> dict:
     vlm_tokens = None
     native_thinking_default = None
     runtime_defaults = {}
+    native_tools = False
     if engine == "mlx":
         try:
             dist = importlib.metadata.distribution("mlx-lm")
@@ -230,6 +231,7 @@ def discover(model_path: str, engine: str, *, native: bool = False) -> dict:
             if output_default:
                 runtime_defaults["max_tokens"] = output_default
             consumed = set(re.findall(r'\bself\.body\.get\("([a-z_]+)"', source))
+            native_tools = '"tools"' in source and 'tool_calls' in source
             fields &= consumed
             fields |= ADVANCED & consumed
             # Some core parameters use a multiline get; keep those only if named in source.
@@ -248,6 +250,9 @@ def discover(model_path: str, engine: str, *, native: bool = False) -> dict:
                 native_thinking_default = "on" if declared_thinking[1] == "True" else "off"
             normalization = Path(dist.locate_file(
                 "mlx_vlm/server/request_normalization.py")).read_text()
+            with contextlib.suppress(OSError):
+                tool_source = Path(dist.locate_file('mlx_vlm/server/openai.py')).read_text()
+                native_tools = 'request.tools' in tool_source and 'tool_calls' in tool_source
             with contextlib.suppress(OSError, ValueError):
                 generation = Path(dist.locate_file("mlx_vlm/generate/ar.py")).read_text()
                 output_default = native_output_default(generation, "DEFAULT_MAX_TOKENS")
@@ -273,6 +278,7 @@ def discover(model_path: str, engine: str, *, native: bool = False) -> dict:
     elif engine == "gguf":
         # llama-cpp-python's API is deliberately narrower than native llama-server.
         if native:
+            native_tools = True
             fields |= {"typical_p", "response_format", "grammar", "logprobs", "top_logprobs"}
         else:
             fields |= {"response_format"}
@@ -309,6 +315,8 @@ def discover(model_path: str, engine: str, *, native: bool = False) -> dict:
         ]
     return {
         "fields": sorted(fields),
+        "native_tools": native_tools and bool(re.search(r'\btools\b', template))
+                        and 'tool_call' in template,
         "reasoning": {
             "mechanism": "template_effort"
             if native_effort

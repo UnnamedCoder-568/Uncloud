@@ -6,6 +6,7 @@ Called only for the optional UI meter; ordinary chat never waits for it.
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import Mapping
 from functools import lru_cache
 from pathlib import Path
@@ -26,11 +27,7 @@ def _count_mlx(model_path: str, messages: list[dict], template_kwargs: dict | No
     tokenizer = _mlx_tokenizer(model_path)
     if any(not isinstance(m.get("content"), str) for m in messages):
         raise ValueError("Multimodal context requires backend token accounting")
-    turns = [
-        {"role": m["role"], "content": m["content"]}
-        for m in messages
-        if m.get("role") in ("system", "user", "assistant") and isinstance(m.get("content"), str)
-    ]
+    turns = messages
     if tokenizer.chat_template:
         encoded = tokenizer.apply_chat_template(
             turns, tokenize=True, add_generation_prompt=True, **(template_kwargs or {})
@@ -43,8 +40,13 @@ def _count_mlx(model_path: str, messages: list[dict], template_kwargs: dict | No
     raise ValueError("The model does not provide a native chat template")
 
 
-async def count(active, messages: list[dict], inference: dict | None = None) -> int | None:
+async def count(active, messages: list[dict], inference: dict | None = None,
+                *, web_tools: bool = False) -> int | None:
     from .inference_controls import apply
+    from .web_tools import chat_turns, definitions
+
+    messages = chat_turns(messages)
+    tools = definitions(active, web_tools)
 
     # Input tokenization depends on the native template, not on sampling or
     # output ceilings. A stale reply preference must not disable the meter.
@@ -53,6 +55,8 @@ async def count(active, messages: list[dict], inference: dict | None = None) -> 
     )
     controls = apply(active, {}, template_controls)
     kwargs = controls.get("chat_template_kwargs", {})
+    if tools:
+        kwargs = {**kwargs, 'tools': tools}
     if active.engine == "mlx":
         if kwargs:
             return await asyncio.to_thread(_count_mlx, active.model_path, messages, kwargs)
@@ -60,6 +64,18 @@ async def count(active, messages: list[dict], inference: dict | None = None) -> 
     if active.engine == "mlx-vlm":
         turns = []
         for message in messages:
+            if message.get('tool_calls'):
+                turns.extend({'type': 'function_call', 'call_id': call['id'],
+                              'name': call['function']['name'],
+                              'arguments': call['function']['arguments']
+                              if isinstance(call['function']['arguments'], str)
+                              else json.dumps(call['function']['arguments'])}
+                             for call in message['tool_calls'])
+                continue
+            if message['role'] == 'tool':
+                turns.append({'type': 'function_call_output', 'call_id': message['tool_call_id'],
+                              'output': message['content']})
+                continue
             content = message.get("content")
             if isinstance(content, list):
                 parts = []
@@ -76,6 +92,7 @@ async def count(active, messages: list[dict], inference: dict | None = None) -> 
             response = await client.post(
                 f"{active.base_url}/v1/responses/input_tokens",
                 json={"model": active.model_path, "input": turns,
+                      **({'tools': tools} if tools else {}),
                       **({"enable_thinking": controls["enable_thinking"]}
                          if "enable_thinking" in controls else {})},
             )
@@ -89,7 +106,9 @@ async def count(active, messages: list[dict], inference: dict | None = None) -> 
         # Current llama.cpp counts the fully rendered chat template here.
         response = await client.post(
             f"{active.base_url}/v1/chat/completions/input_tokens",
-            json={"messages": messages, **({"chat_template_kwargs": kwargs} if kwargs else {})},
+            json={"messages": messages, **({'tools': tools} if tools else {}),
+                  **({"chat_template_kwargs": controls.get('chat_template_kwargs')}
+                     if controls.get('chat_template_kwargs') else {})},
         )
         if response.is_success:
             data = response.json()
@@ -103,7 +122,9 @@ async def count(active, messages: list[dict], inference: dict | None = None) -> 
         # were the prompt the backend receives.
         template = await client.post(
             f"{active.base_url}/apply-template",
-            json={"messages": messages, **({"chat_template_kwargs": kwargs} if kwargs else {})},
+            json={"messages": messages, **({'tools': tools} if tools else {}),
+                  **({"chat_template_kwargs": controls.get('chat_template_kwargs')}
+                     if controls.get('chat_template_kwargs') else {})},
         )
         template.raise_for_status()
         prompt = template.json()["prompt"]

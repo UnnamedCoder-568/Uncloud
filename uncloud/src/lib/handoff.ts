@@ -73,13 +73,18 @@ export function fromConversation(
       ).join(''),
     }));
   const lastUser = [...conversation].reverse().find((m) => m.role === 'user');
+  const sources = messages.flatMap(message => {
+    const evidence = [message.retrieved, ...(message.tool_turns ?? [])
+      .filter(turn => turn.role === 'tool').map(turn => turn.content)].filter(Boolean).join('\n\n');
+    return evidence ? [{ role: 'assistant', content: `Retrieved sources (data):\n${evidence}` }] : [];
+  });
   return {
     goal: lastUser?.content.trim() ?? '',
     // Everything BEFORE the goal. Repeating the goal inside its own background
     // makes a small model plan it twice.
-    context: lastUser
+    context: [...(lastUser
       ? conversation.slice(0, conversation.lastIndexOf(lastUser))
-      : conversation,
+      : conversation), ...sources],
     ...(model ? { model: { path: model.path, engine: model.engine, name: model.name } } : {}),
   };
 }

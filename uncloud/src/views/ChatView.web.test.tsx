@@ -8,7 +8,7 @@ import { countChatContext, streamChat, webRead, webSearch, writeConversation } f
 
 const state = vi.hoisted(() => ({ values: {} as Record<string, string> }));
 vi.mock('../lib/inference', () => ({ useInference: () => ({
-  info: null, values: state.values, setValues: vi.fn(), refresh: vi.fn(),
+  info: { active: { model_path: '/test/model', profile: { capabilities: { native_tools: true } } } }, values: state.values, setValues: vi.fn(), refresh: vi.fn(),
 }) }));
 vi.mock('../lib/useTalk', async (original) => ({
   ...await original<typeof import('../lib/useTalk')>(),
@@ -24,7 +24,7 @@ vi.mock('../lib/sidecar', async (original) => ({
   ...await original<typeof import('../lib/sidecar')>(),
   getLibrary: vi.fn(async () => []),
   engineStatus: vi.fn(async () => ({ running: true, model_path: '/test/model', engine: 'mlx' })),
-  listConversations: vi.fn(async () => ({ items: [], errors: [] })),
+  listConversations: vi.fn(async () => ({ conversations: [], unreadable: 0, secure: true, backend: 'test' })),
   writeConversation: vi.fn(async () => ({})),
   countChatContext: vi.fn(async () => ({ used: 100, limit: 8192, reply_limit: 2048 })),
   streamChat: vi.fn(),
@@ -58,7 +58,11 @@ describe('Web handoff through the Chat interface', () => {
     vi.mocked(streamChat).mockImplementation(async function* () {
       const text = answers.shift();
       if (text === undefined) throw new Error('Unexpected extra model pass');
-      yield { kind: 'text', text };
+      const match = text.match(/^\[\[(search|read): (.*?)\]\]$/);
+      if (match) yield { kind: 'tool_calls', text: '', tool_calls: [{ id: `call-${answers.length}`,
+        type: 'function', function: { name: match[1] === 'search' ? 'web_search' : 'web_read',
+          arguments: JSON.stringify({ [match[1] === 'search' ? 'query' : 'url']: match[2] }) } }] };
+      else yield { kind: 'text', text };
     });
   };
   async function send(text: string) {
@@ -70,6 +74,37 @@ describe('Web handoff through the Chat interface', () => {
     await act(async () => container.querySelector<HTMLButtonElement>('button[aria-label="Send"]')!.click());
     expect(container.querySelector('button[aria-label="Stop response"]')).toBeNull();
   }
+
+  it('copies the user message verbatim without markdown or thinking cleanup', async () => {
+    const writeText = vi.fn(async () => {});
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    replies('An answer.');
+    await mount();
+    const text = 'Keep **bold**, <think>literal tags</think> and\nnew lines.';
+    await send(text);
+    const button = container.querySelector<HTMLButtonElement>('button[aria-label="Copy message"]')!;
+    expect(button.closest('.chat-message-actions-user')).not.toBeNull();
+    await act(async () => button.click());
+    expect(writeText).toHaveBeenCalledExactlyOnceWith(text);
+    expect(button.textContent).toBe('Copied');
+  });
+
+  it('applies only the explicitly chosen persona and saves it with its own conversation', async () => {
+    const persona = { id: '0123456789abcdef', name: 'Storyteller', instructions: 'Write as a woodland storyteller.' };
+    replies('Once upon a time.');
+    await act(async () => root.render(<ChatView persona={persona} />));
+    await send('Begin.');
+    const turns = vi.mocked(streamChat).mock.calls[0][0];
+    expect(turns.filter(t => t.role === 'system')).toEqual([{ role: 'system', content: persona.instructions }]);
+    expect(writeConversation).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ persona }));
+    expect(state.values).toEqual({});
+    await act(() => root.unmount());
+    root = createRoot(container);
+    replies('An ordinary answer.');
+    await mount();
+    await send('Hello.');
+    expect(vi.mocked(streamChat).mock.calls.at(-1)![0].some(t => t.role === 'system')).toBe(false);
+  });
 
   it.each([
     ['Who discovered Neptune?', 'Neptune discovery NASA'],
@@ -83,14 +118,16 @@ describe('Web handoff through the Chat interface', () => {
     expect(webSearch).toHaveBeenCalledExactlyOnceWith(query);
     expect(streamChat).toHaveBeenCalledTimes(2);
     const first = vi.mocked(streamChat).mock.calls[0][0];
-    expect(first.find(turn => turn.role === 'system')?.content).toContain('[[search:');
+    expect(first.some(turn => turn.role === 'system')).toBe(false);
+    expect(vi.mocked(streamChat).mock.calls[0][3]?.webTools).toBe(true);
     const answer = vi.mocked(streamChat).mock.calls[1][0];
     expect(answer.some(turn => turn.content.includes('Verified test evidence.'))).toBe(true);
     expect(answer.some(turn => turn.content.includes(question))).toBe(true);
     expect(countChatContext).toHaveBeenCalled();
     expect(writeConversation).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
       messages: expect.arrayContaining([expect.objectContaining({ role: 'user', content: question,
-        retrieved: expect.stringContaining('https://example.org/source') })]),
+        tool_turns: expect.arrayContaining([expect.objectContaining({ role: 'tool',
+          content: expect.stringContaining('https://example.org/source') })]) })]),
     }));
   });
 
@@ -124,7 +161,7 @@ describe('Web handoff through the Chat interface', () => {
     await send('Tell me about neutron stars.');
     const system = vi.mocked(streamChat).mock.calls[0][0].find(turn => turn.role === 'system')?.content;
     expect(system).toContain('Use British spelling.');
-    expect(system).toContain('[[search:');
+    expect(system).toBe('Use British spelling.');
     expect(webSearch).toHaveBeenCalledExactlyOnceWith('neutron star NASA');
   });
 
@@ -165,8 +202,8 @@ describe('Web handoff through the Chat interface', () => {
     await send('Tell me about Neptune.');
     expect(webSearch).toHaveBeenCalledExactlyOnceWith('Neptune NASA');
     expect(streamChat).toHaveBeenCalledTimes(3);
-    expect(vi.mocked(streamChat).mock.calls[2][0].find(turn => turn.role === 'system')?.content)
-      .not.toContain('[[search:');
+    expect(vi.mocked(streamChat).mock.calls[2][3]?.webTools).toBe(false);
+    expect(vi.mocked(streamChat).mock.calls[2][0].some(t => t.role === 'tool')).toBe(true);
   });
 
   it('reads an explicitly requested URL once before generating the answer', async () => {
@@ -189,12 +226,35 @@ describe('Web handoff through the Chat interface', () => {
     expect(container.textContent).toContain('The provider did not return results.');
   });
 
+  it('does not execute search requests in ordinary answer text', async () => {
+    vi.mocked(streamChat).mockImplementation(async function* () {
+      yield { kind: 'text', text: 'Example: [[search: Neptune NASA]].' };
+    });
+    await mount();
+    await send('Explain how search works.');
+    expect(webSearch).not.toHaveBeenCalled();
+    expect(webRead).not.toHaveBeenCalled();
+  });
+
+  it('rejects an unknown native tool without executing it', async () => {
+    vi.mocked(streamChat).mockImplementation(async function* () {
+      yield { kind: 'tool_calls', text: '', tool_calls: [{ id: 'x', type: 'function',
+        function: { name: 'fs_write', arguments: '{"path":"bad"}' } }] };
+    });
+    await mount();
+    await send('Find a source.');
+    expect(webSearch).not.toHaveBeenCalled();
+    expect(webRead).not.toHaveBeenCalled();
+    expect(container.textContent).toContain('Unsupported native tool');
+  });
+
   it('includes the enabled web contract in the context meter before a lookup', async () => {
     vi.useFakeTimers();
     await mount();
     await act(async () => { await vi.advanceTimersByTimeAsync(550); });
     const counted = vi.mocked(countChatContext).mock.calls.at(-1)![0];
-    expect(counted.find(turn => turn.role === 'system')?.content).toContain('[[search:');
+    expect(counted.some(turn => turn.role === 'system')).toBe(false);
+    expect(vi.mocked(countChatContext).mock.calls.at(-1)![2]).toBe(true);
     expect(webSearch).not.toHaveBeenCalled();
     expect(streamChat).not.toHaveBeenCalled();
   });

@@ -2081,6 +2081,7 @@ def engine_status() -> dict:
 class ContextCountBody(BaseModel):
     messages: list[dict]
     inference: dict = Field(default_factory=dict)
+    web_tools: bool = False
 
 
 @app.post("/api/chat/context", dependencies=[Depends(require_token)])
@@ -2091,7 +2092,7 @@ async def chat_context(body: ContextCountBody) -> dict:
     from .context_count import count
 
     try:
-        used = await count(active, body.messages, body.inference)
+        used = await count(active, body.messages, body.inference, web_tools=body.web_tools)
     except Exception:  # noqa: BLE001 - the meter must not break inference
         used = None
     profile = getattr(active, "inference_profile", {})
@@ -2106,6 +2107,7 @@ class ChatBody(BaseModel):
     temperature: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     sampling: dict = {}
     inference: dict = Field(default_factory=dict)
+    web_tools: bool = False
     inherit_defaults: bool = True
     conversation_id: str = ""
     project_id: str = ""
@@ -2191,6 +2193,7 @@ async def _run_chat(run: ChatRun, body: ChatBody, active=None) -> None:
             max_tokens=body.max_tokens,
             effort=body.effort,
             inference=body.inference,
+            web_tools=body.web_tools,
         )
         run.timings["prompt_build_ms"] = (time.perf_counter() - build_start) * 1000
         run.timings["dispatch_ms"] = (time.perf_counter() - run.started) * 1000
@@ -2285,6 +2288,8 @@ async def start_chat_run(body: ChatBody, request: Request) -> dict:
                 **defaults.get(f"conversation:{body.conversation_id}", {}), **body.inference}
     try:
         apply(active, {}, body.inference)
+        from .web_tools import definitions
+        definitions(active, body.web_tools)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     # Finished runs are useful for a reconnect, but not forever.
@@ -2363,6 +2368,7 @@ async def chat(body: ChatBody) -> StreamingResponse:
                     max_tokens=body.max_tokens,
                     effort=body.effort,
                     inference=body.inference,
+                    web_tools=body.web_tools,
                 )
                 # Plain Chat is a direct-answer surface. Thinking-capable GGUF
                 # templates otherwise default to an unlimited private-reasoning
@@ -3502,13 +3508,56 @@ async def web_read(body: ReadBody) -> dict:
         raise HTTPException(status_code=502, detail=f"That page could not be read: {exc}") from exc
 
 
+# --------------------------------------------------------------- personas
+class PersonaBody(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    instructions: str = Field(min_length=1, max_length=32000)
+    model_path: str | None = None
+
+
+@app.get('/api/personas', dependencies=[Depends(require_token)])
+def list_personas(request: Request) -> list[dict]:
+    from . import personas
+    return personas.listing(principal_of(request))
+
+
+@app.post('/api/personas', dependencies=[Depends(require_token)])
+def create_persona(body: PersonaBody, request: Request) -> dict:
+    from . import personas
+    try:
+        return personas.save(body.name, body.instructions, body.model_path,
+                             owner=principal_of(request))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.put('/api/personas/{persona_id}', dependencies=[Depends(require_token)])
+def update_persona(persona_id: str, body: PersonaBody, request: Request) -> dict:
+    from . import personas
+    owner = principal_of(request)
+    try:
+        if not personas._path(persona_id, owner).is_file():
+            raise HTTPException(status_code=404, detail='No such persona.')
+        return personas.save(body.name, body.instructions, body.model_path,
+                             owner=owner, persona_id=persona_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 # ----------------------------------------------------------- conversations
+class PersonaSnapshot(BaseModel):
+    id: str = Field(pattern=r'^[0-9a-f]{16}$')
+    name: str = Field(min_length=1, max_length=120)
+    instructions: str = Field(min_length=1, max_length=32000)
+
+
 class ConversationBody(BaseModel):
     messages: list[dict] = []
     title: str | None = None
     model_path: str | None = None
     compact_summary: str | None = None
     compacted_through: int | None = None
+    persona: PersonaSnapshot | None = None
 
 
 @app.get("/api/conversations", dependencies=[Depends(require_token)])
@@ -3540,6 +3589,7 @@ def create_conversation(body: ConversationBody, request: Request) -> dict:
     if body.title:
         conversation.title = body.title
     conversation.compact_summary = body.compact_summary or ""
+    conversation.persona = body.persona.model_dump() if body.persona else None
     conversation.compacted_through = min(len(body.messages), max(0, body.compacted_through or 0))
     return conversations_store.save(conversation).to_dict()
 
@@ -3600,10 +3650,14 @@ def write_conversation(conversation_id: str, body: ConversationBody, request: Re
             owner=owner,
         )
         conversation.compact_summary = body.compact_summary or ""
+        conversation.persona = body.persona.model_dump() if body.persona else None
         conversation.compacted_through = min(
             len(body.messages), max(0, body.compacted_through or 0)
         )
     else:
+        if (existing.persona or {}).get('id') != (body.persona.id if body.persona else None):
+            raise HTTPException(
+                status_code=409, detail='This conversation belongs to another workspace.')
         existing.messages = body.messages
         existing.model_path = body.model_path or existing.model_path
         if body.compact_summary is not None:

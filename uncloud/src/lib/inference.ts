@@ -10,7 +10,7 @@ export interface InferenceInfo {
     recommendation?: { id?: string; source?: string; verified?: string; native_mode?: string };
     mode_parameters?: Record<string, Record<string, number>>;
     explicit_parameters?: Record<string, number>;
-    capabilities: { fields: string[]; backend_version: string; template: string;
+    capabilities: { fields: string[]; backend_version: string; template: string; native_tools?: boolean;
       runtime_defaults?: { max_tokens?: number };
       reasoning: { levels: string[]; explanation: string; mechanism: string; default?: string;
         budget?: { mechanism: string; closing_tokens: number } } };

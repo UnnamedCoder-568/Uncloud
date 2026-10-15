@@ -10,12 +10,11 @@ import type { ReactNode } from 'react';
 import Wordmark from './Wordmark';
 import {
   MessageSquare, Boxes, Workflow, ImageIcon, Clapperboard, Mic, Music,
-  Settings, HelpCircle, FolderOpen, ChefHat, Clock,
+  Settings, HelpCircle, FolderOpen, Drama, Clock,
 } from 'lucide-react';
 
-export type View =
-  | 'chat' | 'models' | 'chisel' | 'automations' | 'image' | 'video' | 'music' | 'voice'
-  | 'friday' | 'outputs' | 'recipes' | 'guide' | 'settings';
+import type { View } from '../lib/workspaces';
+export type { View } from '../lib/workspaces';
 
 type Icon = React.ComponentType<{ size?: number; strokeWidth?: number }>;
 
@@ -23,13 +22,13 @@ const GROUPS: { label?: string; items: { id: View; label: string; icon: Icon }[]
   {
     items: [
       { id: 'chat', label: 'Chat', icon: MessageSquare },
-      { id: 'friday', label: 'Friday', icon: Mic },
+      { id: 'jarviz', label: 'Jarviz', icon: Mic },
       { id: 'models', label: 'Models', icon: Boxes },
       { id: 'chisel', label: 'Chisel', icon: Workflow },
       { id: 'automations', label: 'Automations', icon: Clock },
       // Training and quantising are not here: they are things you do TO a
       // model, so they are tabs inside Models. The rail lists subjects.
-      { id: 'recipes', label: 'Recipes', icon: ChefHat },
+      { id: 'personas', label: 'Personas', icon: Drama },
     ],
   },
   {
@@ -38,7 +37,6 @@ const GROUPS: { label?: string; items: { id: View; label: string; icon: Icon }[]
       { id: 'image', label: 'Image', icon: ImageIcon },
       { id: 'video', label: 'Video', icon: Clapperboard },
       { id: 'music', label: 'Music', icon: Music },
-      { id: 'voice', label: 'Voice', icon: Mic },
     ],
   },
   {

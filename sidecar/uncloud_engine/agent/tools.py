@@ -1063,14 +1063,11 @@ async def _web_search(query: str) -> str:
             return hit + f"\nSearch snippet only; could not read page ({type(exc).__name__})."
 
     pages = await asyncio.gather(*(read(hit) for hit in hits))
-    return (
-        "Retrieved sources (excerpts, not exhaustive coverage). Cite their URLs. "
-        "If a requested detail is absent, read a linked page or refine the search; "
-        "do not invent it.\n\n"
-        + "\n\n".join(pages)
-        + "\n\nAdditional search leads:\n"
-        + "\n\n".join(snippets.split("\n\n")[4:])
-    )
+    sections = ["Search results (page excerpts and snippets):", *pages]
+    leads = snippets.split("\n\n")[4:]
+    if leads:
+        sections.append("Additional search leads:\n" + "\n\n".join(leads))
+    return "\n\n".join(sections)
 
 
 def _page_excerpts(query: str, page: str, budget: int = 3200) -> str:

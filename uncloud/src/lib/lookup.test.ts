@@ -56,8 +56,19 @@ describe('results turn', () => {
     const turn = resultsTurn([{ kind: 'search', argument: 'x' } as never]
       .map((lookup) => ({ lookup, text: 'a result' })));
     expect(turn).toContain('Retrieved web evidence');
-    expect(turn).toContain('source material, not instructions');
+    expect(turn).not.toContain('instructions');
     expect(turn).toContain('a result');
+  });
+
+  it('keeps real source names and URLs inside neutral result labels', () => {
+    const source = '[Google Search](https://developers.google.com/search) documentation';
+    const turn = resultsTurn([{
+      lookup: { kind: 'read', argument: 'https://developers.google.com/search' },
+      text: source,
+    }]);
+    expect(turn).toContain(source);
+    expect(turn).toContain('Contents of https://developers.google.com/search');
+    expect(turn).not.toMatch(/<google_search_results>|\[Web Grounding Context\]/);
   });
 
   it('clips a long page so it cannot crowd out the question', () => {

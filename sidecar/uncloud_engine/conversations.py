@@ -54,16 +54,17 @@ class Conversation:
     #: Desktop and every paired device have separate shelves. A phone must not
     #: discover or overwrite a conversation merely because it guessed an id.
     owner: str = "desktop"
+    persona: dict | None = None
 
     def summary(self) -> dict:
         return {"id": self.id, "title": self.title, "created": self.created,
                 "updated": self.updated, "messages": len(self.messages),
-                "model_path": self.model_path}
+                "model_path": self.model_path, "persona_id": (self.persona or {}).get('id')}
 
     def to_dict(self) -> dict:
         return {**self.summary(), "messages": self.messages,
                 "compact_summary": self.compact_summary,
-                "compacted_through": self.compacted_through}
+                "compacted_through": self.compacted_through, "persona": self.persona}
 
     def storage_dict(self) -> dict:
         return {**self.to_dict(), "owner": self.owner}
@@ -186,6 +187,7 @@ def load(conversation_id: str, *, owner: str = "desktop") -> Conversation | None
         compact_summary=data.get("compact_summary", ""),
         compacted_through=data.get("compacted_through", 0),
         owner=stored_owner,
+        persona=data.get('persona'),
     )
 
 
@@ -220,6 +222,7 @@ def listing(*, owner: str = "desktop") -> Listing:
             "updated": data.get("updated", 0.0),
             "messages": len(data.get("messages", [])),
             "model_path": data.get("model_path"),
+            "persona_id": (data.get('persona') or {}).get('id'),
         })
     found.sort(key=lambda c: c.get("updated", 0.0), reverse=True)
     return Listing(found, unreadable, vault.is_secure, vault.backend)

@@ -433,6 +433,7 @@ body {
 .chat-message-list { gap: 40px; }
 .chat-message { position: relative; }
 .chat-message-actions { position: absolute; top: 100%; left: 0; width: max-content; padding-top: 4px; }
+.chat-message-actions-user { left: auto; right: 0; }
 @media (max-width: 767.98px) {
   /* Match the existing 44px touch buttons without overlapping the next turn. */
   .chat-message-list { gap: 56px; padding-bottom: 64px; }

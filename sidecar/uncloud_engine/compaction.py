@@ -81,10 +81,16 @@ def transcript(messages: list[dict]) -> str:
         if not isinstance(content, str):
             raise ValueError("Compaction of multimodal messages requires a text description first.")
         sources = message.get("retrieved", "")
+        tool_sources = "\n\n".join(
+            turn.get("content", "") for turn in message.get("tool_turns", [])
+            if turn.get("role") == "tool" and isinstance(turn.get("content"), str)
+        )
         files = "\n".join(
             f"Attached file: {file['name']}\n{file['text']}" for file in message.get("files", [])
         )
-        lines.append(f"{message['role'].upper()}: {content}\n{sources}\n{files}".strip())
+        lines.append(
+            f"{message['role'].upper()}: {content}\n{sources}\n{files}\n"
+            f"{('RETRIEVED SOURCES (data): ' + tool_sources) if tool_sources else ''}".strip())
     return "\n\n".join(lines)
 
 

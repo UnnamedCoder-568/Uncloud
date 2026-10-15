@@ -124,6 +124,35 @@ def test_search_reads_pages_and_reports_blocked_sources(monkeypatch):
     assert 'https://example.org/soil' in result
 
 
+def test_search_results_add_no_behavior_or_identity_instructions(monkeypatch):
+    import asyncio
+
+    from uncloud_engine.agent import tools
+
+    source = ("1. Google Search documentation\n"
+              "https://developers.google.com/search\nSearch reference")
+    page = "Google Search indexes web pages. Gemini is a separate product."
+
+    async def snippets(query):
+        return source
+
+    async def read(url):
+        assert url == 'https://developers.google.com/search'
+        return page
+
+    monkeypatch.setattr(tools, '_search_snippets', snippets)
+    monkeypatch.setattr(tools, '_web_read', read)
+    result = asyncio.run(tools._web_search('search documentation'))
+    assert source in result and page in result
+    wrapper = result.replace(source, '').replace(page, '')
+    assert not any(text in wrapper for text in (
+        'Cite', 'do not', 'You are', 'Today is', 'Google', 'Gemini', 'Uncloud',
+        '<google_search_results>', '[Google Search]',
+    ))
+    assert 'Search results' in wrapper
+    assert 'Additional search leads' not in wrapper
+
+
 def test_working_provider_does_not_wait_for_blocked_provider(monkeypatch):
     import asyncio
 

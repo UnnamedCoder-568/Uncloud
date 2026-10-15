@@ -14,6 +14,7 @@ def model_payload(
     max_tokens: int | None = None,
     effort: str = "",
     inference: dict | None = None,
+    web_tools: bool = False,
 ) -> dict:
     """Native model recommendations with explicit request overrides.
 
@@ -21,9 +22,14 @@ def model_payload(
     thinking controls are forwarded. Effort never launches additional passes.
     """
     from .inference_profile import for_backend, parameters
+    from .web_tools import chat_turns, definitions
 
     metadata = getattr(active, "inference_profile", {})
-    payload = {"messages": messages, "stream": True, "stream_options": {"include_usage": True}}
+    payload = {"messages": chat_turns(messages), "stream": True,
+               "stream_options": {"include_usage": True}}
+    tools = definitions(active, web_tools)
+    if tools:
+        payload['tools'] = tools
     if active.engine == "mlx-vlm":
         # Its native chat API requires the model identifier even when the
         # selected weights were already configured on the server command line.

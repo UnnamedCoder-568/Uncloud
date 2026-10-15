@@ -12,13 +12,15 @@ import { Mark } from '../components/Wordmark';
 import Markdown from '../components/Markdown';
 import { fromConversation, sendToChisel } from '../lib/handoff';
 import Conversations from '../components/Conversations';
+import { usePaneVisible, useWhenVisible } from '../components/Panes';
 import ReplyVoice from '../components/ReplyVoice';
 import AddFromDisk from '../components/AddFromDisk';
 import { useLibraryVersion } from '../lib/library-changed';
 import { splitThinking } from '../lib/thinking';
 import { Sentences, useTalk } from '../lib/useTalk';
 import { cleanReply } from '../lib/reply';
-import { LookupSession, describe, initialWebLookup, wantsPictures, resultsTurn, stripLookups } from '../lib/lookup';
+import { LookupSession, describe, findLookups, initialWebLookup, lookupKey, wantsPictures, resultsTurn, stripLookups } from '../lib/lookup';
+import { lookupForTool } from '../lib/native-tools';
 import { compactAvailable, contextMessages } from '../lib/context';
 import { fitWebContext } from '../lib/web-context';
 import { printerSound } from '../lib/printer-sound';
@@ -27,7 +29,7 @@ import { apiPost, getLibrary, getAdapters, startEngine, engineStatus, streamChat
   webSearch, webRead, webImages, MANNERS, getPermissions, setPermission,
   outputBlobUrl, revealOutput, uploadChatAttachment, saveNote as saveReplyNote,
   listNotes, deleteNote } from '../lib/sidecar';
-import type { AdapterCard, ChatContextUsage, LocalModel, ChatMessage, ChatAttachment, ConversationList, SavedNote, WebImage } from '../lib/sidecar';
+import type { AdapterCard, ChatContextUsage, LocalModel, ChatMessage, ChatToolCall, ChatAttachment, ConversationList, SavedNote, WebImage, PersonaSnapshot } from '../lib/sidecar';
 
 /** A conversation id: sixteen hex characters, which is what the engine accepts
  *  as a filename. `crypto.randomUUID` needs a secure context and is not
@@ -39,7 +41,9 @@ function newConversationId(): string {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-export default function ChatView() {
+export default function ChatView({ persona }: { persona?: PersonaSnapshot } = {}) {
+  const visible = usePaneVisible();
+  const [sessionPersona, setSessionPersona] = useState(persona);
   const [networkDenied, setNetworkDenied] = useState(false);
   const [networkError, setNetworkError] = useState('');
   const [models, setModels] = useState<LocalModel[]>([]);
@@ -66,9 +70,9 @@ export default function ChatView() {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const inference = useInference(activeModel?.path, conversationId, true);
   const systemPrompt = useCallback((options: Parameters<typeof chatSystemPrompt>[0]) =>
-    [typeof inference.values.system_prompt === 'string' ? inference.values.system_prompt : '',
+    [sessionPersona?.instructions ?? '', typeof inference.values.system_prompt === 'string' ? inference.values.system_prompt : '',
       chatSystemPrompt(options)].filter(Boolean).join('\n\n'),
-    [inference.values.system_prompt]);
+    [inference.values.system_prompt, sessionPersona?.instructions]);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [notesOpen, setNotesOpen] = useState(false);
   const [notes, setNotes] = useState<SavedNote[]>([]);
@@ -142,9 +146,9 @@ export default function ChatView() {
   const [copiedReply, setCopiedReply] = useState<number | null>(null);
   const [notedReply, setNotedReply] = useState<number | null>(null);
 
-  async function copyReply(index: number, content: string) {
+  async function copyReply(index: number, content: string, verbatim = false) {
     try {
-      await navigator.clipboard.writeText(cleanReply(content));
+      await navigator.clipboard.writeText(verbatim ? content : cleanReply(content));
       setCopiedReply(index);
       setTimeout(() => setCopiedReply((current) => current === index ? null : current), 1400);
     } catch { /* selectable text remains available */ }
@@ -169,6 +173,9 @@ export default function ChatView() {
     try { return localStorage.getItem('uncloud.chat.web') !== 'off'; }
     catch { return true; }
   });
+  const nativeWeb = web && !rawMode
+    && inference.info?.active?.model_path === activeModel?.path
+    && inference.info?.active?.profile.capabilities.native_tools === true;
   useEffect(() => {
     try { localStorage.setItem('uncloud.chat.web', web ? 'on' : 'off'); }
     catch { /* a browser refusing storage is not worth an error */ }
@@ -206,6 +213,19 @@ export default function ChatView() {
       }
     });
   }, []);
+
+  useWhenVisible(() => {
+    void engineStatus().then(status => {
+      if (!status.running || !status.model_path) { setActiveModel(null); return; }
+      setActiveAdapter(status.adapter_path ?? null);
+      setActiveModel(models.find(m => m.path === status.model_path) ?? {
+        id: status.model_path, name: status.model_path.split('/').pop()!, category: 'text',
+        engine: status.engine!, path: status.model_path, size_gb: 0, catalog_id: null,
+        tags: [], ready: true, note: null, capabilities: [],
+      });
+      void inference.refresh();
+    }).catch(() => {});
+  });
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
@@ -328,7 +348,9 @@ export default function ChatView() {
   useEffect(() => { sendRef.current = send; });
 
   const refreshSaved = useCallback(
-    () => listConversations().then(setSaved).catch(() => {}), []);
+    () => listConversations().then(list => setSaved({ ...list,
+      conversations: list.conversations.filter(c => (c.persona_id ?? null) === (persona?.id ?? null)),
+    })).catch(() => {}), [persona?.id]);
   useEffect(() => { refreshSaved(); }, [refreshSaved]);
 
   /** Write the conversation to disk.
@@ -341,15 +363,16 @@ export default function ChatView() {
     if (!turns.length) return;
     try {
       await writeConversation(id, { messages: turns, model_path: activeModel?.path ?? null,
-        compact_summary: compactSummary, compacted_through: compactedThrough });
+        compact_summary: compactSummary, compacted_through: compactedThrough, persona: sessionPersona });
       refreshSaved();
     } catch {
       // Saving is not the user's job to supervise. A failure here must not
       // interrupt a conversation that is otherwise working.
     }
-  }, [activeModel, compactSummary, compactedThrough, refreshSaved]);
+  }, [activeModel, compactSummary, compactedThrough, refreshSaved, sessionPersona]);
 
   const startNew = useCallback(() => {
+    setSessionPersona(persona);
     generationEpoch.current += 1;
     chatAbort.current?.abort();
     chatAbort.current = null;
@@ -364,7 +387,7 @@ export default function ChatView() {
     setAttached([]);
     setAttachedFiles([]);
     setInput('');
-  }, []);
+  }, [persona]);
 
   const openSaved = useCallback(async (id: string) => {
     generationEpoch.current += 1;
@@ -374,6 +397,8 @@ export default function ChatView() {
     setGenerating(false);
     try {
       const conversation = await readConversation(id);
+      if ((conversation.persona?.id ?? null) !== (persona?.id ?? null)) return;
+      setSessionPersona(conversation.persona ?? undefined);
       // Stored as the model wrote it, tags and all. Splitting on load rather
       // than on save keeps the file a faithful record of the reply, and means
       // a conversation saved before this existed opens correctly too.
@@ -392,7 +417,7 @@ export default function ChatView() {
       // A conversation that will not decrypt is already reported in the list;
       // failing to open it must not blank the one on screen.
     }
-  }, [loadDrawn]);
+  }, [loadDrawn, persona?.id]);
 
   useEffect(() => {
     const open = (event: Event) => { const id = (event as CustomEvent<string>).detail;
@@ -400,7 +425,11 @@ export default function ChatView() {
     window.addEventListener('uncloud.open-conversation', open);
     return () => window.removeEventListener('uncloud.open-conversation', open);
   }, [openSaved]);
-  useEffect(() => () => printerSound.stop(), []);
+  useEffect(() => () => {
+    generationEpoch.current += 1;
+    chatAbort.current?.abort();
+    printerSound.stop();
+  }, []);
 
   const removeSaved = useCallback(async (id: string) => {
     await deleteConversation(id).catch(() => {});
@@ -511,6 +540,8 @@ export default function ChatView() {
       ];
       let fittedReplyBudget: number | undefined;
       const lookups = new LookupSession();
+      let nativeTurns: ChatMessage[] = [];
+      const toolsEnabled = () => nativeWeb && lookups.phase !== 'final';
       const requestedLookup = web && !rawMode ? initialWebLookup(text) : null;
       const requestedPictures = pictures && !rawMode && wantsPictures(text);
       const turnInference = inference.values;
@@ -519,7 +550,7 @@ export default function ChatView() {
       const fitEvidence = async (evidence: string, assemble: (text: string) => ChatMessage[]) => {
         const fitted = await fitWebContext(evidence,
           value => contextMessages(assemble(value), replyPrompt(), compactSummary, 0, rawMode),
-          turns => countChatContext(turns, turnInference),
+          turns => countChatContext(turns, turnInference, toolsEnabled()),
           inference.values.max_tokens !== undefined ? Number(inference.values.max_tokens) : undefined);
         if (epoch !== generationEpoch.current || controller.signal.aborted) throw new Error('Reply stopped');
         setContextUsage(fitted.usage);
@@ -557,14 +588,20 @@ export default function ChatView() {
 
       for (;;) {
         full = '';
+        let calls: ChatToolCall[] = [];
         for await (const chunk of streamChat(
           contextMessages(sent, replyPrompt(), compactSummary, 0, rawMode),
           controller.signal,
           fittedReplyBudget,
           { path: activeModel.path, engine: activeModel.engine, adapter: activeAdapter,
-            inference: { ...turnInference, ...(fittedReplyBudget ? { max_tokens: fittedReplyBudget } : {}) }, conversationId: sendingConversationId },
+            inference: { ...turnInference, ...(fittedReplyBudget ? { max_tokens: fittedReplyBudget } : {}) },
+            conversationId: sendingConversationId, webTools: toolsEnabled() },
         )) {
           if (epoch !== generationEpoch.current) return;
+          if (chunk.kind === 'tool_calls') {
+            calls = chunk.tool_calls ?? [];
+            continue;
+          }
           if (chunk.kind === 'text') {
             full += chunk.text;
             if (cleanReply(stripLookups(full), true).trim()) printerSound.writing();
@@ -598,10 +635,18 @@ export default function ChatView() {
         // Both switches hold whatever the model wrote. A model told it is
         // offline will occasionally ask to search anyway, and the setting has
         // to win that argument rather than merely take part in it.
+        // Only structured native calls can search/read. Text and thinking
+        // cannot trigger a web request. Pictures retain their opt-in protocol.
+        const requested = calls.length && nativeWeb
+          ? calls.map(lookupForTool)
+          : [];
+        const pictureRequests = requestedPictures
+          ? findLookups(full).filter(l => l.kind === 'pictures') : [];
         const plan = web && !rawMode
-          ? lookups.next(full, requestedPictures) : { kind: 'done' as const, lookups: [] };
+          ? lookups.nextRequests([...requested, ...pictureRequests])
+          : { kind: 'done' as const, lookups: [] };
         if (plan.kind === 'done') break;
-        if (plan.kind === 'answer') {
+        if (plan.kind === 'answer' && !calls.length) {
           setMessages(current => current.map((message, index) => index === assistantIndex
             ? { ...message, content: '', reasoning: '' } : message));
           continue;
@@ -643,11 +688,11 @@ export default function ChatView() {
         }));
         setLooking([]);
         if (epoch !== generationEpoch.current) return;
-        if (fetched.every((part) => part.text.startsWith('This lookup failed:'))) {
+        if (fetched.length && fetched.every((part) => part.text.startsWith('This lookup failed:'))) {
           throw new Error(`Web lookup failed, so I could not verify this answer. ${fetched[0].text}`);
         }
-        lookups.record(wanted);
-        setConsulted((c) => [...c, ...wanted.map((l) => l.argument)]);
+        if (wanted.length) lookups.record(wanted);
+        setConsulted((c) => [...c, ...wanted.map(l => l.argument)]);
         if (shown.length) {
           setMessages((m) => {
             if (epoch !== generationEpoch.current) return m;
@@ -661,6 +706,28 @@ export default function ChatView() {
 
         // The request stays in the transcript the model sees — without it the
         // results arrive as an answer to nothing.
+        if (calls.length) {
+          const beforeLookup: ChatMessage[] = [...sent,
+            { role: 'assistant', content: full, tool_calls: calls }];
+          const responses: ChatMessage[] = calls.map(call => ({ role: 'tool', tool_call_id: call.id,
+            content: '' }));
+          // Fit actual tool outputs with all call IDs and tool definitions
+          // present. Keep the user's conversation and every supporting URL.
+          for (let index = 0; index < calls.length; index++) {
+            const part = fetched.find(p => lookupKey(p.lookup) === lookupKey(requested[index]));
+            const evidence = part?.text ?? 'Lookup already completed or the per-reply lookup limit was reached.';
+            const fitted = await fitEvidence(evidence, value => [...beforeLookup,
+              ...responses.map((response, i) => i === index ? { ...response, content: value } : response)]);
+            responses[index] = fitted[beforeLookup.length + index];
+          }
+          sent = [...beforeLookup, ...responses];
+          nativeTurns = [...nativeTurns, beforeLookup.at(-1)!, ...responses];
+          next[next.length - 1] = { ...next[next.length - 1], tool_turns: nativeTurns };
+          setMessages(current => current.map((message, index) => index === next.length - 1
+            ? { ...message, tool_turns: nativeTurns }
+            : index === assistantIndex ? { ...message, content: '', reasoning: '' } : message));
+          continue;
+        }
         const beforeLookup = [
           ...sent,
           { role: 'assistant', content: full },
@@ -798,7 +865,7 @@ export default function ChatView() {
   }
 
   useEffect(() => {
-    if (!activeModel || generating || compacting) return;
+    if (!visible || !activeModel || generating || compacting) return;
     let cancelled = false;
     const timer = setTimeout(() => {
       const currentText = input.trim() || [...messages].reverse().find(m => m.role === 'user')?.content || '';
@@ -807,13 +874,13 @@ export default function ChatView() {
         ...(input.trim() ? [{ role: 'user' as const, content: input.trim() }] : []),
       ], systemPrompt({ pictures: pictures && wantsPictures(currentText), web, manner,
         webPhase: web && !rawMode ? 'request' : undefined }), compactSummary, compactedThrough, rawMode);
-      void countChatContext(turns, inference.values).then((usage) => {
+      void countChatContext(turns, inference.values, nativeWeb).then((usage) => {
         if (!cancelled) setContextUsage(usage);
       }).catch(() => { if (!cancelled) setContextUsage(null); });
     }, 550);
     return () => { cancelled = true; clearTimeout(timer); };
   }, [activeModel, messages, input, compactSummary, compactedThrough, generating,
-      compacting, pictures, web, manner, rawMode, inference.values, inference.info, systemPrompt]);
+      compacting, pictures, web, nativeWeb, manner, rawMode, inference.values, inference.info, systemPrompt, visible]);
 
   async function compactConversation() {
     if (!activeModel || generating || compacting || !messages.length) return;
@@ -830,8 +897,8 @@ export default function ChatView() {
       const system = systemPrompt({ pictures: false, web, manner,
         webPhase: web && !rawMode ? 'request' : undefined });
       const [before, after] = await Promise.all([
-        countChatContext(contextMessages(messages, system, compactSummary, compactedThrough), inference.values),
-        countChatContext(contextMessages(messages, system, summary, through), inference.values),
+        countChatContext(contextMessages(messages, system, compactSummary, compactedThrough), inference.values, nativeWeb),
+        countChatContext(contextMessages(messages, system, summary, through), inference.values, nativeWeb),
       ]);
       if (before.used == null || after.used == null) {
         throw new Error('Could not verify the compacted context size. Your original conversation is preserved.');
@@ -841,7 +908,7 @@ export default function ChatView() {
       }
       if (conversationId) {
         await writeConversation(conversationId, { messages, model_path: activeModel.path,
-          compact_summary: summary, compacted_through: through });
+          compact_summary: summary, compacted_through: through, persona: sessionPersona });
         refreshSaved();
       }
       setCompactSummary(summary);
@@ -1003,7 +1070,8 @@ export default function ChatView() {
           <button
             onClick={() => setWeb((v) => !v)}
             title={web
-              ? 'Web lookups: on — the model can request sources when needed. Internet permission still applies.'
+              ? nativeWeb ? 'Web: native search and read tools available. Internet permission still applies.'
+                : 'Native web tools are not available for this model/backend. You can still ask to read a supplied page URL.'
               : 'Web lookups: off — Chat will not search or read websites.'}
             className={web ? 'pill pill-on' : 'pill'}
           >
@@ -1206,7 +1274,7 @@ export default function ChatView() {
     <div className="h-full flex flex-col relative">
       {/* Conversation navigation stays in the window chrome. */}
       <TitleBarPortal>
-        <span className="text-sm text-[var(--text-dim)] px-2">Chat</span>
+        <span className="text-sm text-[var(--text-dim)] px-2">{persona ? `Personas · ${persona.name}` : 'Chat'}</span>
         <span className="flex-1" />
 
         {/* Starting again, and going back to something. Both belong in the
@@ -1233,7 +1301,7 @@ export default function ChatView() {
         <div className="composer composer-centred">
           <div className="greeting">
             <Mark px={38} />
-            <span>What are we making?</span>
+            <span>{persona ? persona.name : 'What are we making?'}</span>
           </div>
           {composer}
         </div>
@@ -1332,6 +1400,16 @@ export default function ChatView() {
                   </div>
                 )}
                 {m.error && <p role="status" className="mt-2 px-1 text-xs text-[var(--text-dim)]">{m.error}</p>}
+                {m.role === 'user' && m.content && (
+                  <div className="chat-message-actions chat-message-actions-user flex items-center px-1
+                                  text-[10px] text-[var(--text-faint)]">
+                    <button className="pill h-7 px-2" title="Copy message" aria-label="Copy message"
+                            onClick={() => void copyReply(i, m.content, true)}>
+                      {copiedReply === i ? <Check size={11} /> : <Copy size={11} />}
+                      <span>{copiedReply === i ? 'Copied' : 'Copy'}</span>
+                    </button>
+                  </div>
+                )}
                 {m.role === 'assistant' && cleanReply(m.content).trim()
                   && !(i === messages.length - 1 && generating) && (
                   <div className="chat-message-actions flex items-center gap-1 px-1 text-[10px]

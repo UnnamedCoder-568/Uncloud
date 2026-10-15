@@ -20,6 +20,37 @@ PLAN = {
 }
 
 
+def test_planning_protocol_has_no_application_identity_or_date(monkeypatch):
+    monkeypatch.setattr(module, '_active_tool_specs', lambda: SPECS)
+    _, messages = module.planning_messages('Write a file')
+    system = messages[0]['content']
+    assert 'Astro' not in system and 'Today is' not in system
+    assert 'fs_write' in system and 'JSON' in system
+
+
+def test_planning_reply_ceiling_fits_the_native_context_without_mutating_preferences(monkeypatch):
+    from uncloud_engine import context_count
+    active = SimpleNamespace(base_url='http://model', engine='gguf', context_limit=1024,
+                             inference_profile={'capabilities': {'fields': ['max_tokens'],
+                                 'reasoning': {'levels': ['auto']}}})
+    monkeypatch.setattr(module.engine_manager, 'active', active)
+    monkeypatch.setattr(module, '_active_tool_specs', lambda: SPECS)
+    monkeypatch.setattr(context_count, 'count', AsyncMock(return_value=200))
+    sent = []
+
+    async def post(self, url, json):
+        sent.append(json)
+        return httpx.Response(200, request=httpx.Request('POST', url), json={
+            'choices': [{'message': {'content': __import__('json').dumps(PLAN)}}],
+        })
+
+    monkeypatch.setattr(httpx.AsyncClient, 'post', post)
+    preferences = {'max_tokens': 4096}
+    asyncio.run(module.Orchestrator().plan('Write a file', inference=preferences))
+    assert sent[0]['max_tokens'] == 824
+    assert preferences == {'max_tokens': 4096}
+
+
 def test_extract_plan_with_quoted_braces_and_other_json():
     text = '{"unrelated": true} then ```json\n' + json.dumps(PLAN) + "\n``` trailing { text"
     assert module._extract_json(text) == PLAN

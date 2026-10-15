@@ -4,14 +4,15 @@ import Panes from '../components/Panes';
 import VoiceTools from './VoiceTools';
 import NarrationView from './NarrationView';
 import SpeechStudio from './SpeechStudio';
-import VoiceToVoice from './VoiceToVoice';
+import { Talk, Convert } from './VoiceToVoice';
 import ClipsView from './ClipsView';
 
-type Tab = 'text' | 'voice' | 'transcribe' | 'clips';
+type Tab = 'talk' | 'text' | 'convert' | 'transcribe' | 'clips';
 
 const TABS: { id: Tab; label: string; hint: string }[] = [
+  { id: 'talk', label: 'Talk', hint: 'Speak to your selected model' },
   { id: 'text', label: 'Text to voice', hint: 'Type something and hear it spoken' },
-  { id: 'voice', label: 'Voice to voice', hint: 'Talk to a model, or re-voice a recording' },
+  { id: 'convert', label: 'Convert voice', hint: 'Re-voice a recording' },
   { id: 'transcribe', label: 'Transcribe', hint: 'Speech to text' },
   { id: 'clips', label: 'Clips', hint: 'Everything spoken, kept' },
 ];
@@ -26,8 +27,8 @@ const ENGINES: { id: string; label: string; hint: string }[] = [
   { id: 'vibevoice', label: 'VibeVoice', hint: 'Long-form narration in one pass' },
 ];
 
-export default function VoiceView() {
-  const [tab, setTab] = useState<Tab>('text');
+export default function JarvizView() {
+  const [tab, setTab] = useState<Tab>('talk');
   const [engine, setEngine] = useState(() => {
     try { return localStorage.getItem('uncloud.voice.engine') || 'kokoro'; } catch { return 'kokoro'; }
   });
@@ -39,10 +40,16 @@ export default function VoiceView() {
 
   return (
     <div className="h-full flex flex-col">
-      <div className="view-tabs">
+      <header className="px-6 pt-5 pb-3">
+        <h1 className="page-title">Jarviz</h1>
+        <p className="text-sm text-[var(--text-dim)] mt-2">Voice conversation, speech creation and recordings.</p>
+      </header>
+      <div className="view-tabs" role="tablist" aria-label="Jarviz">
         {TABS.map((t) => (
           <button
             key={t.id}
+            role="tab"
+            aria-selected={tab === t.id}
             onClick={() => setTab(t.id)}
             title={t.hint}
             className={`text-xs px-3 py-1.5 rounded-lg transition whitespace-nowrap ${
@@ -72,7 +79,8 @@ export default function VoiceView() {
           panes={[
             { id: 'speech', render: () => <CapabilityGate names={engine === 'vibevoice' ? 'kokoro' : engine}><SpeechStudio engineId={engine === 'vibevoice' ? 'kokoro' : engine} /></CapabilityGate> },
             { id: 'narrate', render: () => <CapabilityGate names="realtime,quality"><NarrationView /></CapabilityGate> },
-            { id: 'voice', render: () => <CapabilityGate names="chat,transcribe,kokoro,chatterbox"><VoiceToVoice /></CapabilityGate> },
+            { id: 'talk', render: () => <CapabilityGate names="chat,transcribe,kokoro"><Talk /></CapabilityGate> },
+            { id: 'convert', render: () => <CapabilityGate names="chatterbox"><Convert /></CapabilityGate> },
             { id: 'transcribe', render: () => <CapabilityGate names="transcribe"><VoiceTools /></CapabilityGate> },
             { id: 'clips', render: () => <ClipsView /> },
           ]}

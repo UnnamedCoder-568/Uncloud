@@ -74,7 +74,7 @@ def main() -> None:
     runtime_files = {
         path.resolve()
         for path in (ROOT / "sidecar" / "uncloud_engine").rglob("*")
-        if path.is_file() and path.suffix in {".py", ".md", ".json"}
+        if path.is_file() and path.suffix in {".py", ".md", ".json", ".jinja"}
     }
     runtime_files.update(
         (ROOT / "sidecar" / name).resolve()

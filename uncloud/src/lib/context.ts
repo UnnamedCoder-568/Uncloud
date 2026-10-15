@@ -17,9 +17,12 @@ export function contextMessages(messages: ChatMessage[], system: string,
   const content = system + (summary ? `\n\nEarlier conversation, compacted for continuity:\n${summary}` : '');
   const start = summary ? through : 0;
   const tail = messages.slice(start).filter((_, index) => !failed.has(index + start));
-  return [...(content ? [{ role: 'system' as const, content }] : []), ...tail.map(message => message.retrieved
-    ? { ...message, content: `${message.content}\n\n${message.retrieved}`, retrieved: undefined }
-    : message)];
+  return [...(content ? [{ role: 'system' as const, content }] : []), ...tail.flatMap(message => {
+    const { tool_turns: tools, ...turn } = message;
+    return [message.retrieved
+      ? { ...turn, content: `${message.content}\n\n${message.retrieved}`, retrieved: undefined }
+      : turn, ...(tools ?? [])];
+  })];
 }
 
 export function compactAvailable(used: number | null, limit: number | null): boolean {

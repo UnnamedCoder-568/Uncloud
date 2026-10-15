@@ -2,7 +2,7 @@ import ActivityOrb from '../components/ActivityOrb';
 import { useEffect, useRef, useState } from 'react';
 import { Mic, MicOff, Repeat, Upload } from 'lucide-react';
 import {
-  chatSystemPrompt, engineStatus, getLibrary, speechClipUrl, speechEngines, speechJob,
+  engineStatus, getLibrary, speechClipUrl, speechEngines, speechJob,
   startConversion, startEngine, streamChat, uploadRecording,
 } from '../lib/sidecar';
 import type { ChatMessage, LocalModel, SpeechJob, SpeechModel } from '../lib/sidecar';
@@ -12,6 +12,7 @@ import ReplyVoice, { useSavedVoices } from '../components/ReplyVoice';
 import SaveActions from '../components/SaveActions';
 import AddFromDisk from '../components/AddFromDisk';
 import { useLibraryVersion } from '../lib/library-changed';
+import { usePaneVisible } from '../components/Panes';
 
 /**
  * Voice to voice, two ways.
@@ -26,30 +27,13 @@ import { useLibraryVersion } from '../lib/library-changed';
 const label = 'text-[10px] uppercase tracking-[0.18em] text-[var(--text-faint)]';
 const field = 'mt-1.5 w-full text-xs px-2.5 py-2 rounded-lg bg-[var(--bg-inset)] outline-none';
 
-type Mode = 'talk' | 'convert';
-
-export default function VoiceToVoice() {
-  const [mode, setMode] = useState<Mode>('talk');
-  return (
-    <div className="h-full flex flex-col">
-      <div className="px-6 pt-4 flex gap-1">
-        {([['talk', 'Talk to a model'], ['convert', 'Convert a recording']] as const).map(([id, text]) => (
-          <button key={id} onClick={() => setMode(id)} className={mode === id ? 'pill pill-on' : 'pill'}>
-            {id === 'talk' ? <Mic size={14} /> : <Repeat size={14} />}<span>{text}</span>
-          </button>
-        ))}
-      </div>
-      <div className="flex-1 min-h-0">{mode === 'talk' ? <Talk /> : <Convert />}</div>
-    </div>
-  );
-}
-
-export function Talk({ friday = false }: { friday?: boolean }) {
+export function Talk() {
+  const visible = usePaneVisible();
   const libraryVersion = useLibraryVersion();
   const [models, setModels] = useState<LocalModel[]>([]);
   const [modelPath, setModelPath] = useState('');
   const [voice, setVoice] = useState(() => {
-    try { return localStorage.getItem(friday ? 'uncloud.voice.friday' : 'uncloud.voice.talk') || (friday ? 'bf_emma' : 'bm_george'); } catch { return friday ? 'bf_emma' : 'bm_george'; }
+    try { return localStorage.getItem('uncloud.voice.jarviz') || localStorage.getItem('uncloud.voice.friday') || localStorage.getItem('uncloud.voice.talk') || 'bf_emma'; } catch { return 'bf_emma'; }
   });
   const [turns, setTurns] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(false);
@@ -57,8 +41,8 @@ export function Talk({ friday = false }: { friday?: boolean }) {
   const scroller = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    try { localStorage.setItem(friday ? 'uncloud.voice.friday' : 'uncloud.voice.talk', voice); } catch { /* storage refused */ }
-  }, [voice, friday]);
+    try { localStorage.setItem('uncloud.voice.jarviz', voice); } catch { /* storage refused */ }
+  }, [voice]);
 
   useEffect(() => {
     Promise.all([getLibrary(), engineStatus().catch(() => null)]).then(([ms, status]) => {
@@ -89,12 +73,9 @@ export function Talk({ friday = false }: { friday?: boolean }) {
     // reply before saying any of it is most of what made this feel slow.
     const sentences = new Sentences();
     let reply = '';
-    for await (const chunk of streamChat([
-      // Brief: it is read aloud, and lists and markdown do not survive that.
-      { role: 'system', content: chatSystemPrompt({ web: false, pictures: false, manner: 'brief' }) + (friday ? '\nYou are Friday, an original local assistant. Be calm, capable, warm and lightly witty. Speak naturally in concise sentences. Be honest about uncertainty. You can converse here but cannot execute tools or claim to have performed actions. Do not impersonate a fictional character or actor.' : '') },
-      ...history,
-    ], signal)) {
+    for await (const chunk of streamChat(history, signal)) {
       if (signal.aborted) return;
+      if (chunk.kind === 'tool_calls') continue;
       if (chunk.kind === 'thinking') {
         setTurns([...history, { role: 'assistant', content: '', reasoning: chunk.text }]);
         continue;
@@ -115,6 +96,10 @@ export function Talk({ friday = false }: { friday?: boolean }) {
       throw error;
     }
   });
+
+  useEffect(() => {
+    if (!visible && talk.active) talk.toggle();
+  }, [visible, talk]);
 
   return (
     <div className="h-full flex max-md:flex-col">
@@ -199,7 +184,7 @@ export function Talk({ friday = false }: { friday?: boolean }) {
   );
 }
 
-function Convert() {
+export function Convert() {
   const libraryVersion = useLibraryVersion();
   const [models, setModels] = useState<SpeechModel[]>([]);
   const [installed, setInstalled] = useState(true);

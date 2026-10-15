@@ -13,8 +13,7 @@ from ..engines import engine_manager
 from .graph import ExecutionGraph, Task
 from .tools import TOOL_SPECS, run_tool
 
-PLANNING_SYSTEM_PROMPT = """You are the planning module of a local AI agent named Astro. \
-Break the user's goal into a small directed acyclic graph of concrete steps. \
+PLANNING_SYSTEM_PROMPT = """Break the user's goal into a small directed acyclic graph. \
 Each step must use exactly one tool. Available tools:
 
 {tools}
@@ -46,8 +45,6 @@ Guidance:
   into the step that needs it. Shell is for running programs, not for editing strings.
 - When the goal creates a file, include a final check that it exists and is readable.
   Report completion only from a successful tool result, never from planned steps alone.
-- On macOS, a simple text PDF can be made with
-  `cupsfilter -m application/pdf input.txt > output.pdf`.
 - Progress is recorded automatically, so you do not need planning steps just to track state.
 - Use note_save for a fact a later step depends on (a path, an ID, a finding),
   and note_recall to read it back rather than re-deriving it.
@@ -272,13 +269,17 @@ class Orchestrator:
                             raise RuntimeError(
                                 "Native context accounting is unavailable. No tools ran."
                             )
-                        reserve = payload.get("max_tokens") or active.context_limit // 4
-                        if used + reserve > active.context_limit:
+                        available = active.context_limit - used
+                        if available <= 0:
                             raise RuntimeError(
-                                f"Planning needs {used} input tokens plus {reserve} reply tokens, "
+                                f"Planning needs {used} input tokens, "
                                 f"but this runtime allows {active.context_limit}. Compact the "
                                 "handoff or enable fewer tools. No tools ran."
                             )
+                        # A reply ceiling is a maximum, not a reservation.
+                        # Fit this request without changing saved manual values.
+                        payload["max_tokens"] = min(
+                            payload.get("max_tokens") or available, available)
                     resp = await client.post(
                         f"{active.base_url}/v1/chat/completions",
                         json={**payload, "messages": messages},

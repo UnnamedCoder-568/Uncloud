@@ -45,4 +45,16 @@ describe('conversation context', () => {
     expect(user.content).toBe('Question');
     expect(contextMessages([user], '', '', 0, true)[0].content).toBe('Question');
   });
+  it('restores native tool calls and their matching source outputs in order', () => {
+    const tools: ChatMessage[] = [
+      { role: 'assistant', content: '', tool_calls: [{ id: 'source', type: 'function',
+        function: { name: 'web_read', arguments: '{"url":"https://example.org"}' } }] },
+      { role: 'tool', tool_call_id: 'source', content: 'Source https://example.org\nEvidence' },
+    ];
+    const user: ChatMessage = { role: 'user', content: 'Read this', tool_turns: tools };
+    expect(contextMessages([user, { role: 'assistant', content: 'Answer' }], '')).toEqual([
+      { role: 'user', content: 'Read this' }, ...tools, { role: 'assistant', content: 'Answer' },
+    ]);
+    expect(contextMessages([user], '', '', 0, true)).toEqual([user]);
+  });
 });

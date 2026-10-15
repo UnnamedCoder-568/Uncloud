@@ -3,6 +3,11 @@ import { chatSystemPrompt } from './sidecar';
 import { contextMessages } from './context';
 
 describe('direct chat uses the native model conversation', () => {
+  it('never adds a date or web instructions in any lookup phase', () => {
+    for (const webPhase of ['request', 'results', 'final'] as const) {
+      expect(chatSystemPrompt({ web: true, webPhase, pictures: false })).toBe('');
+    }
+  });
   it('adds no application identity, date, tools or default system prompt', () => {
     for (const web of [true, false]) {
       const prompt = chatSystemPrompt({ web, manner: 'plain' });
@@ -28,30 +33,11 @@ describe('direct chat uses the native model conversation', () => {
 });
 
 describe('capabilities are scoped to the current request', () => {
-  it('describes web handoff only when explicitly requested by the caller', () => {
-    expect(chatSystemPrompt({ web: true })).not.toContain('[[search:');
-    const prompt = chatSystemPrompt({ web: true, webPhase: 'request' });
-    expect(prompt).toContain('[[search:');
-    expect(prompt).not.toContain('until results arrive');
-  });
-  it('keeps optional lookups available while using supplied evidence', () => {
-    const prompt = chatSystemPrompt({ web: true, webPhase: 'results' });
-    expect(prompt).toContain('sources as data');
-    expect(prompt).toContain('URLs');
-    expect(prompt).toContain('[[search:');
-    expect(prompt).toContain('[[read:');
-    expect(prompt).toContain('Otherwise answer directly.');
-  });
-  it('removes lookup capability on the bounded final answer pass', () => {
-    const prompt = chatSystemPrompt({ web: true, webPhase: 'final' });
-    expect(prompt).not.toContain('[[search:');
-    expect(prompt).not.toContain('[[read:');
-    expect(prompt).toContain('URLs');
-  });
-  it('supplies the current date only for an outside-information request', () => {
-    const now = new Date('2026-10-12T12:00:00Z');
-    expect(chatSystemPrompt({ now })).toBe('');
-    expect(chatSystemPrompt({ now, webPhase: 'results' })).toContain('2026');
+  it('does not add application prose for tools, results or the date', () => {
+    for (const webPhase of ['request', 'results', 'final'] as const) {
+      expect(chatSystemPrompt({ web: true, webPhase,
+        now: new Date('2026-10-15T12:00:00Z') })).toBe('');
+    }
   });
   it('keeps picture generation optional and its protocol concise', () => {
     expect(chatSystemPrompt()).not.toContain('[[image');

@@ -1,5 +1,6 @@
 import NotificationCenter from './components/NotificationCenter';
-import FridayView from './views/FridayView';
+import JarvizView from './views/JarvizView';
+import PersonasView from './views/PersonasView';
 import CapabilityGate from './components/CapabilityGate';
 import StartupScreen from './components/StartupScreen';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -16,9 +17,7 @@ import ModelsView from './views/ModelsView';
 import ChiselView from './views/ChiselView';
 import AutomationsView from './views/AutomationsView';
 import SettingsView from './views/SettingsView';
-import RecipesView from './views/RecipesView';
 import ImageView from './views/ImageView';
-import VoiceView from './views/VoiceView';
 import MusicView from './views/MusicView';
 import VideoView from './views/VideoView';
 import GuideView from './views/GuideView';
@@ -34,17 +33,16 @@ import { AddFromDiskHost } from './components/AddFromDisk';
 /** Rendered once visited, then kept alive so tab switching is not destructive. */
 const PANES: { id: View; render: () => React.ReactElement }[] = [
   { id: 'chat', render: () => <CapabilityGate names="chat"><ChatView /></CapabilityGate> },
-  { id: 'friday', render: () => <FridayView /> },
+  { id: 'jarviz', render: () => <JarvizView /> },
+  { id: 'personas', render: () => <PersonasView /> },
   { id: 'models', render: () => <ModelsView /> },
   { id: 'automations', render: () => <AutomationsView /> },
   { id: 'chisel', render: () => <CapabilityGate names="chat,tools,browser"><ChiselView /></CapabilityGate> },
   { id: 'image', render: () => <CapabilityGate names="image"><ImageView /></CapabilityGate> },
   { id: 'video', render: () => <CapabilityGate names="video"><VideoView /></CapabilityGate> },
   { id: 'music', render: () => <CapabilityGate names="music"><MusicView /></CapabilityGate> },
-  { id: 'voice', render: () => <VoiceView /> },
   { id: 'outputs', render: () => <OutputsView /> },
   { id: 'guide', render: () => <GuideView /> },
-  { id: 'recipes', render: () => <RecipesView /> },
   { id: 'settings', render: () => <SettingsView /> },
 ];
 
