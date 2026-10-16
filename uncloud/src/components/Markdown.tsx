@@ -15,6 +15,9 @@ import { memo, useState } from 'react';
 import { Check, Copy, Download, Pencil, X } from 'lucide-react';
 
 import { parseBlocks, type Block, type Inline } from '../lib/markdown';
+import TableChart from './TableChart';
+import BarChartBlock from './BarChartBlock';
+import { parseBarChart } from '../lib/bar-chart';
 
 function Inlines({ nodes }: { nodes: Inline[] }) {
   return (
@@ -124,8 +127,11 @@ function Blocks({ blocks }: { blocks: Block[] }) {
             );
           }
 
-          case 'code':
+          case 'code': {
+            const chart = b.closed && b.lang === 'bar-chart' ? parseBarChart(b.text) : null;
+            if (chart) return <BarChartBlock key={i} chart={chart} />;
             return <CodeBlock key={i} block={b} />;
+          }
 
           case 'list': {
             const Tag = b.ordered ? 'ol' : 'ul';
@@ -153,7 +159,7 @@ function Blocks({ blocks }: { blocks: Block[] }) {
             return (
               // Scrolls inside its own box: a wide table must never make the
               // whole answer scroll sideways.
-              <div key={i} className="md-table-wrap">
+              <TableChart key={i} table={b}><div className="md-table-wrap">
                 <table className="md-table">
                   <thead>
                     <tr>
@@ -176,7 +182,7 @@ function Blocks({ blocks }: { blocks: Block[] }) {
                     ))}
                   </tbody>
                 </table>
-              </div>
+              </div></TableChart>
             );
         }
       })}

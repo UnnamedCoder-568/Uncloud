@@ -16,6 +16,7 @@ def model_payload(
     inference: dict | None = None,
     web_tools: bool = False,
     history_tools: bool = False,
+    chart_tools: bool = False,
 ) -> dict:
     """Native model recommendations with explicit request overrides.
 
@@ -23,12 +24,13 @@ def model_payload(
     thinking controls are forwarded. Effort never launches additional passes.
     """
     from .inference_profile import for_backend, parameters
+    from .tool_template import template_kwargs
     from .web_tools import chat_turns, definitions
 
     metadata = getattr(active, "inference_profile", {})
     payload = {"messages": chat_turns(messages), "stream": True,
                "stream_options": {"include_usage": True}}
-    tools = definitions(active, web_tools, history_tools)
+    tools = definitions(active, web_tools, history_tools, chart_tools)
     if tools:
         payload['tools'] = tools
     if active.engine == "mlx-vlm":
@@ -51,6 +53,8 @@ def model_payload(
     from .inference_controls import apply
 
     payload = apply(active, payload, inference)
+    if template := template_kwargs(active, tools):
+        payload['chat_template_kwargs'] = {**payload.get('chat_template_kwargs', {}), **template}
     limit = getattr(active, "context_limit", None)
     if "max_tokens" in payload and isinstance(limit, int) and limit > 1:
         payload["max_tokens"] = min(payload["max_tokens"], limit - 1)

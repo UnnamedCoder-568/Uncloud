@@ -11,7 +11,7 @@ export function searchHistory(messages: ChatMessage[], through: number, query: s
     const sources = [message.retrieved, ...(message.tool_turns ?? [])
       .filter(turn => turn.role === 'tool').map(turn => turn.content)].filter(Boolean).join('\n\n');
     const content = [message.content, ...(message.files ?? []).map(file => `${file.name}\n${file.text}`),
-      sources ? `Retrieved sources (data):\n${sources}` : '']
+      sources ? JSON.stringify({ sources }) : '']
       .filter(Boolean).join('\n');
     return content ? [{ message: index + 1, role: message.role, content, words: terms(content) }] : [];
   });

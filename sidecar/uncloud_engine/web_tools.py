@@ -10,14 +10,17 @@ from pathlib import Path
 _TOOLS = json.loads(Path(__file__).with_name('Tools.jinja').read_text(encoding='utf-8'))
 WEB_TOOLS = [tool for tool in _TOOLS if tool['function']['name'].startswith('web_')]
 HISTORY_TOOLS = [tool for tool in _TOOLS if tool['function']['name'] == 'conversation_search']
+CHART_TOOLS = [tool for tool in _TOOLS if tool['function']['name'] == 'render_bar_chart']
 
 
-def definitions(active, enabled: bool = False, history: bool = False) -> list[dict]:
-    if not enabled and not history:
+def definitions(active, enabled: bool = False, history: bool = False,
+                charts: bool = False) -> list[dict]:
+    if not enabled and not history and not charts:
         return []
     if not getattr(active, 'inference_profile', {}).get('capabilities', {}).get('native_tools'):
         raise ValueError('This model/backend does not expose verified native tools.')
-    return (WEB_TOOLS if enabled else []) + (HISTORY_TOOLS if history else [])
+    return ((WEB_TOOLS if enabled else []) + (HISTORY_TOOLS if history else [])
+            + (CHART_TOOLS if charts else []))
 
 
 def chat_turns(messages: list[dict]) -> list[dict]:

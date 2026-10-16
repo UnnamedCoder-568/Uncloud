@@ -14,7 +14,9 @@ export function contextMessages(messages: ChatMessage[], system: string,
   });
   const turns = failed.size ? messages.filter((_, index) => !failed.has(index)) : messages;
   if (raw) return turns;
-  const content = system + (summary ? `\n\nEarlier conversation, compacted for continuity:\n${summary}` : '');
+  let memory: unknown = summary;
+  if (summary) { try { memory = JSON.parse(summary); } catch { /* Legacy text memory stays data. */ } }
+  const content = [system, summary ? JSON.stringify({ conversation_memory: memory }) : ''].filter(Boolean).join('\n\n');
   const start = through;
   const tail = messages.slice(start).filter((_, index) => !failed.has(index + start));
   return [...(content ? [{ role: 'system' as const, content }] : []), ...tail.flatMap(message => {
@@ -28,11 +30,3 @@ export function contextMessages(messages: ChatMessage[], system: string,
 export function compactAvailable(used: number | null, limit: number | null): boolean {
   return used != null && limit != null && limit > 0 && used / limit >= 0.75;
 }
-
-/** Shared with the live-model compaction evaluation. */
-export const COMPACTION_INSTRUCTION = `Summarize this conversation for continued work in the same chat.
-Use these headings: Current facts and decisions; Active constraints; Open tasks; References.
-Preserve the user's intent, project state, exact names and paths, necessary references and unresolved tasks.
-For each changed decision, record only the latest authoritative value as current. Do not mix old and new values with arrows. Omit superseded values unless still needed, and explicitly label them superseded.
-Remove completed tasks from Open tasks. Preserve unchanged decisions and prohibitions from existing memory.
-Distinguish verified facts from guesses. Keep task wording and names exact. Be concise and do not invent details.`;

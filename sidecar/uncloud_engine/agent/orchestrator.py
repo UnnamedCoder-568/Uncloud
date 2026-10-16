@@ -13,52 +13,19 @@ from ..engines import engine_manager
 from .graph import ExecutionGraph, Task
 from .tools import TOOL_SPECS, run_tool
 
-PLANNING_SYSTEM_PROMPT = """Break the user's goal into a small directed acyclic graph. \
-Each step must use exactly one tool. Available tools:
-
-{tools}
-
-Respond with ONLY a JSON object, no prose, no markdown fences, in this exact shape:
-{{
-  "tasks": {{
-    "t1": {{"description": "...", "tool_id": "shell", \
-"args": {{"command": "..."}}, "dependencies": []}},
-    "t2": {{"description": "...", "tool_id": "fs_write", \
-"args": {{"path": "...", "content": "..."}}, "dependencies": ["t1"]}}
-  }},
-  "start_node_ids": ["t1"]
-}}
-
-To use what an earlier step produced, reference it as {{t1}} inside a later step's args —
-it is replaced with that step's actual output before the step runs. Never write a
-placeholder like "[content from t1]"; write {{t1}} instead. Example:
-  "t1": {{"description": "Read the page", "tool_id": "web_read", \
-"args": {{"url": "..."}}, "dependencies": []}},
-  "t2": {{"description": "Save it", "tool_id": "fs_write", \
-"args": {{"path": "out.txt", "content": "{{{{t1}}}}"}}, "dependencies": ["t1"]}}
-
-Keep it to the minimum number of steps needed. Prefer fewer, more capable
-shell commands over many small steps.
-
-Guidance:
-- Do not add a shell step to slice or summarise text you already have — pass {{t1}} straight
-  into the step that needs it. Shell is for running programs, not for editing strings.
-- When the goal creates a file, include a final check that it exists and is readable.
-  Report completion only from a successful tool result, never from planned steps alone.
-- Progress is recorded automatically, so you do not need planning steps just to track state.
-- Use note_save for a fact a later step depends on (a path, an ID, a finding),
-  and note_recall to read it back rather than re-deriving it.
-- To work with a web page you only need to read, use web_read. Use browser_open
-  when the page needs JavaScript, or when a later step must click or type.
-- see_image only works when a vision-capable model is loaded; pair it with
-  screen_capture or browser_screenshot."""
+PLANNING_SYSTEM_PROMPT = {
+    'task': 'plan', 'format': 'JSON', 'steps': 'minimal', 'goal_scope': 'current',
+    'dependencies': 'acyclic', 'references': '{{TASK_ID}}', 'completion': 'verified_tool_result',
+    'output': {'tasks': {'TASK_ID': {'description': 'string', 'tool_id': 'TOOL_ID',
+                                  'args': {}, 'dependencies': ['TASK_ID']}},
+               'start_node_ids': ['TASK_ID']},
+}
 
 
 def _tools_description(specs: list[dict] | None = None) -> str:
-    return "\n".join(
-        f"- {t['id']}: {t['description']} (args: {', '.join(t['args'])})"
-        for t in (specs if specs is not None else TOOL_SPECS)
-    )
+    return json.dumps([{'id': t['id'], 'args': t['args']}
+                       for t in (specs if specs is not None else TOOL_SPECS)],
+                      separators=(',', ':'))
 
 
 def _active_tool_specs() -> list[dict]:
@@ -202,32 +169,20 @@ def _context_block(context: list[dict] | None) -> str:
 
     text = "\n\n".join(lines)
 
-    return (
-        "\n\nBACKGROUND — the conversation this was handed over from. It is "
-        "context for understanding the goal, not a list of things to do. Plan "
-        "only for the goal above.\n\n" + text
-    )
+    return '\n\n' + json.dumps({'background': text}, ensure_ascii=False, separators=(',', ':'))
 
 
-RECOVERY_PROMPT = """A plan you made has partly failed. Here is what happened:
-
-{report}
-
-Write a NEW plan for the work that is still outstanding. Do not repeat steps
-that already succeeded — their results are available as {{tN}} references, and
-you may use them. If a step failed because the approach was wrong, try a
-different approach rather than the same one again. If the goal cannot be
-reached, return an empty task list rather than inventing work.
-
-Respond with ONLY the same JSON object shape as before."""
+RECOVERY_PROMPT = ('{{"task":"recover","report":{report},'
+                   '"reuse":"completed_results","output":"plan"}}')
 
 
 def planning_messages(goal: str, context: list[dict] | None = None, inference: dict | None = None):
     specs = _active_tool_specs()
-    system = PLANNING_SYSTEM_PROMPT.format(tools=_tools_description(specs))
+    contract = {**PLANNING_SYSTEM_PROMPT, 'tools': json.loads(_tools_description(specs))}
     custom = (inference or {}).get("system_prompt")
     if isinstance(custom, str) and custom:
-        system += "\n\nUser model instructions:\n" + custom
+        contract['user_instructions'] = custom
+    system = json.dumps(contract, ensure_ascii=False, separators=(',', ':'))
     return specs, [
         {"role": "system", "content": system},
         {"role": "user", "content": goal + _context_block(context)},
@@ -305,10 +260,8 @@ class Orchestrator:
                             {"role": "assistant", "content": content[:4000] or "No plan returned."},
                             {
                                 "role": "user",
-                                "content": f"Fix the plan: {exc} Return only the required "
-                                "JSON object, "
-                                "with real tool IDs, args and acyclic dependencies. "
-                                "Do not explain or summarise the goal.",
+                                "content": json.dumps({'task': 'repair_plan', 'error': str(exc)},
+                                                      separators=(',', ':')),
                             },
                         ]
 
@@ -419,7 +372,8 @@ class Orchestrator:
             )
         try:
             recovered = await self.plan(
-                RECOVERY_PROMPT.format(report=report) + f"\n\nORIGINAL GOAL: {graph.goal}",
+                RECOVERY_PROMPT.format(report=json.dumps(report))
+                + '\n\n' + json.dumps({'goal': graph.goal}),
                 **({"inference": graph.inference} if graph.inference else {})
             )
             # A new plan normally starts at t1 again. Keep its identity distinct

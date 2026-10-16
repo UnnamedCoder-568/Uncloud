@@ -101,8 +101,14 @@ class EngineManager:
             automatic_context = engine == 'gguf' and context_length is None and runtime['auto_fit']
             inference_profile["capabilities"] = discover(model_path, engine, native=bool(native))
             if engine == "gguf":
+                from .tool_template import compact
+
+                original_template = inference_profile['capabilities'].get('template', '')
+                tool_template = compact(original_template)
                 proc = self._spawn_llama_cpp(
-                    model_path, port, None if automatic_context else profile["effective_limit"])
+                    model_path, port, None if automatic_context else profile["effective_limit"],
+                    **({'tool_template': tool_template} if runtime.get('template_file')
+                       and tool_template != original_template else {}))
             elif engine == "mlx":
                 proc = self._spawn_mlx(model_path, port, adapter_path, profile["effective_limit"])
                 # The library's generic 512-token default is not a model limit.
@@ -201,7 +207,7 @@ class EngineManager:
             return active
 
     def _spawn_llama_cpp(self, model_path: str, port: int,
-                         context_limit: int | None) -> subprocess.Popen:
+                         context_limit: int | None, *, tool_template: str = '') -> subprocess.Popen:
         native = LLAMA_SERVER_BIN or server_path()
         if native:
             command = [
@@ -223,6 +229,10 @@ class EngineManager:
             if options['context_stop']:
                 command += ['--no-context-shift']
             command += ['--parallel', '1']
+            if tool_template:
+                from .tool_template import cache_file
+
+                command += ['--jinja', '--chat-template-file', cache_file(tool_template)]
         else:
             try:
                 import llama_cpp  # noqa: F401
@@ -288,7 +298,7 @@ class EngineManager:
         which mlx_lm's server can't drive — mlx_vlm serves the same OpenAI-shaped
         API but accepts image content parts in messages."""
         command = [
-            sys.executable, "-m", "mlx_vlm.server", "--model", model_path,
+            sys.executable, "-m", "uncloud_engine.vlm_server", "--model", model_path,
             "--port", str(port), "--host", "127.0.0.1",
         ]
         if context_limit is not None:

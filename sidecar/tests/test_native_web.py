@@ -45,13 +45,26 @@ def test_tools_file_contains_only_neutral_function_schemas():
 
     template = Path(web.__file__).with_name('Tools.jinja').read_text()
     schemas = json.loads(template)
-    assert schemas == definitions(active(), True, True)
+    assert schemas == definitions(active(), True, True, True)
     assert [s['function']['name'] for s in schemas] == [
-        'web_search', 'web_read', 'conversation_search']
+        'web_search', 'web_read', 'conversation_search', 'render_bar_chart']
     assert [s['function']['name'] for s in definitions(active(), False, True)] == [
         'conversation_search']
     assert all(set(s) == {'type', 'function'} for s in schemas)
-    assert all(set(s['function']) == {'name', 'description', 'parameters'} for s in schemas)
+    assert all(set(s['function']) == {'name', 'parameters'} for s in schemas)
     assert 'system' not in template and 'model_info' not in template
     assert '{{' not in template and '{%' not in template
     assert all(s['function']['parameters']['additionalProperties'] is False for s in schemas)
+
+
+@pytest.mark.parametrize('engine', ['mlx', 'mlx-vlm', 'gguf'])
+def test_chart_tool_is_optional_schema_data_without_web_or_identity_instructions(engine):
+    turns = [{'role': 'user', 'content': 'Draw a bar chart.'}]
+    payload = model_payload(active(engine=engine), turns, chart_tools=True)
+    assert payload['messages'] is turns
+    assert [tool['function']['name'] for tool in payload['tools']] == ['render_bar_chart']
+    assert 'tool_choice' not in payload and 'temperature' not in payload
+    assert 'description' not in str(payload['tools'])
+    assert not definitions(active(), charts=False)
+    with pytest.raises(ValueError, match='native tools'):
+        definitions(active(False), charts=True)

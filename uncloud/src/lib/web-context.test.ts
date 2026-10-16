@@ -9,7 +9,7 @@ it('fits oversized evidence including reply reserve, retaining source URLs and i
   const fitted = await fitWebContext(`Source title\nhttps://example.com/source\n${'evidence '.repeat(600)}`, assemble, count);
   expect(fitted.usage.used! + fitted.replyBudget).toBeLessThanOrEqual(1024);
   expect(fitted.evidence).toContain('https://example.com/source');
-  expect(fitted.evidence).toContain('incomplete');
+  expect(fitted.evidence).toContain('"source_excerpt":"partial"');
   expect(assemble(fitted.evidence)[0].content).toContain('Original intent');
 });
 it('leaves evidence unchanged when the full request fits', async () => {

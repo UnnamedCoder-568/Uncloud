@@ -2089,6 +2089,7 @@ class ContextCountBody(BaseModel):
     inference: dict = Field(default_factory=dict)
     web_tools: bool = False
     history_tools: bool = False
+    chart_tools: bool = False
 
 
 @app.post("/api/chat/context", dependencies=[Depends(require_token)])
@@ -2100,7 +2101,8 @@ async def chat_context(body: ContextCountBody) -> dict:
 
     try:
         used = await count(active, body.messages, body.inference, web_tools=body.web_tools,
-                           **({'history_tools': True} if body.history_tools else {}))
+                           **({'history_tools': True} if body.history_tools else {}),
+                           **({'chart_tools': True} if body.chart_tools else {}))
     except Exception:  # noqa: BLE001 - the meter must not break inference
         used = None
     profile = getattr(active, "inference_profile", {})
@@ -2117,6 +2119,7 @@ class ChatBody(BaseModel):
     inference: dict = Field(default_factory=dict)
     web_tools: bool = False
     history_tools: bool = False
+    chart_tools: bool = False
     inherit_defaults: bool = True
     conversation_id: str = ""
     project_id: str = ""
@@ -2204,6 +2207,7 @@ async def _run_chat(run: ChatRun, body: ChatBody, active=None) -> None:
             inference=body.inference,
             web_tools=body.web_tools,
             history_tools=body.history_tools,
+            chart_tools=body.chart_tools,
         )
         run.timings["prompt_build_ms"] = (time.perf_counter() - build_start) * 1000
         run.timings["dispatch_ms"] = (time.perf_counter() - run.started) * 1000
@@ -2311,7 +2315,7 @@ async def start_chat_run(body: ChatBody, request: Request) -> dict:
     try:
         apply(active, {}, body.inference)
         from .web_tools import definitions
-        definitions(active, body.web_tools, body.history_tools)
+        definitions(active, body.web_tools, body.history_tools, body.chart_tools)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     # Finished runs are useful for a reconnect, but not forever.
@@ -2392,6 +2396,7 @@ async def chat(body: ChatBody) -> StreamingResponse:
                     inference=body.inference,
                     web_tools=body.web_tools,
                     history_tools=body.history_tools,
+                    chart_tools=body.chart_tools,
                 )
                 # Plain Chat is a direct-answer surface. Thinking-capable GGUF
                 # templates otherwise default to an unlimited private-reasoning

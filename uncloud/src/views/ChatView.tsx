@@ -4,7 +4,7 @@ import AutoGrowTextarea from "../components/AutoGrowTextarea";
 import { useDismiss } from '../lib/useDismiss';
 import ActivityOrb from '../components/ActivityOrb';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ChevronDown, ArrowUp, Square, Mic, Volume2, VolumeX, Hammer, ImagePlus, PanelRight, Plus, X, Globe,
+import { ChevronDown, ArrowUp, Square, Mic, Volume2, VolumeX, Hammer, PanelRight, Plus, X, Globe,
   Image as ImageIcon, ImageOff, GlobeLock, AudioLines, MessagesSquare,
   Settings2, Paperclip, FileText, Copy, Check, NotebookPen } from 'lucide-react';
 import { TitleBarPortal } from '../components/TitleBar';
@@ -21,6 +21,7 @@ import { Sentences, useTalk } from '../lib/useTalk';
 import { cleanReply } from '../lib/reply';
 import { LookupSession, describe, findLookups, initialWebLookup, lookupKey, wantsPictures, resultsTurn, stripLookups } from '../lib/lookup';
 import { lookupForTool } from '../lib/native-tools';
+import { chartReply, readBarChart, type BarChartData } from '../lib/bar-chart';
 import { compactAvailable, contextMessages } from '../lib/context';
 import { fitToolContext, fitWebContext } from '../lib/web-context';
 import { prepareConversation, type Continuity } from '../lib/dynamic-context';
@@ -473,28 +474,10 @@ export default function ChatView({ persona }: { persona?: PersonaSnapshot } = {}
     return () => { cancelled = true; };
   }, [activeModel]);
 
-  const attachImages = useCallback(() => {
-    const picker = document.createElement('input');
-    picker.type = 'file';
-    picker.accept = 'image/*';
-    picker.multiple = true;
-    picker.onchange = () => {
-      for (const file of Array.from(picker.files ?? [])) {
-        const reader = new FileReader();
-        reader.onload = () => {
-          const url = String(reader.result || '');
-          if (url.startsWith('data:image/')) setAttached((a) => [...a, url]);
-        };
-        reader.readAsDataURL(file);
-      }
-    };
-    picker.click();
-  }, []);
-
   const attachDocuments = useCallback(() => {
     const picker = document.createElement('input');
     picker.type = 'file';
-    picker.accept = '.png,.jpg,.jpeg,.webp,.txt,.md,.markdown,.csv,.tsv,.json,.yaml,.yml,.py,.js,.jsx,.ts,.tsx,.css,.html,.xml,.toml,.ini,.log,.sql,.rs,.go,.java,.c,.h,.cpp,.docx,.xlsx,.pptx';
+    picker.accept = `${visionOk ? '.png,.jpg,.jpeg,.webp,' : ''}.txt,.md,.markdown,.csv,.tsv,.json,.yaml,.yml,.py,.js,.jsx,.ts,.tsx,.css,.html,.xml,.toml,.ini,.log,.sql,.rs,.go,.java,.c,.h,.cpp,.docx,.xlsx,.pptx`;
     picker.multiple = true;
     picker.onchange = async () => {
       setAttachingFile(true);
@@ -555,6 +538,7 @@ export default function ChatView({ persona }: { persona?: PersonaSnapshot } = {}
     setMessages((m) => [...m, { role: 'assistant', content: '' }]);
     const epoch = ++generationEpoch.current;
     let full = '';
+    const renderedCharts: BarChartData[] = [];
     const controller = new AbortController();
     chatAbort.current = controller;
     try {
@@ -571,9 +555,11 @@ export default function ChatView({ persona }: { persona?: PersonaSnapshot } = {}
       const lookups = new LookupSession();
       let nativeTurns: ChatMessage[] = [];
       let historyRounds = 0;
+      let chartRounds = 0;
       const historyQueries = new Set<string>();
       const toolsEnabled = () => nativeWeb && lookups.phase !== 'final';
       const historyEnabled = () => nativeToolsAvailable && through > 0 && historyRounds < 3;
+      const chartsEnabled = () => nativeToolsAvailable && renderedCharts.length === 0 && chartRounds < 2;
       const requestedLookup = web && !rawMode ? initialWebLookup(text) : null;
       const requestedPictures = pictures && !rawMode && wantsPictures(text);
       const turnInference = inference.values;
@@ -584,7 +570,7 @@ export default function ChatView({ persona }: { persona?: PersonaSnapshot } = {}
         const result = await prepareConversation([...next.slice(0, through), ...tail], {
           summary: memory, through, system: replyPrompt(), signal: controller.signal, allowOverflow,
           count: (turns, archived) => countChatContext(turns, turnInference, toolsEnabled(),
-            nativeToolsAvailable && archived && historyRounds < 3),
+            nativeToolsAvailable && archived && historyRounds < 3, chartsEnabled()),
           compact: async (turns, previous) => {
             setCompacting(true);
             try {
@@ -618,7 +604,7 @@ export default function ChatView({ persona }: { persona?: PersonaSnapshot } = {}
         await prepare(tail(evidence), true);
         const fitted = await fitWebContext(evidence,
           value => contextMessages(tail(value), replyPrompt(), memory, 0, rawMode),
-          turns => countChatContext(turns, turnInference, toolsEnabled(), historyEnabled()),
+          turns => countChatContext(turns, turnInference, toolsEnabled(), historyEnabled(), chartsEnabled()),
           inference.values.max_tokens !== undefined ? Number(inference.values.max_tokens) : undefined);
         if (epoch !== generationEpoch.current || controller.signal.aborted) throw new Error('Reply stopped');
         setContextUsage(fitted.usage);
@@ -631,11 +617,11 @@ export default function ChatView({ persona }: { persona?: PersonaSnapshot } = {}
       if (!rawMode && through > 0 && !nativeToolsAvailable) {
         const matches = searchHistory(next, through, text);
         if (matches.length) {
-          const evidence = matches.map(match => `Message ${match.message} (${match.role}, data):\n${match.content}`).join('\n\n');
+          const evidence = JSON.stringify({ conversation_history: matches });
           const beforeRecall = sent;
           sent = await fitEvidence(evidence, value => beforeRecall.map((message, index) =>
             index === beforeRecall.length - 1 ? { ...message,
-              content: `${message.content}\n\nEarlier conversation excerpts (data):\n${value}` } : message));
+              content: `${message.content}\n\n${value}` } : message));
         }
       }
       //: Hands-free only: the reply is cut into sentences as it is written so
@@ -676,7 +662,7 @@ export default function ChatView({ persona }: { persona?: PersonaSnapshot } = {}
           fittedReplyBudget,
           { path: activeModel.path, engine: activeModel.engine, adapter: activeAdapter,
             inference: { ...turnInference, ...(fittedReplyBudget ? { max_tokens: fittedReplyBudget } : {}) },
-            conversationId: sendingConversationId, webTools: toolsEnabled(), historyTools: historyEnabled() },
+            conversationId: sendingConversationId, webTools: toolsEnabled(), historyTools: historyEnabled(), chartTools: chartsEnabled() },
         )) {
           if (epoch !== generationEpoch.current) return;
           if (chunk.kind === 'tool_calls') {
@@ -702,7 +688,7 @@ export default function ChatView({ persona }: { persona?: PersonaSnapshot } = {}
             if (!prev) return m;
             copy[assistantIndex] = chunk.kind === 'thinking'
               ? { ...prev, reasoning: (prev.reasoning ?? '') + chunk.text }
-              : { ...prev, content: prev.content + chunk.text };
+              : { ...prev, content: chartReply(full, renderedCharts) };
             return copy;
           });
         }
@@ -718,6 +704,22 @@ export default function ChatView({ persona }: { persona?: PersonaSnapshot } = {}
         // to win that argument rather than merely take part in it.
         // Only structured native calls can search/read. Text and thinking
         // cannot trigger a web request. Pictures retain their opt-in protocol.
+        const chartCalls = calls.filter(call => call.function.name === 'render_bar_chart');
+        const chartResults = new Map<string, string>();
+        if (chartCalls.length) {
+          if (!chartsEnabled() || chartCalls.length > 4) throw new Error('The chart tool limit was reached for this reply.');
+          chartRounds++;
+          for (const call of chartCalls) {
+            const result = readBarChart(call.function.arguments);
+            if (result.chart) {
+              renderedCharts.push(result.chart);
+              chartResults.set(call.id, '{"rendered":true}');
+            } else chartResults.set(call.id, JSON.stringify({ error: result.error }));
+          }
+          if (chartRounds >= 2 && !renderedCharts.length) throw new Error('The model returned invalid chart data again after one correction attempt.');
+          setMessages(current => current.map((message, index) => index === assistantIndex
+            ? { ...message, content: chartReply(full, renderedCharts) } : message));
+        }
         const recallCalls = calls.filter(call => call.function.name === 'conversation_search');
         const recallResults = new Map<string, string>();
         if (recallCalls.length) {
@@ -728,13 +730,11 @@ export default function ChatView({ persona }: { persona?: PersonaSnapshot } = {}
             const key = query.trim().toLocaleLowerCase();
             const matches = historyQueries.has(key) ? [] : searchHistory(next, through, query);
             historyQueries.add(key);
-            recallResults.set(call.id, matches.length
-              ? matches.map(match => `Message ${match.message} (${match.role}, data${match.excerpt ? ', excerpt' : ''}):\n${match.content}`).join('\n\n')
-              : 'No additional matching earlier messages.');
+            recallResults.set(call.id, JSON.stringify({ conversation_history: matches }));
           }
           setContextNotice('Earlier conversation searched locally.');
         }
-        const webCalls = calls.filter(call => call.function.name !== 'conversation_search');
+        const webCalls = calls.filter(call => !['conversation_search', 'render_bar_chart'].includes(call.function.name));
         const requested = webCalls.length && nativeWeb
           ? webCalls.map(lookupForTool)
           : [];
@@ -743,7 +743,7 @@ export default function ChatView({ persona }: { persona?: PersonaSnapshot } = {}
         const plan = web && !rawMode
           ? lookups.nextRequests([...requested, ...pictureRequests])
           : { kind: 'done' as const, lookups: [] };
-        if (plan.kind === 'done' && !recallCalls.length) break;
+        if (plan.kind === 'done' && !recallCalls.length && !chartCalls.length) break;
         if (plan.kind === 'answer' && !calls.length) {
           setMessages(current => current.map((message, index) => index === assistantIndex
             ? { ...message, content: '', reasoning: '' } : message));
@@ -766,11 +766,7 @@ export default function ChatView({ persona }: { persona?: PersonaSnapshot } = {}
               // no access to.
               return {
                 lookup,
-                text: images.length
-                  ? `${images.length} pictures are now displayed to the user. `
-                    + 'Refer to them naturally; do not describe their contents, '
-                    + 'because you cannot see them.'
-                  : 'No pictures were found. Say so.',
+                text: JSON.stringify({ images: { displayed: images.length, visible_to_model: false } }),
               };
             }
             const text = lookup.kind === 'search'
@@ -809,11 +805,11 @@ export default function ChatView({ persona }: { persona?: PersonaSnapshot } = {}
           const beforeLookup: ChatMessage[] = [...sent,
             { role: 'assistant', content: full, tool_calls: calls }];
           const responses: ChatMessage[] = calls.map(call => {
-            const lookup = call.function.name === 'conversation_search' ? null : lookupForTool(call);
+            const lookup = ['conversation_search', 'render_bar_chart'].includes(call.function.name) ? null : lookupForTool(call);
             const part = lookup && fetched.find(p => lookupKey(p.lookup) === lookupKey(lookup));
             return { role: 'tool', tool_call_id: call.id,
-              content: recallResults.get(call.id) ?? (part ? part.text : null)
-                ?? 'Lookup already completed or the per-reply lookup limit was reached.' };
+              content: chartResults.get(call.id) ?? recallResults.get(call.id) ?? (part ? part.text : null)
+                ?? '{"results":[],"status":"lookup_limit"}' };
           });
           // Fit actual tool outputs with all call IDs and tool definitions
           // present. Keep the user's conversation and every supporting URL.
@@ -823,7 +819,7 @@ export default function ChatView({ persona }: { persona?: PersonaSnapshot } = {}
             ...responses.map((response, index) => ({ ...response, content: values[index] }))];
           const fitted = await fitToolContext(responses.map(response => response.content),
             values => contextMessages(assemble(values), replyPrompt(), memory, 0, rawMode),
-            turns => countChatContext(turns, turnInference, toolsEnabled(), historyEnabled()),
+            turns => countChatContext(turns, turnInference, toolsEnabled(), historyEnabled(), chartsEnabled()),
             turnInference.max_tokens !== undefined ? Number(turnInference.max_tokens) : undefined);
           controller.signal.throwIfAborted();
           if (epoch !== generationEpoch.current) return;
@@ -834,7 +830,10 @@ export default function ChatView({ persona }: { persona?: PersonaSnapshot } = {}
           next[next.length - 1] = { ...next[next.length - 1], tool_turns: nativeTurns };
           setMessages(current => current.map((message, index) => index === next.length - 1
             ? { ...message, tool_turns: nativeTurns }
-            : index === assistantIndex ? { ...message, content: '', reasoning: '' } : message));
+            : index === assistantIndex ? { ...message, content: chartReply('', renderedCharts), reasoning: '' } : message));
+          // Rendering is the requested result. No second model pass is needed
+          // to describe or redraw an artifact that is already on screen.
+          if (chartCalls.length && chartCalls.length === calls.length && renderedCharts.length) break;
           continue;
         }
         const beforeLookup = [
@@ -861,6 +860,7 @@ export default function ChatView({ persona }: { persona?: PersonaSnapshot } = {}
       // answer. Left in, the user reads the plumbing.
       const rawReply = full;
       full = rawMode ? full : cleanReply(stripLookups(full));
+      full = chartReply(full, renderedCharts);
       if (!full.trim()) throw new Error('The model finished without an answer. Its thinking is available above; no lookup was executed from thinking text.');
       setMessages((m) => {
         if (epoch !== generationEpoch.current) return m;
@@ -985,7 +985,7 @@ export default function ChatView({ persona }: { persona?: PersonaSnapshot } = {}
         ...(input.trim() ? [{ role: 'user' as const, content: input.trim() }] : []),
       ], systemPrompt({ pictures: pictures && wantsPictures(currentText), web, manner,
         webPhase: web && !rawMode ? 'request' : undefined }), compactSummary, compactedThrough, rawMode);
-      void countChatContext(turns, inference.values, nativeWeb, nativeToolsAvailable && compactedThrough > 0).then((usage) => {
+      void countChatContext(turns, inference.values, nativeWeb, nativeToolsAvailable && compactedThrough > 0, nativeToolsAvailable).then((usage) => {
         if (!cancelled) setContextUsage(usage);
       }).catch(() => { if (!cancelled) setContextUsage(null); });
     }, 550);
@@ -1012,8 +1012,8 @@ export default function ChatView({ persona }: { persona?: PersonaSnapshot } = {}
       const system = systemPrompt({ pictures: false, web, manner,
         webPhase: web && !rawMode ? 'request' : undefined });
       const [before, after] = await Promise.all([
-        countChatContext(contextMessages(messages, system, compactSummary, compactedThrough), inference.values, nativeWeb, nativeToolsAvailable && compactedThrough > 0),
-        countChatContext(contextMessages(messages, system, summary, through), inference.values, nativeWeb, nativeToolsAvailable),
+        countChatContext(contextMessages(messages, system, compactSummary, compactedThrough), inference.values, nativeWeb, nativeToolsAvailable && compactedThrough > 0, nativeToolsAvailable),
+        countChatContext(contextMessages(messages, system, summary, through), inference.values, nativeWeb, nativeToolsAvailable, nativeToolsAvailable),
       ]);
       if (before.used == null || after.used == null) {
         throw new Error('Could not verify the compacted context size. Your original conversation is preserved.');
@@ -1045,6 +1045,11 @@ export default function ChatView({ persona }: { persona?: PersonaSnapshot } = {}
 
   const composer = (
     <div className="composer-inner">
+      {(loadingModel || generating || compacting) && <div role="status" className="chat-generation-status">
+        <ActivityOrb size={20} state={loadingModel ? 'connecting' : compacting ? 'shaping' : 'solving'}
+          label={loadingModel ? 'Loading model' : compacting ? 'Compacting context' : 'Model responding'} />
+        <span>{loadingModel ? 'Loading model…' : compacting ? 'Compacting context…' : messages.at(-1)?.content ? 'Generating reply…' : 'Waiting for the model…'}</span>
+      </div>}
       <div className="composer-card chat-composer">
         {/* What is going with the next message. Shown before sending, and
             removable: attaching the wrong screenshot is easy and noticing
@@ -1103,6 +1108,11 @@ export default function ChatView({ persona }: { persona?: PersonaSnapshot } = {}
         />
 
         <div className="composer-actions">
+          <button onClick={attachDocuments} disabled={!activeModel || loadingModel || attachingFile}
+            title={visionOk ? 'Attach images, documents or source files' : 'Attach documents or source files. This model cannot see images.'}
+            aria-label={visionOk ? 'Attach files or images' : 'Attach files'} className="pill pill-icon composer-attach">
+            {attachingFile ? <ActivityOrb state="working" size={20} label="Reading file…" /> : <Paperclip size={17} />}
+          </button>
           {sttModel && (
             <button
               onClick={recording ? stopRecording : startRecording}
@@ -1162,7 +1172,7 @@ export default function ChatView({ persona }: { persona?: PersonaSnapshot } = {}
                       localStorage.setItem('uncloud.chat.contextWindows', JSON.stringify(windows));
                       setNetworkError('');
                       await inference.refresh();
-                      setContextUsage(await countChatContext(contextMessages(messages, systemPrompt({ pictures: false, web: false, manner }), compactSummary, compactedThrough, rawMode), inference.values, nativeWeb, nativeToolsAvailable && compactedThrough > 0));
+                      setContextUsage(await countChatContext(contextMessages(messages, systemPrompt({ pictures: false, web: false, manner }), compactSummary, compactedThrough, rawMode), inference.values, nativeWeb, nativeToolsAvailable && compactedThrough > 0, nativeToolsAvailable));
                     } catch (error) { setNetworkError(error instanceof Error ? error.message : String(error)); }
                     finally { setLoadingModel(false); }
                   }}>Apply context window</button>
@@ -1177,32 +1187,6 @@ export default function ChatView({ persona }: { persona?: PersonaSnapshot } = {}
                 }}>Enable internet — ask once per session</button>
               </div>}
               {networkError && <p role="alert" className="text-xs">{networkError}</p>}
-          {/* Attaching a picture. Offered whatever the model, and refused with
-              a reason when it cannot see — hiding the button would leave
-              somebody hunting for a feature that is present. */}
-          <button
-            onClick={attachImages}
-            disabled={!activeModel || !visionOk}
-            title={visionOk
-              ? 'Attach an image for the model to look at'
-              : 'This model is text-only and cannot see images. Load a vision model '
-                + '(its name usually says VL or Vision) from the Models tab.'}
-            aria-label="Attach an image"
-            className="pill"
-          >
-            <ImagePlus size={15} /><span>Attach image</span>
-          </button>
-
-          <button
-            onClick={attachDocuments}
-            disabled={!activeModel || attachingFile}
-            title="Attach an image, document or source file"
-            aria-label="Attach a file"
-            className="pill"
-          >
-            {attachingFile ? <ActivityOrb state="working" size={20} label="Working…" /> : <Paperclip size={15} />}<span>Attach file</span>
-          </button>
-
           {/* The only control here that governs the network. Labelled plainly,
               because "local-first" is the promise this application makes and
               an exception to it should be visible rather than discovered. */}
@@ -1384,11 +1368,6 @@ export default function ChatView({ persona }: { persona?: PersonaSnapshot } = {}
           </button>
         </div>
       </div>
-      {(loadingModel || generating || compacting) && <div role="status" className="flex items-center gap-2 px-3 pt-2 text-xs text-[var(--text-faint)]">
-        <ActivityOrb size={20} state={loadingModel ? 'connecting' : compacting ? 'shaping' : 'solving'}
-          label={loadingModel ? 'Loading model' : compacting ? 'Compacting context' : 'Model responding'} />
-        <span>{loadingModel ? 'Loading model…' : compacting ? 'Compacting context…' : messages.at(-1)?.content ? 'Generating reply…' : 'Waiting for the model…'}</span>
-      </div>}
       {activeModel && (contextUsage?.limit || compactSummary) && (
         <div className="chat-context-footer">
           {compactSummary && <details className="chat-context-memory">
@@ -1450,17 +1429,14 @@ export default function ChatView({ persona }: { persona?: PersonaSnapshot } = {}
           <div ref={scrollRef} className="flex-1 chassis-scroll" style={{ padding: '8px 24px 0' }}>
             <div className="chat-message-list column flex flex-col pt-4 pb-12">
             {messages.map((m, i) => (
-              <div key={`${conversationId ?? 'draft'}:${i}`} className={`chat-message ${m.role === 'user' ? 'self-end max-w-[80%]' : 'self-start max-w-[85%]'}`}>
+              <div key={`${conversationId ?? 'draft'}:${i}`} className={`chat-message ${m.role === 'user' ? 'chat-message-user' : 'chat-message-assistant'}`}>
                 {/* A reasoning model produces most of its tokens here before
                     answering. Hidden, it reads as a hung app; shown in full it
                     buries the answer. Collapsed, with a live hint while it is
                     still thinking. */}
                 {m.role === 'assistant' && m.reasoning && (
-                  <details className="mb-1.5 px-1 group">
+                  <details className="mb-1.5 group">
                     <summary className="text-[11px] text-[var(--text-faint)] cursor-pointer select-none hover:text-[var(--text-dim)] transition">
-                      {!m.content && generating && i === messages.length - 1 && (
-                        <ActivityOrb state="solving" label="Thinking…" className="mr-1.5" />
-                      )}
                       {m.content ? 'Thought before answering' : generating && i === messages.length - 1 ? 'Thinking…' : 'Thinking finished'}
                       <span className="ml-1.5 opacity-60 group-open:hidden">
                         {m.reasoning.trim().split(/\s+/).length} words
@@ -1504,13 +1480,13 @@ export default function ChatView({ persona }: { persona?: PersonaSnapshot } = {}
                     </div>
                   </div>
                 ) : (
-                  <div className="text-sm text-[var(--text)] px-1">
+                  <div className="text-sm text-[var(--text)]">
                     {(() => {
                       const shown = cleanReply(m.content, generating && i === messages.length - 1);
                       if (shown) return <Markdown>{shown}</Markdown>;
                       // Still arriving.
                       if (i === messages.length - 1 && generating) {
-                        return m.reasoning ? null : <ActivityOrb state="solving" label="Thinking…" />;
+                        return null;
                       }
                       // Nothing left after the markers were taken out: the
                       // model replied with an instruction and no words. The

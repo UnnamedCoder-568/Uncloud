@@ -200,7 +200,7 @@ def test_compaction_selectively_retains_exact_user_constraints_and_later_changes
                 {"role": "user", "content": "valid request"},
             ]
         )
-        == "USER: valid request"
+        == '{"role":"user","content":"valid request"}'
     )
 
 

@@ -5,7 +5,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ChatView from './ChatView';
 import { apiPost, countChatContext, engineStatus, startEngine, streamChat,
-  webRead, webSearch, writeConversation } from '../lib/sidecar';
+  uploadChatAttachment, webRead, webSearch, writeConversation } from '../lib/sidecar';
 
 const state = vi.hoisted(() => ({ values: {} as Record<string, string> }));
 vi.mock('../lib/inference', () => ({ useInference: () => ({
@@ -32,6 +32,7 @@ vi.mock('../lib/sidecar', async (original) => ({
   writeConversation: vi.fn(async () => ({})),
   countChatContext: vi.fn(async () => ({ used: 100, limit: 8192, reply_limit: 2048 })),
   streamChat: vi.fn(),
+  uploadChatAttachment: vi.fn(),
   webSearch: vi.fn(async () => ({ results: 'Source https://example.org/source\nVerified test evidence.' })),
   webRead: vi.fn(async () => ({ text: 'Source https://example.org/source\nVerified test evidence.' })),
 }));
@@ -46,6 +47,7 @@ describe('Web handoff through the Chat interface', () => {
     localStorage.setItem('uncloud.chat.pictures', 'off');
     state.values = {};
     vi.clearAllMocks();
+    vi.mocked(uploadChatAttachment).mockReset();
     vi.mocked(countChatContext).mockResolvedValue({ used: 100, limit: 8192, reply_limit: 2048, exact: true });
     vi.mocked(webSearch).mockResolvedValue({ results: 'Source https://example.org/source\nVerified test evidence.' });
     vi.mocked(webRead).mockResolvedValue({ text: 'Source https://example.org/source\nVerified test evidence.' });
@@ -184,6 +186,119 @@ describe('Web handoff through the Chat interface', () => {
     await act(async () => button.click());
     expect(writeText).toHaveBeenCalledExactlyOnceWith(text);
     expect(button.textContent).toBe('Copied');
+  });
+
+  it('offers document attachments directly on the composer for a text model', async () => {
+    const click = vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(() => {});
+    const file = new File(['Revenue,Value\nA,12'], 'report.csv', { type: 'text/csv' });
+    vi.mocked(uploadChatAttachment).mockResolvedValue({ name: 'report.csv', type: 'text/csv', text: 'Revenue,Value\nA,12', clipped: false });
+    replies('The file contains a revenue table.');
+    await mount();
+    const attach = container.querySelector<HTMLButtonElement>('[aria-label="Attach files"]')!;
+    expect(attach.closest('.composer-actions')).not.toBeNull();
+    expect(attach.closest('details')).toBeNull();
+    await act(() => attach.click());
+    const picker = click.mock.instances.at(-1) as HTMLInputElement;
+    expect(picker?.accept).toContain('.csv');
+    expect(picker?.accept).not.toContain('.png');
+    Object.defineProperty(picker!, 'files', { value: [file] });
+    await act(async () => picker!.dispatchEvent(new Event('change')));
+    expect(uploadChatAttachment).toHaveBeenCalledExactlyOnceWith(file);
+    expect(container.querySelector('.composer-attachments')?.textContent).toContain('report.csv');
+    await send('Read this file.');
+    expect(JSON.stringify(vi.mocked(streamChat).mock.calls[0][0])).toContain('Revenue,Value');
+    click.mockRestore();
+  });
+
+  it('offers image selection when the loaded runtime reports vision support', async () => {
+    const click = vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(() => {});
+    vi.mocked(engineStatus).mockResolvedValue({ running: true, model_path: '/test/model', engine: 'mlx', supports_vision: true });
+    await mount();
+    await act(() => container.querySelector<HTMLButtonElement>('[aria-label="Attach files or images"]')!.click());
+    const picker = click.mock.instances.at(-1) as HTMLInputElement;
+    expect(picker?.accept).toContain('.png');
+    expect(picker?.accept).toContain('.docx');
+    click.mockRestore();
+  });
+
+  it('shows one generation indicator above the input card, with no placeholder spinner', async () => {
+    let finish!: () => void;
+    const waiting = new Promise<void>(resolve => { finish = resolve; });
+    vi.mocked(streamChat).mockImplementation(async function* () {
+      await waiting;
+      yield { kind: 'text', text: 'Done.' };
+    });
+    await mount();
+    await act(() => {
+      const editor = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Message"]')!;
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(editor, 'Hello');
+      editor.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Send"]')!.click());
+    const status = container.querySelector('.chat-generation-status')!;
+    expect(status.textContent).toContain('Waiting for the model');
+    expect(status.nextElementSibling?.classList.contains('chat-composer')).toBe(true);
+    expect(container.querySelectorAll('.chat-generation-status')).toHaveLength(1);
+    expect(container.querySelector('.chat-message-assistant')?.textContent).toBe('');
+    await act(async () => { finish(); await waiting; });
+    expect(container.querySelector('.chat-generation-status')).toBeNull();
+  });
+
+  it('renders and saves a native chart request with Web off and no system instructions', async () => {
+    localStorage.setItem('uncloud.chat.web', 'off');
+    let pass = 0;
+    vi.mocked(streamChat).mockImplementation(async function* () {
+      if (pass++ === 0) yield { kind: 'tool_calls', text: '', tool_calls: [{ id: 'chart-1', type: 'function',
+        function: { name: 'render_bar_chart', arguments: '{"title":"Sample data","labels":["A","B"],"values":[12,8]}' } }] };
+      // A tool-only artifact is a complete answer, even without follow-up prose.
+    });
+    await mount();
+    await send('Draw a bar chart of A 12 and B 8.');
+    expect(container.querySelector('svg[role="img"]')?.getAttribute('aria-label')).toContain('Sample data');
+    expect(webSearch).not.toHaveBeenCalled();
+    expect(webRead).not.toHaveBeenCalled();
+    expect(streamChat).toHaveBeenCalledTimes(1);
+    const first = vi.mocked(streamChat).mock.calls[0];
+    expect(first[0].some(turn => turn.role === 'system')).toBe(false);
+    expect(first[3]?.chartTools).toBe(true);
+    const saved = vi.mocked(writeConversation).mock.calls.at(-1)![1];
+    expect(saved.messages.at(-1)?.content).toContain('```bar-chart');
+    expect(saved.messages[0].tool_turns?.[0].tool_calls?.[0].id).toBe('chart-1');
+    expect(saved.messages[0].tool_turns?.[1]).toMatchObject({ tool_call_id: 'chart-1', content: '{"rendered":true}' });
+    expect(countChatContext).toHaveBeenCalledWith(expect.anything(), expect.anything(), false, false, true);
+  });
+
+  it.each([false, true])('returns data-only chart validation errors and accepts one correction with Web=%s', async web => {
+    localStorage.setItem('uncloud.chat.web', web ? 'on' : 'off');
+    let pass = 0;
+    vi.mocked(streamChat).mockImplementation(async function* () {
+      const extra = pass++ === 0 ? ',"colors":["red","blue"]' : '';
+      yield { kind: 'tool_calls', text: '', tool_calls: [{ id: `chart-${pass}`, type: 'function',
+        function: { name: 'render_bar_chart', arguments: `{"labels":["A","B"],"values":[12,8]${extra}}` } }] };
+    });
+    await mount();
+    await send('Draw a bar chart of A 12 and B 8.');
+    expect(streamChat).toHaveBeenCalledTimes(2);
+    const corrected = vi.mocked(streamChat).mock.calls[1][0];
+    expect(corrected.find(turn => turn.role === 'tool')).toMatchObject({
+      content: '{"error":{"code":"additional_properties","fields":["colors"]}}',
+    });
+    expect(corrected.some(turn => turn.role === 'system')).toBe(false);
+    expect(vi.mocked(streamChat).mock.calls[1][3]?.chartTools).toBe(true);
+    expect(container.querySelectorAll('svg[role="img"] rect')).toHaveLength(2);
+    expect(webSearch).not.toHaveBeenCalled();
+  });
+
+  it('stops after one failed chart correction instead of retrying indefinitely', async () => {
+    vi.mocked(streamChat).mockImplementation(async function* () {
+      yield { kind: 'tool_calls', text: '', tool_calls: [{ id: 'bad-chart', type: 'function',
+        function: { name: 'render_bar_chart', arguments: '{"labels":["A","B"],"values":[12]}' } }] };
+    });
+    await mount();
+    await send('Draw a bar chart.');
+    expect(streamChat).toHaveBeenCalledTimes(2);
+    expect(container.textContent).toContain('after one correction attempt');
+    expect(container.querySelector('svg[role="img"]')).toBeNull();
   });
 
   it('applies only the explicitly chosen persona and saves it with its own conversation', async () => {

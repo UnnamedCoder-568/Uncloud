@@ -28,7 +28,7 @@ describe('direct chat uses the native model conversation', () => {
     expect(chatSystemPrompt({ manner: 'butler' })).toBe('');
   });
   it('uses a spoken manner only for an explicitly spoken response', () => {
-    expect(chatSystemPrompt({ manner: 'brief', spoken: true })).toContain('read aloud');
+    expect(JSON.parse(chatSystemPrompt({ manner: 'brief', spoken: true })).output).toBe('speech');
   });
 });
 
@@ -44,7 +44,7 @@ describe('capabilities are scoped to the current request', () => {
     const prompt = chatSystemPrompt({ pictures: true });
     expect(prompt).toContain('[[image draft');
     expect(prompt).toContain('[[image high');
-    expect(prompt).toContain('answer in words');
+    expect(JSON.parse(prompt).media.dimensions).toEqual({ min: 256, max: 2048, step: 64 });
     expect(prompt.length).toBeLessThan(750);
   });
 });

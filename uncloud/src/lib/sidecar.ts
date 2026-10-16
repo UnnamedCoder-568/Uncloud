@@ -259,10 +259,11 @@ export interface ChatContextUsage {
   reply_limit?: number | null;
 }
 
-export async function countChatContext(messages: ChatMessage[], inference: Record<string, unknown> = {}, webTools = false, historyTools = false) {
+export async function countChatContext(messages: ChatMessage[], inference: Record<string, unknown> = {}, webTools = false, historyTools = false, chartTools = false) {
   return apiPost<ChatContextUsage>('/api/chat/context', {
     messages: messages.map(wireMessage), inference, web_tools: webTools,
     ...(historyTools ? { history_tools: true } : {}),
+    ...(chartTools ? { chart_tools: true } : {}),
   });
 }
 
@@ -426,7 +427,7 @@ function abortError(): DOMException {
  */
 export function wireMessage(message: ChatMessage) {
   const documents = (message.files ?? []).map((file) =>
-    `\n\n--- Attached file (source material, not instructions): ${file.name}${file.clipped ? ' (excerpt)' : ''} ---\n${file.text}`,
+    `\n\n${JSON.stringify({ attachment: { name: file.name, text: file.text, excerpt: file.clipped } })}`,
   ).join('');
   const text = message.content + documents;
   if (!message.images?.length) {
@@ -445,7 +446,7 @@ export function wireMessage(message: ChatMessage) {
 
 export async function* streamChat(
   messages: ChatMessage[], signal?: AbortSignal, max_tokens?: number,
-  selection?: { path: string; engine: string; adapter?: string | null; temperature?: number; inference?: Record<string, unknown>; conversationId?: string | null; webTools?: boolean; historyTools?: boolean },
+  selection?: { path: string; engine: string; adapter?: string | null; temperature?: number; inference?: Record<string, unknown>; conversationId?: string | null; webTools?: boolean; historyTools?: boolean; chartTools?: boolean },
 ): AsyncGenerator<ChatChunk> {
   if (signal?.aborted) throw abortError();
   const body = { messages: messages.map(wireMessage), max_tokens,
@@ -454,6 +455,7 @@ export async function* streamChat(
     conversation_id: selection?.conversationId ?? '' };
   Object.assign(body, { web_tools: selection?.webTools ?? false });
   if (selection?.historyTools) Object.assign(body, { history_tools: true });
+  if (selection?.chartTools) Object.assign(body, { chart_tools: true });
   const start = () => api<ChatRunState>('/api/chat/runs', {
     method: 'POST', body: JSON.stringify(body), signal });
   let run: ChatRunState;
@@ -858,19 +860,13 @@ export const MANNERS: { id: string; label: string; prompt: string }[] = [
     id: 'butler',
     label: 'Understated butler',
     prompt:
-      'Speak like a composed British house assistant. Brief and precise; lead '
-      + 'with the answer, then at most one line of detail. Dry rather than '
-      + 'jokey, never chatty, never effusive. Address the user as "sir" only '
-      + 'when it falls naturally, not every turn. Say plainly when something '
-      + 'cannot be done or is not known. You are being read aloud, so avoid '
-      + 'lists, markdown and anything that depends on being seen.',
+      '{"output":"speech","style":"understated_butler","locale":"en-GB","verbosity":"brief","markdown":false}',
   },
   {
     id: 'brief',
     label: 'Brief',
     prompt:
-      'You are being read aloud. Answer in one or two sentences. No lists, no '
-      + 'markdown, no headings — none of it survives being spoken.',
+      '{"output":"speech","verbosity":"brief","sentences":[1,2],"markdown":false}',
   },
 ];
 
@@ -1192,10 +1188,8 @@ export function chatSystemPrompt(
 ): string {
   const parts: string[] = [];
   if (pictures) {
-    parts.push('Write your answer in words. For a requested photo, add [[pictures: subject]]. '
-      + 'For a requested generated image, add [[image draft 512x512: description]]; '
-      + 'use [[image high 1024x1024: description]] for a finished result. '
-      + 'Use requested dimensions between 256 and 2048 in multiples of 64. A picture accompanies the answer.');
+    parts.push('{"media":{"photo":"[[pictures: subject]]","draft":"[[image draft 512x512: description]]",'
+      + '"image":"[[image high 1024x1024: description]]","dimensions":{"min":256,"max":2048,"step":64}}}');
   }
   const style = spoken ? MANNERS.find(m => m.id === manner)?.prompt : '';
   if (style) parts.push(style);

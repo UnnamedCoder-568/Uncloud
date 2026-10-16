@@ -26,7 +26,7 @@ RUNTIME_DIR = Path(__file__).resolve().parent.parent / '.llama'
 @lru_cache(maxsize=16)
 def _inspect(executable: str, stamp: int, size: int) -> dict:
     """Probe the executable, without loading weights or allocating a model cache."""
-    result = {'auto_fit': False, 'context_stop': False, 'devices': []}
+    result = {'auto_fit': False, 'context_stop': False, 'devices': [], 'template_file': False}
     options = dict(capture_output=True, text=True, timeout=15, check=False,
                    creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
     try:
@@ -34,6 +34,7 @@ def _inspect(executable: str, stamp: int, size: int) -> dict:
         text = help_text.stdout + help_text.stderr
         result['auto_fit'] = '--fit-ctx' in text and '--fit ' in text
         result['context_stop'] = '--no-context-shift' in text
+        result['template_file'] = '--chat-template-file' in text
         devices = subprocess.run([executable, '--list-devices'], **options)
         if devices.returncode == 0:
             result['devices'] = [match.group(0).strip() for match in re.finditer(
@@ -51,7 +52,7 @@ def inspect_runtime(executable: str | None) -> dict:
             return _inspect(executable, stat.st_mtime_ns, stat.st_size)
         except OSError:
             pass
-    return {'auto_fit': False, 'context_stop': False, 'devices': []}
+    return {'auto_fit': False, 'context_stop': False, 'devices': [], 'template_file': False}
 
 
 def host_fit_margin_mb() -> int | None:

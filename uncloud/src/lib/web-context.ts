@@ -43,7 +43,7 @@ export async function fitToolContext(
       const prefix = line.slice(0, length);
       return [prefix, ...urls.filter(url => !prefix.includes(url))].filter(Boolean).join(' ');
     }).filter(Boolean).join('\n');
-  }).join('\n\n') + '\n[Source excerpts shortened to fit this model’s context. Evidence may be incomplete.]');
+  }).join('\n\n') + '\n{"source_excerpt":"partial"}');
   let selected = excerpt(0);
   let usage = await count(assemble(selected));
   if (!fits(usage)) {

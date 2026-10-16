@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-import re
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -81,25 +80,9 @@ def factual_grade(answer, expected):
 
 
 def memory_prompt(history, previous=""):
-    turns = "\n\n".join(m["role"].upper() + ": " + m["content"] for m in history)
-    source = (
-        Path(__file__).resolve().parents[1] / "uncloud/src/lib/context.ts"
-    ).read_text()
-    instructions = re.search(r"COMPACTION_INSTRUCTION = `([^`]+)`", source).group(1)
-    instruction = (
-        instructions
-        + "\n\nExisting compacted memory (update it without losing facts):\n"
-        + (previous or "(none)")
-        + "\n\nNew conversation turns:\n"
-        + turns
-    )
-    return [
-        {
-            "role": "system",
-            "content": "You maintain accurate, concise conversation memory.",
-        },
-        {"role": "user", "content": instruction},
-    ]
+    from uncloud_engine.compaction import summary_messages, transcript
+
+    return summary_messages(transcript(history), previous)
 
 
 def fixture():

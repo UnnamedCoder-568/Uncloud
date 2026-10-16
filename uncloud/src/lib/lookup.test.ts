@@ -55,7 +55,7 @@ describe('results turn', () => {
   it('labels them as retrieved, not remembered', () => {
     const turn = resultsTurn([{ kind: 'search', argument: 'x' } as never]
       .map((lookup) => ({ lookup, text: 'a result' })));
-    expect(turn).toContain('Retrieved web evidence');
+    expect(JSON.parse(turn).web_results[0].content).toBe('a result');
     expect(turn).not.toContain('instructions');
     expect(turn).toContain('a result');
   });
@@ -66,8 +66,8 @@ describe('results turn', () => {
       lookup: { kind: 'read', argument: 'https://developers.google.com/search' },
       text: source,
     }]);
-    expect(turn).toContain(source);
-    expect(turn).toContain('Contents of https://developers.google.com/search');
+    expect(JSON.parse(turn).web_results[0].content).toBe(source);
+    expect(JSON.parse(turn).web_results[0].query).toBe('https://developers.google.com/search');
     expect(turn).not.toMatch(/<google_search_results>|\[Web Grounding Context\]/);
   });
 

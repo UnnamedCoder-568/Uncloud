@@ -132,19 +132,10 @@ export class LookupSession {
  *  in one voice.
  */
 export function resultsTurn(parts: { lookup: Lookup; text: string }[]): string {
-  const body = parts.map(({ lookup, text }) => {
-    const heading = lookup.kind === 'search'
-      ? `Search results for "${lookup.argument}"`
-      : lookup.kind === 'pictures'
-        ? `Pictures of "${lookup.argument}"`
-        : `Contents of ${lookup.argument}`;
-    // Bounded: a long page would otherwise crowd the question out of a small
-    // model's context window, and the answer would drift off the point.
-    const clipped = text.length > 16000 ? `${text.slice(0, 16000)}\n…(truncated)` : text;
-    return `### ${heading}\n${clipped}`;
-  }).join('\n\n');
-
-  return 'Retrieved web evidence:\n\n' + body;
+  return JSON.stringify({ web_results: parts.map(({ lookup, text }) => ({
+    type: lookup.kind, query: lookup.argument, content: text.slice(0, 16000),
+    ...(text.length > 16000 ? { truncated: true } : {}),
+  })) });
 }
 
 /** Read an explicitly supplied source immediately. Search decisions belong

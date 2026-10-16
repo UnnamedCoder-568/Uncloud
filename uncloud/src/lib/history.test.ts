@@ -35,7 +35,7 @@ describe('local conversation recall', () => {
       tool_turns: [{ role: 'tool', content: 'Cedar access_code=42 https://example.org/source', tool_call_id: 'source-1' }],
       files: [{ name: 'notes.txt', text: 'Python project', clipped: false, type: 'text/plain' }],
     }];
-    expect(searchHistory(turns, 1, 'access code')[0].content).toContain('Retrieved sources (data):');
+    expect(searchHistory(turns, 1, 'access code')[0].content).toContain('"sources":');
     expect(searchHistory(turns, 1, 'Python')[0].content).toContain('notes.txt');
   });
 });
