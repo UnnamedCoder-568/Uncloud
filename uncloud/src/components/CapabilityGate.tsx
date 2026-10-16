@@ -45,8 +45,8 @@ export default function CapabilityGate({ names = '', children, setup = false, op
   if (setup && setupDone) return <>{children}</>;
   if (!setup && rows && !missing.length && (setup || !unsupported.length) && !busy && !error) return <>{children}</>;
   const content = <>
-    {!setup && (!rows || busy) && <ActivityOrb size={64} state="connecting" label={busy ? 'Installing and verifying…' : 'Checking requirements…'} />}
-    {!setup && <h2 className="text-lg">{busy ? 'Installing and verifying' : 'Prepare this feature'}</h2>}
+    {!setup && (!rows || busy) && <ActivityOrb size={64} state="connecting" label={busy ? 'Deploying and verifying…' : 'Preflight check…'} />}
+    {!setup && <h2 className="text-lg">{busy ? 'Deploying this subsystem' : 'Subsystem preflight'}</h2>}
     {(!setup || !!missing.length) && <p className="text-sm text-[var(--text-dim)]">{rows ? 'Install the software below to use these features. Models are downloaded separately.' : 'Checking the software this computer needs…'}</p>}
     {rows?.filter((row) => !row.ready).map((row) => <div key={row.id} className="card p-3 w-full max-w-lg text-left">
       <strong className="text-sm">{row.label}</strong><p className="text-xs text-[var(--text-dim)]">{row.detail}</p>
@@ -58,7 +58,7 @@ export default function CapabilityGate({ names = '', children, setup = false, op
       Install advanced narration, music and voice cloning now
     </label>}
     {setup && optionalNames && <p className="text-xs text-[var(--text-faint)]">Optional engines remain available through their tabs. Their separate runtimes need additional downloads and disk space.</p>}
-    {!!missing.length && <button disabled={busy} onClick={repair} className="btn-accent rounded-lg px-5 py-2 disabled:opacity-40">{busy ? 'Installing…' : 'Install / Repair required software'}</button>}
+    {!!missing.length && <button disabled={busy} onClick={repair} className="btn-accent rounded-lg px-5 py-2 disabled:opacity-40">{busy ? 'Deploying…' : 'Deploy / Repair required software'}</button>}
     {setup && rows && !busy && <button className="btn-accent rounded-lg px-5 py-2" onClick={async () => {
       try { await apiPost('/api/readiness/complete'); setSetupDone(true); }
       catch (e) { setError(String(e)); }
@@ -66,10 +66,10 @@ export default function CapabilityGate({ names = '', children, setup = false, op
     {!busy && <button onClick={refresh} className="text-sm underline">Check again</button>}
     {!!log.length && <details className="w-full max-w-lg text-left"><summary>Installation details</summary><pre className="text-xs whitespace-pre-wrap max-h-60 overflow-auto">{log.join('\n')}</pre></details>}
   </>;
-  if (setup) return <StartupScreen status={busy ? 'Installing your local AI tools…'
-    : !rows ? 'Checking that your AI tools are ready…'
+  if (setup) return <StartupScreen status={busy ? 'Deploying local AI systems…'
+    : !rows ? 'Preflight check · inspecting local tools…'
     : error ? 'Setup needs your attention'
     : missing.length ? 'A few tools need to be installed'
-    : 'Your workspace is ready'}>{content}</StartupScreen>;
+    : 'All systems ready'}>{content}</StartupScreen>;
   return <div className="h-full overflow-auto p-8 flex flex-col items-center gap-4 text-center">{content}</div>;
 }

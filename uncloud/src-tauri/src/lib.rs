@@ -1,3 +1,4 @@
+mod deployment;
 mod listener;
 mod notifications;
 mod sidecar;

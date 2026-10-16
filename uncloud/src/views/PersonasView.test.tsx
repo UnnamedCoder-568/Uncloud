@@ -4,6 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import PersonasView from './PersonasView';
 import { engineStatus, savePersona, startEngine } from '../lib/sidecar';
+import { PERSONA_PRESETS } from '../lib/persona-presets';
 
 const profile = { id: '0123456789abcdef', name: 'Storyteller', instructions: 'Tell gentle stories.', model_path: '/model', created: 1, updated: 1 };
 vi.mock('../components/CapabilityGate', () => ({ default: ({ children }: { children: React.ReactNode }) => children }));
@@ -27,6 +28,20 @@ beforeEach(async () => {
 });
 afterEach(async () => { await act(() => root.unmount()); container.remove(); vi.unstubAllGlobals(); });
 const button = (text: string) => [...container.querySelectorAll('button')].find(b => b.textContent?.includes(text))!;
+
+it('offers included profiles without loading or applying a persona automatically', async () => {
+  expect(container.querySelectorAll('[aria-label^="Use "]')).toHaveLength(6);
+  expect(startEngine).not.toHaveBeenCalled();
+  expect(savePersona).not.toHaveBeenCalled();
+  await act(() => container.querySelector<HTMLButtonElement>('[aria-label="Use J.A.R.V.I.S. profile"]')!.click());
+  expect(container.querySelector('[aria-label="Included persona profiles"]')).toBeNull();
+  expect(container.querySelector('textarea')?.value).toBe(PERSONA_PRESETS[0].instructions);
+  expect(container.querySelector('select')?.value).toBe('');
+  expect(startEngine).not.toHaveBeenCalled();
+  expect(savePersona).not.toHaveBeenCalled();
+  await act(() => button('Cancel').click());
+  expect(container.querySelectorAll('[aria-label^="Use "]')).toHaveLength(6);
+});
 
 it('allows editing and saving a persona without loading any model', async () => {
   expect(startEngine).not.toHaveBeenCalled();

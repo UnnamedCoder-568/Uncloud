@@ -910,7 +910,19 @@ export interface RuntimeStatus {
   uv_found: boolean;
   deps_ready: boolean;
   engine_dir: string;
+  deployment?: DeploymentPlan | null;
   error: string | null;
+}
+
+export interface DeploymentPlan {
+  platform: string;
+  download_bytes: number;
+  recommended_free_bytes: number;
+  available_bytes: number | null;
+  package_count: number;
+  unknown_sizes: number;
+  source_builds: number;
+  files: { name: string; version: string; file: string; bytes: number | null; kind: string }[];
 }
 
 export async function runtimeStatus(): Promise<RuntimeStatus> {

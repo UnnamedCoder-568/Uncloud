@@ -5,6 +5,7 @@ import { Check, Download, AlertCircle } from 'lucide-react';
 import { runtimeStatus, installRuntime, startRuntime } from '../lib/sidecar';
 import type { RuntimeStatus } from '../lib/sidecar';
 import Wordmark from '../components/Wordmark';
+import DeploymentSummary from '../components/DeploymentSummary';
 
 type Phase = 'checking' | 'ready-to-install' | 'installing' | 'starting' | 'failed';
 
@@ -61,6 +62,7 @@ export default function SetupView({ onReady }: { onReady: () => void }) {
   }
 
   const busy = phase === 'installing' || phase === 'starting';
+  const currentPackage = [...log].reverse().find(line => /^(Downloading|Downloaded|Building|Built|Prepared|Installed|Resolved|Deploying)/.test(line)) ?? '';
 
   const checks = status ? [
     { label: 'Engine files', ok: status.source_ready,
@@ -75,11 +77,11 @@ export default function SetupView({ onReady }: { onReady: () => void }) {
     <div className="h-screen w-screen overflow-y-auto bg-[var(--bg)]">
       <div className="max-w-lg mx-auto px-8 py-14">
         <div className="flex items-center gap-3">
-          {busy && <ActivityOrb state="connecting" size={32} label="Installing the engine…" />}
+          {busy && <ActivityOrb state="connecting" size={32} label="Deploying the engine…" />}
           <Wordmark size={28} />
         </div>
 
-        <h1 className="mt-8 text-xl font-semibold">Set up the engine</h1>
+        <h1 className="mt-8 text-xl font-semibold">Deploy your local engine</h1>
         <p className="mt-2 text-sm text-[var(--text-dim)] leading-relaxed">
           Uncloud ships as a small app. The engine that runs the models is
           installed here on first launch. The small app installer does not include
@@ -87,6 +89,8 @@ export default function SetupView({ onReady }: { onReady: () => void }) {
           installs Python when needed, plus the runtimes for text, images,
           transcription and speech. Model files are downloaded separately.
         </p>
+
+        <DeploymentSummary plan={status?.deployment} installed={status?.deps_ready} current={currentPackage} />
 
         <div className="mt-6 card p-4 flex flex-col gap-3">
           {checks.map((c) => (
@@ -130,19 +134,22 @@ export default function SetupView({ onReady }: { onReady: () => void }) {
           className="mt-5 w-full h-11 rounded-xl btn-accent text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-30 transition"
         >
           {busy ? <ActivityOrb state="working" size={20} label="Working…" /> : <Download size={15} />}
-          {phase === 'installing' ? 'Installing…'
-            : phase === 'starting' ? 'Starting the engine…'
+          {phase === 'installing' ? 'Deploying engine…'
+            : phase === 'starting' ? 'Engine ignition…'
             : phase === 'failed' ? 'Try again'
-            : 'Install and start'}
+            : status?.deps_ready ? 'Launch engine' : 'Deploy and launch'}
         </button>
 
         {log.length > 0 && (
-          <div className="mt-4 card p-3 max-h-56 overflow-y-auto">
+          <details className="mt-4 card p-3">
+            <summary className="text-xs cursor-pointer">Deployment log</summary>
+            <div className="max-h-56 overflow-y-auto mt-2">
             <pre className="text-[10px] leading-relaxed text-[var(--text-faint)] font-mono whitespace-pre-wrap break-all">
               {log.join('\n')}
             </pre>
             <div ref={logEnd} />
-          </div>
+            </div>
+          </details>
         )}
 
         <p className="mt-6 text-[11px] text-[var(--text-faint)] leading-relaxed">

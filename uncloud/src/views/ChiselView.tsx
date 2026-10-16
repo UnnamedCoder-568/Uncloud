@@ -393,7 +393,7 @@ export default function ChiselView() {
         )}
         {phase === 'planning' && (
           <div className="flex items-center gap-2 text-sm text-[var(--text-dim)]">
-            <ActivityOrb state="working" size={20} label="Working…" /> Planning task graph…
+            <ActivityOrb state="working" size={20} label="Planning tasks…" /> Mapping the mission · planning tasks…
           </div>
         )}
         {error && (

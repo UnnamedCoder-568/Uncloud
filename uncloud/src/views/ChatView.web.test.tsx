@@ -236,7 +236,7 @@ describe('Web handoff through the Chat interface', () => {
     });
     await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Send"]')!.click());
     const status = container.querySelector('.chat-generation-status')!;
-    expect(status.textContent).toContain('Waiting for the model');
+    expect(status.textContent).toContain('Awaiting model response');
     expect(status.nextElementSibling?.classList.contains('chat-composer')).toBe(true);
     expect(container.querySelectorAll('.chat-generation-status')).toHaveLength(1);
     expect(container.querySelector('.chat-message-assistant')?.textContent).toBe('');
@@ -427,15 +427,18 @@ describe('Web handoff through the Chat interface', () => {
     expect(streamChat).toHaveBeenCalledTimes(1);
   });
 
-  it('shows a provider failure without inventing a sourced answer or retrying forever', async () => {
+  it('returns a structured provider failure so the model can refine its query', async () => {
     vi.mocked(webSearch).mockRejectedValueOnce(new Error('The provider did not return results.'));
-    replies('[[search: Neptune NASA]]');
+    replies('[[search: Neptune NASA]]', '[[search: Neptune discovery observatory]]', 'A sourced answer.');
     await mount();
     await send('Tell me about Neptune.');
-    expect(webSearch).toHaveBeenCalledExactlyOnceWith('Neptune NASA');
-    expect(streamChat).toHaveBeenCalledTimes(1);
-    expect(container.textContent).toContain('Web lookup failed');
-    expect(container.textContent).toContain('The provider did not return results.');
+    expect(webSearch).toHaveBeenCalledTimes(2);
+    expect(webSearch).toHaveBeenLastCalledWith('Neptune discovery observatory');
+    expect(streamChat).toHaveBeenCalledTimes(3);
+    const failure = vi.mocked(streamChat).mock.calls[1][0].find(t => t.role === 'tool');
+    expect(JSON.parse(failure!.content)).toEqual({error: {
+      code: 'lookup_failed', message: 'The provider did not return results.',
+    }});
   });
 
   it('does not execute search requests in ordinary answer text', async () => {

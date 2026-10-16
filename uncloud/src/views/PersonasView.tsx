@@ -5,6 +5,7 @@ import ChatView from './ChatView';
 import { engineStatus, getLibrary, listPersonas, savePersona, startEngine } from '../lib/sidecar';
 import type { LocalModel, Persona } from '../lib/sidecar';
 import { useLibraryVersion } from '../lib/library-changed';
+import { PERSONA_PRESETS, PERSONA_REFERENCES } from '../lib/persona-presets';
 
 const empty = { name: '', instructions: '', model_path: '' };
 const field = 'w-full rounded-xl bg-[var(--bg-inset)] border border-[var(--border)] px-3 py-2 text-sm outline-none';
@@ -68,12 +69,31 @@ export default function PersonasView() {
       <header className="flex items-start justify-between gap-4">
         <div>
           <h1 className="page-title flex items-center gap-2"><Drama size={22} /> Personas</h1>
-          <p className="text-sm text-[var(--text-dim)] mt-2">Describe a persona, choose a model, then start a conversation.</p>
-          <p className="text-xs text-[var(--text-faint)] mt-1">Only your written instructions are applied. Saved personas and their conversations stay in this workspace.</p>
+          <p className="text-sm text-[var(--text-dim)] mt-2">Choose a profile, select a model, and bring it online.</p>
+          <p className="text-xs text-[var(--text-faint)] mt-1">Persona instructions apply only in this workspace. Review and edit them before saving; ordinary Chat keeps the model’s own behaviour.</p>
         </div>
         <button className="pill" disabled={busy} onClick={() => { setDraft(empty); setEditing(null); setComposing(true); setError(''); }}><Plus size={14} /> New persona</button>
       </header>
       {error && <p role="alert" className="text-sm text-rose-400">{error}</p>}
+      {!composing && <section aria-label="Included persona profiles" className="flex flex-col gap-3">
+        <h2 className="text-sm font-medium">Included profiles</h2>
+        <p className="text-xs text-[var(--text-faint)]">Fictional styles inspired by the characters. No extra model or voice download is included.</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {PERSONA_PRESETS.map(preset => <div key={preset.id} className="card p-4 flex flex-col items-start gap-2">
+            <h3 className="text-sm font-medium">{preset.name}</h3>
+            <p className="text-xs text-[var(--text-dim)] flex-1">{preset.summary}</p>
+            <button className="pill" disabled={busy} aria-label={`Use ${preset.name} profile`} onClick={() => {
+              setDraft({ name: preset.name, instructions: preset.instructions, model_path: '' });
+              setEditing(null); setComposing(true); setError('');
+            }}>Use profile</button>
+          </div>)}
+        </div>
+        <details className="text-xs text-[var(--text-faint)]">
+          <summary className="cursor-pointer">Character inspiration</summary>
+          <div className="flex flex-col gap-1 pt-2">{PERSONA_REFERENCES.map(source =>
+            <a key={source.url} href={source.url} target="_blank" rel="noreferrer" className="underline">{source.label}</a>)}</div>
+        </details>
+      </section>}
       {composing && <section className="card p-5 flex flex-col gap-4">
         <label className="text-xs flex flex-col gap-2">Name
           <input className={field} value={draft.name} maxLength={120} onChange={e => setDraft({ ...draft, name: e.target.value })} />

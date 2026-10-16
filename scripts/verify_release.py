@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import glob
+import hashlib
 import json
 import os
 import tomllib
@@ -32,6 +33,9 @@ def main() -> None:
     cargo = tomllib.loads((TAURI / "Cargo.toml").read_text(encoding="utf-8"))
     cargo_lock = tomllib.loads((TAURI / "Cargo.lock").read_text(encoding="utf-8"))
     engine = tomllib.loads((ROOT / "sidecar" / "pyproject.toml").read_text(encoding="utf-8"))
+    setup = load_json(ROOT / 'sidecar' / 'setup-manifest.json')
+    if setup['lock_sha256'] != hashlib.sha256((ROOT / 'sidecar' / 'uv.lock').read_bytes()).hexdigest():
+        fail('setup-manifest.json is stale; regenerate it with scripts/setup_manifest.py')
     locked_app = next(item for item in cargo_lock["package"] if item["name"] == "app")
 
     versions = {

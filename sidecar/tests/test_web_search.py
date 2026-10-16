@@ -102,11 +102,12 @@ def test_search_retries_topic_when_providers_return_unrelated_results(monkeypatc
         lambda **kwargs: client(transport=httpx.MockTransport(respond), **kwargs))
     result = asyncio.run(tools._search_snippets('latest iPhone 18 Pro specs'))
     assert 'apple.com/iphone' in result
-    assert len(calls) == 3
+    assert len(calls) == 4
 
 
 def test_search_reads_pages_and_reports_blocked_sources(monkeypatch):
     import asyncio
+    import json
 
     from uncloud_engine.agent import tools
     async def snippets(query):
@@ -118,14 +119,16 @@ def test_search_reads_pages_and_reports_blocked_sources(monkeypatch):
         return 'Water deeply. Loamy soil drains well.'
     monkeypatch.setattr(tools, '_search_snippets', snippets)
     monkeypatch.setattr(tools, '_web_read', read)
-    result = asyncio.run(tools._web_search('gardening soil'))
-    assert 'Loamy soil' in result
-    assert 'Search snippet only; could not read page' in result
-    assert 'https://example.org/soil' in result
+    result = json.loads(asyncio.run(tools._web_search('gardening soil')))
+    assert 'Loamy soil' in result['results'][0]['excerpt']
+    assert result['results'][1]['status'] == 'snippet_only'
+    assert result['results'][1]['error'] == 'RuntimeError'
+    assert 'https://example.org/soil' in result['results'][0]['source']
 
 
 def test_search_results_add_no_behavior_or_identity_instructions(monkeypatch):
     import asyncio
+    import json
 
     from uncloud_engine.agent import tools
 
@@ -142,15 +145,15 @@ def test_search_results_add_no_behavior_or_identity_instructions(monkeypatch):
 
     monkeypatch.setattr(tools, '_search_snippets', snippets)
     monkeypatch.setattr(tools, '_web_read', read)
-    result = asyncio.run(tools._web_search('search documentation'))
-    assert source in result and page in result
-    wrapper = result.replace(source, '').replace(page, '')
+    result = json.loads(asyncio.run(tools._web_search('search documentation')))
+    assert result['results'][0]['source'] == source
+    assert result['results'][0]['excerpt'] == page
+    wrapper = json.dumps(result).replace(json.dumps(source)[1:-1], '').replace(page, '')
     assert not any(text in wrapper for text in (
         'Cite', 'do not', 'You are', 'Today is', 'Google', 'Gemini', 'Uncloud',
         '<google_search_results>', '[Google Search]',
     ))
-    assert 'Search results' in wrapper
-    assert 'Additional search leads' not in wrapper
+    assert 'results' in result and 'leads' not in result
 
 
 def test_working_provider_does_not_wait_for_blocked_provider(monkeypatch):
@@ -162,7 +165,7 @@ def test_working_provider_does_not_wait_for_blocked_provider(monkeypatch):
 
     cancelled = []
     async def respond(request):
-        if request.url.host == 'lite.duckduckgo.com':
+        if request.url.host == 'html.duckduckgo.com':
             try:
                 await asyncio.sleep(60)
             finally:
@@ -195,7 +198,27 @@ def test_search_failure_has_only_one_topic_fallback(monkeypatch):
         lambda **kwargs: client(transport=httpx.MockTransport(respond), **kwargs))
     with pytest.raises(RuntimeError, match='could not return relevant sources'):
         asyncio.run(tools._search_snippets('latest iPhone 18 Pro specs'))
-    assert len(calls) == 3
+    assert len(calls) == 4
+
+
+def test_html_layout_can_work_while_lite_returns_a_challenge(monkeypatch):
+    import asyncio
+
+    import httpx
+
+    from uncloud_engine.agent import tools
+
+    def respond(request):
+        if request.url.host == 'html.duckduckgo.com':
+            return httpx.Response(200, text='<a class="result__a" '
+                'href="https://opendata.blender.org/">RTX 5090 Blender benchmarks</a>'
+                '<a class="result__snippet">GPU rendering benchmark results.</a>')
+        return httpx.Response(202, text='challenge')
+    client = httpx.AsyncClient
+    monkeypatch.setattr(tools.httpx, 'AsyncClient',
+        lambda **kwargs: client(transport=httpx.MockTransport(respond), **kwargs))
+    assert 'opendata.blender.org' in asyncio.run(
+        tools._search_snippets('RTX 5090 Blender benchmark'))
 
 
 def test_excerpts_include_relevant_content_beyond_header():

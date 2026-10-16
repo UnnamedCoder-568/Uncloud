@@ -162,8 +162,8 @@ export default function App() {
   const handleEngineReady = useCallback(() => setEngineUp(true), []);
 
   const splash = <StartupScreen status={engineUp
-    ? 'Preparing your workspace…'
-    : 'Starting your local AI engine…'} />;
+    ? 'Preflight check · preparing your workspace…'
+    : 'Warming up your local engine…'} />;
 
   // Mounted before any branch returns, so a request that needs a decision
   // during setup or onboarding still has somewhere to be answered.

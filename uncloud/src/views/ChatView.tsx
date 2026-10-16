@@ -767,24 +767,27 @@ export default function ChatView({ persona }: { persona?: PersonaSnapshot } = {}
               return {
                 lookup,
                 text: JSON.stringify({ images: { displayed: images.length, visible_to_model: false } }),
+                failed: false,
               };
             }
             const text = lookup.kind === 'search'
               ? (await webSearch(lookup.argument)).results
               : (await webRead(lookup.argument)).text;
-            return { lookup, text };
+            return { lookup, text, failed: false };
           } catch (e) {
             // A failed lookup is reported to the MODEL, not swallowed, so it
             // can say the search did not work rather than inventing an answer.
-            return { lookup, text: `This lookup failed: ${
-              e instanceof Error ? e.message : String(e)}` };
+            return { lookup, failed: true, text: JSON.stringify({ error: {
+              code: 'lookup_failed', message: e instanceof Error ? e.message : String(e),
+            } }) };
           }
         }));
         setLooking([]);
         if (epoch !== generationEpoch.current) return;
-        if (fetched.length && fetched.every((part) => part.text.startsWith('This lookup failed:'))) {
-          throw new Error(`Web lookup failed, so I could not verify this answer. ${fetched[0].text}`);
-        }
+        if (fetched.length && fetched.every(part => part.failed)) {
+          setContextNotice('Search providers returned no usable sources. This reply has no verified web evidence yet.');
+          if (!calls.length) throw new Error('Web lookup failed. Search providers returned no usable sources.');
+        } else if (fetched.length) setContextNotice('Web sources retrieved.');
         if (wanted.length) lookups.record(wanted);
         setConsulted((c) => [...c, ...wanted.map(l => l.argument)]);
         if (shown.length) {
@@ -1048,7 +1051,7 @@ export default function ChatView({ persona }: { persona?: PersonaSnapshot } = {}
       {(loadingModel || generating || compacting) && <div role="status" className="chat-generation-status">
         <ActivityOrb size={20} state={loadingModel ? 'connecting' : compacting ? 'shaping' : 'solving'}
           label={loadingModel ? 'Loading model' : compacting ? 'Compacting context' : 'Model responding'} />
-        <span>{loadingModel ? 'Loading model…' : compacting ? 'Compacting context…' : messages.at(-1)?.content ? 'Generating reply…' : 'Waiting for the model…'}</span>
+        <span>{loadingModel ? 'Model warm-up…' : compacting ? 'Compacting conversation memory…' : messages.at(-1)?.content ? 'Response in flight…' : 'Awaiting model response…'}</span>
       </div>}
       <div className="composer-card chat-composer">
         {/* What is going with the next message. Shown before sending, and
@@ -1299,7 +1302,7 @@ export default function ChatView({ persona }: { persona?: PersonaSnapshot } = {}
           <button className="pill composer-model" title={activeModel ? `${activeModel.name}${activeAdapter ? ` · ${activeAdapter.split('/').pop()}` : ''}` : 'Choose a model'} aria-label="Choose a model" onClick={() => setPickerOpen((v) => !v)}
                   aria-haspopup="listbox" aria-expanded={pickerOpen}>
             {loadingModel ? (
-              <><ActivityOrb state="connecting" label="Loading model…" /><span>Loading model…</span></>
+              <><ActivityOrb state="connecting" label="Model warm-up…" /><span>Model warm-up…</span></>
             ) : activeModel ? (
               <>
                 <span style={{

@@ -137,7 +137,7 @@ export default function SettingsView() {
 
   if (!settings) return <div className="h-full overflow-y-auto settings-page"><div className="page-column flex flex-col gap-5">
     <h1 className="page-title">Settings</h1>
-    <p className="text-sm text-[var(--text-dim)]" role="status">{loadError ? 'Settings could not be loaded.' : 'Loading settings…'}</p>
+    <p className="text-sm text-[var(--text-dim)]" role="status">{loadError ? 'Settings could not be loaded.' : 'Loading system settings…'}</p>
     {loadError && <button className="self-start px-4 py-2 rounded-xl bg-[var(--bg-raised)] text-sm" onClick={() => { setLoadError(false); void getSettings().then(setSettings).catch(() => setLoadError(true)); }}>Try again</button>}
   </div></div>;
 

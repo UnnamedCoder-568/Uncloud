@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import re
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -989,9 +990,8 @@ async def _search_snippets(query: str) -> str:
     if not query:
         raise ValueError("web_search tool requires a 'query' argument")
     query = _search_query(query)
-    # The HTML endpoint increasingly refuses automated POST requests. The lite
-    # GET endpoint is intended for browsers without JavaScript and carries the
-    # same results without an account or API key.
+    # Both public no-JavaScript layouts can change independently. A successful
+    # HTTP response is not enough: challenge pages contain no result entries.
     headers = {
         "User-Agent": (
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -1001,13 +1001,14 @@ async def _search_snippets(query: str) -> str:
     }
     async with httpx.AsyncClient(follow_redirects=True, timeout=8, headers=headers) as client:
         attempts = [
-            ("https://lite.duckduckgo.com/lite/", {"q": query}, _parse_web_search),
+            ("https://html.duckduckgo.com/html/", {"q": query}, _parse_web_search),
             ("https://www.bing.com/search", {"format": "rss", "q": query}, _parse_bing_rss),
         ]
         # Some providers return generic, unrelated pages for natural-language
         # queries. Retry topic words, never give those pages to the model as evidence.
         topic = _search_terms(query)
         compact = " ".join(topic)
+        attempts.append(("https://lite.duckduckgo.com/lite/", {"q": query}, _parse_web_search))
         if compact and compact.casefold() != query.strip().casefold():
             attempts.append(
                 ("https://www.bing.com/search", {"format": "rss", "q": compact}, _parse_bing_rss)
@@ -1034,12 +1035,17 @@ async def _search_snippets(query: str) -> str:
             for task in pending:
                 task.cancel()
             await asyncio.gather(*pending, return_exceptions=True)
-        # One topic-only fallback, rather than several serial query variations.
-        if len(attempts) > 2:
-            try:
-                return await fetch(attempts[2], 6)
-            except (httpx.HTTPError, RuntimeError, TimeoutError) as exc:
-                failures.append(str(exc) or "Search provider timed out.")
+        pending = [asyncio.create_task(fetch(attempt, 6)) for attempt in attempts[2:]]
+        try:
+            for response in asyncio.as_completed(pending):
+                try:
+                    return await response
+                except (httpx.HTTPError, RuntimeError, TimeoutError) as exc:
+                    failures.append(str(exc) or "Search provider timed out.")
+        finally:
+            for task in pending:
+                task.cancel()
+            await asyncio.gather(*pending, return_exceptions=True)
         raise RuntimeError(
             "Search could not return relevant sources. This does not mean the topic or "
             "product does not exist. Try a more specific query or an official page URL. "
@@ -1052,22 +1058,21 @@ async def _web_search(query: str) -> str:
     snippets = await _search_snippets(query)
     hits = snippets.split("\n\n")[:4]
 
-    async def read(hit: str) -> str:
+    async def read(hit: str) -> dict:
         urls = re.findall(r"https?://[^\s]+", hit)
+        row = {'source': hit}
         if not urls:
-            return hit + "\nSearch snippet only; page unavailable."
+            return {**row, 'status': 'snippet_only'}
         try:
             page = await asyncio.wait_for(_web_read(urls[0]), timeout=12)
-            return hit + "\nRetrieved page excerpts:\n" + _page_excerpts(query, page)
+            return {**row, 'excerpt': _page_excerpts(query, page), 'status': 'retrieved'}
         except (httpx.HTTPError, RuntimeError, ValueError, TimeoutError) as exc:
-            return hit + f"\nSearch snippet only; could not read page ({type(exc).__name__})."
+            return {**row, 'status': 'snippet_only', 'error': type(exc).__name__}
 
     pages = await asyncio.gather(*(read(hit) for hit in hits))
-    sections = ["Search results (page excerpts and snippets):", *pages]
     leads = snippets.split("\n\n")[4:]
-    if leads:
-        sections.append("Additional search leads:\n" + "\n\n".join(leads))
-    return "\n\n".join(sections)
+    return json.dumps({'results': pages, **({'leads': leads} if leads else {})},
+                      ensure_ascii=False, separators=(',', ':'))
 
 
 def _page_excerpts(query: str, page: str, budget: int = 3200) -> str:

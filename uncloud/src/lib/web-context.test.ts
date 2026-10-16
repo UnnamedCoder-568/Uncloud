@@ -58,3 +58,14 @@ it('can shorten a long single-line result without losing a URL on that line', as
   expect(fitted.evidence).toContain('https://example.com/original');
   expect(fitted.usage.used! + fitted.replyBudget).toBeLessThanOrEqual(1024);
 });
+
+it('keeps structured search results valid and retains decoded source URLs while fitting', async () => {
+  const evidence = JSON.stringify({ results: [{ source: 'Title\nhttps://example.com/source\nSnippet',
+    excerpt: 'Source material '.repeat(600), status: 'retrieved' }] });
+  const fitted = await fitWebContext(evidence, assemble, count);
+  const data = JSON.parse(fitted.evidence);
+  expect(data.results[0].source).toContain('https://example.com/source');
+  expect(data.results[0].status).toBe('retrieved');
+  expect(data.source_excerpt).toBe('partial');
+  expect(fitted.usage.used! + fitted.replyBudget).toBeLessThanOrEqual(1024);
+});

@@ -26,6 +26,7 @@ pub struct RuntimeStatus {
     /// The main environment exists, so dependencies have been installed.
     pub deps_ready: bool,
     pub engine_dir: String,
+    pub deployment: serde_json::Value,
     pub error: Option<String>,
 }
 
@@ -173,6 +174,7 @@ pub fn status(app: &AppHandle, state: &SidecarState) -> RuntimeStatus {
         source_ready: dir.is_some(),
         uv_found: find_uv(app).is_some(),
         deps_ready,
+        deployment: crate::deployment::plan(&dir.clone().unwrap_or_else(engine_home)),
         engine_dir: dir
             .unwrap_or_else(engine_home)
             .to_string_lossy()
@@ -247,7 +249,7 @@ pub fn install_engine(app: &AppHandle) -> Result<(), String> {
     let emit = |line: &str| {
         let _ = app.emit("runtime-install-log", line.to_string());
     };
-    emit(&format!("Installing into {}", dir.display()));
+    emit(&format!("Deploying engine into {}", dir.display()));
 
     let mut command = Command::new(&uv);
     command
@@ -256,6 +258,8 @@ pub fn install_engine(app: &AppHandle) -> Result<(), String> {
         .env("PATH", child_path_env())
         // uv installs a matching interpreter itself, so the machine needs no Python.
         .env("UV_PYTHON_DOWNLOADS", "automatic")
+        .env("UV_NO_PROGRESS", "1")
+        .env("NO_COLOR", "1")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     hide_console(&mut command);
@@ -287,12 +291,12 @@ pub fn install_engine(app: &AppHandle) -> Result<(), String> {
     if !code.success() {
         return Err(format!("`uv sync` exited with status {code}"));
     }
-    emit("Dependencies installed.");
+    emit("Engine deployment complete. Running final checks.");
 
     // Optional voice engines are prepared through their feature gates. Installing
     // two independent Torch environments here made every Mac pay for narration
     // before choosing it, even when the person only wanted chat.
-    emit("Core tools are ready. Optional engines can be installed from their tabs.");
+    emit("Core systems ready. Optional engines remain available in their tabs.");
 
     Ok(())
 }
