@@ -26,7 +26,7 @@ def test_native_web_preserves_messages_and_sampling_without_instructions(engine)
 
 def test_unsupported_native_tools_never_fall_back_to_prompt_injection():
     assert definitions(active(False), False) == []
-    with pytest.raises(ValueError, match='native web tools'):
+    with pytest.raises(ValueError, match='native tools'):
         definitions(active(False), True)
 
 
@@ -37,7 +37,7 @@ def test_native_tools_are_cached_data_without_file_or_model_access(monkeypatch):
     assert len(definitions(active(), True)) == 2
 
 
-def test_tools_file_contains_only_the_two_public_web_schemas():
+def test_tools_file_contains_only_neutral_function_schemas():
     import json
     from pathlib import Path
 
@@ -45,8 +45,11 @@ def test_tools_file_contains_only_the_two_public_web_schemas():
 
     template = Path(web.__file__).with_name('Tools.jinja').read_text()
     schemas = json.loads(template)
-    assert schemas == definitions(active(), True)
-    assert [s['function']['name'] for s in schemas] == ['web_search', 'web_read']
+    assert schemas == definitions(active(), True, True)
+    assert [s['function']['name'] for s in schemas] == [
+        'web_search', 'web_read', 'conversation_search']
+    assert [s['function']['name'] for s in definitions(active(), False, True)] == [
+        'conversation_search']
     assert all(set(s) == {'type', 'function'} for s in schemas)
     assert all(set(s['function']) == {'name', 'description', 'parameters'} for s in schemas)
     assert 'system' not in template and 'model_info' not in template

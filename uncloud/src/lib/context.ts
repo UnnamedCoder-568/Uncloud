@@ -15,7 +15,7 @@ export function contextMessages(messages: ChatMessage[], system: string,
   const turns = failed.size ? messages.filter((_, index) => !failed.has(index)) : messages;
   if (raw) return turns;
   const content = system + (summary ? `\n\nEarlier conversation, compacted for continuity:\n${summary}` : '');
-  const start = summary ? through : 0;
+  const start = through;
   const tail = messages.slice(start).filter((_, index) => !failed.has(index + start));
   return [...(content ? [{ role: 'system' as const, content }] : []), ...tail.flatMap(message => {
     const { tool_turns: tools, ...turn } = message;

@@ -2,7 +2,6 @@ import asyncio
 import json as json_module
 from types import SimpleNamespace
 
-import httpx
 import pytest
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.testclient import TestClient
@@ -148,33 +147,17 @@ def test_compaction_packs_full_template_and_never_silently_cuts_off(monkeypatch)
         assert any(message["role"] == "user" for message in messages)
         return sum(len(m["content"]) for m in messages) // 4 + 40
 
-    async def post(self, url, json):
+    async def summary(client, active, json):
         requests.append(json)
         assert await count(active, json["messages"], {}) + json["max_tokens"] <= 1024
-        return httpx.Response(
-            200,
-            request=httpx.Request("POST", url),
-            json={
-                "choices": [
-                    {
-                        "message": {
-                            "content": json_module.dumps(
-                                {
-                                    "current_facts": {"project": "Cedar"},
-                                    "active_constraints": ["never delete originals"],
-                                    "open_tasks": [],
-                                    "references": [],
-                                }
-                            )
-                        },
-                        "finish_reason": "stop",
-                    }
-                ]
-            },
-        )
+        return json_module.dumps({
+            "current_facts": {"project": "Cedar"},
+            "active_constraints": ["never delete originals"],
+            "open_tasks": [], "references": [],
+        }), 'stop'
 
     monkeypatch.setattr(compaction, "count", count)
-    monkeypatch.setattr(httpx.AsyncClient, "post", post)
+    monkeypatch.setattr(compaction, "_summary", summary)
     result = asyncio.run(compaction.compact(active, [{"role": "user", "content": "detail " * 900}]))
     assert len(requests) > 1
     assert sum(stage["characters_consumed"] for stage in result["stages"]) == len(

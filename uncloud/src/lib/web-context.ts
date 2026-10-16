@@ -8,6 +8,18 @@ export async function fitWebContext(
   count: (messages: ChatMessage[]) => Promise<ChatContextUsage>,
   replyBudget?: number,
 ): Promise<{ evidence: string; usage: ChatContextUsage; replyBudget: number }> {
+  const result = await fitToolContext([evidence], values => assemble(values[0]), count, replyBudget);
+  return { ...result, evidence: result.evidence[0] };
+}
+
+/** Fit a whole native tool batch together, retaining each call ID and every
+ * source URL. A greedy per-result fit can starve later results in the batch. */
+export async function fitToolContext(
+  evidence: string[],
+  assemble: (evidence: string[]) => ChatMessage[],
+  count: (messages: ChatMessage[]) => Promise<ChatContextUsage>,
+  replyBudget?: number,
+): Promise<{ evidence: string[]; usage: ChatContextUsage; replyBudget: number }> {
   const original = await count(assemble(evidence));
   if (original.used == null || !original.limit) {
     throw new Error('Could not check the model’s available context for web results. Your conversation is preserved.');
@@ -23,12 +35,15 @@ export async function fitWebContext(
   const outputLimit = (usage: ChatContextUsage) => Math.min(
     replyBudget ?? original.reply_limit ?? original.limit!, original.limit! - usage.used!);
   if (fits(original)) return { evidence, usage: original, replyBudget: outputLimit(original) };
-  const blocks = evidence.split(/\n\n+/);
-  const excerpt = (fraction: number) => blocks.map(block => {
-    const lines = block.split('\n');
-    return lines.map((line, index) => index === 0 || /https?:\/\//.test(line)
-      ? line : line.slice(0, Math.floor(line.length * fraction))).filter(Boolean).join('\n');
-  }).join('\n\n') + '\n[Source excerpts shortened to fit this model’s context. Evidence may be incomplete.]';
+  const excerpt = (fraction: number) => evidence.map(text => text.split(/\n\n+/).map(block => {
+    return block.split('\n').map((line, index) => {
+      const urls = line.match(/https?:\/\/[^\s<>"']+/g) ?? [];
+      const length = Math.max(index === 0 ? Math.min(160, line.length) : 0,
+        Math.floor(line.length * fraction));
+      const prefix = line.slice(0, length);
+      return [prefix, ...urls.filter(url => !prefix.includes(url))].filter(Boolean).join(' ');
+    }).filter(Boolean).join('\n');
+  }).join('\n\n') + '\n[Source excerpts shortened to fit this model’s context. Evidence may be incomplete.]');
   let selected = excerpt(0);
   let usage = await count(assemble(selected));
   if (!fits(usage)) {

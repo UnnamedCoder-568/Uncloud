@@ -14,8 +14,8 @@ describe('conversation context', () => {
     expect(sent[1]).toEqual(turns[2]);
     expect(turns).toHaveLength(3); // Original transcript remains inspectable.
   });
-  it('never drops turns without an actual summary', () => {
-    expect(contextMessages(turns, 'Assistant', '', 2)).toHaveLength(4);
+  it('supports an explicit recent window with archived originals even without a summary', () => {
+    expect(contextMessages(turns, 'Assistant', '', 2)).toHaveLength(2);
   });
   it('raw baseline bypasses the system prompt and memory', () => {
     expect(contextMessages(turns, 'Assistant', 'Memory', 2, true)).toBe(turns);

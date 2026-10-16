@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import copy
 
 from fastapi import Depends, HTTPException, Request
@@ -52,7 +53,7 @@ class PlanningContextBody(BaseModel):
     inference: dict = Field(default_factory=dict)
 
 
-def install(app, events, manager, require_token, require_desktop, principal_of):
+def install(app, events, manager, require_token, require_desktop, principal_of, text_busy=None):
     def configuration(owner: str) -> dict:
         with events.lock:
             return copy.deepcopy(
@@ -78,16 +79,28 @@ def install(app, events, manager, require_token, require_desktop, principal_of):
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     @app.post("/api/context/compact", dependencies=[Depends(require_token)])
-    async def compact_context(body: CompactBody):
+    async def compact_context(body: CompactBody, request: Request):
         from .compaction import compact
 
+        if text_busy and text_busy():
+            raise HTTPException(status_code=409, detail='Another chat or agent is using the model.')
         active = manager.active
         if not active:
             raise HTTPException(status_code=409, detail="Load the selected model first.")
         try:
             values = validate(body.inference)
             apply(active, {}, values)
-            return await compact(active, body.messages, body.memory, values)
+            task = asyncio.create_task(compact(active, body.messages, body.memory, values))
+            try:
+                while not task.done():
+                    await asyncio.wait({task}, timeout=0.25)
+                    if await request.is_disconnected():
+                        raise HTTPException(status_code=499, detail='Compaction cancelled.')
+                return task.result()
+            finally:
+                if not task.done():
+                    task.cancel()
+                    await asyncio.gather(task, return_exceptions=True)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 

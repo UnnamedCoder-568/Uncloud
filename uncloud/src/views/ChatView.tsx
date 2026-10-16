@@ -22,7 +22,9 @@ import { cleanReply } from '../lib/reply';
 import { LookupSession, describe, findLookups, initialWebLookup, lookupKey, wantsPictures, resultsTurn, stripLookups } from '../lib/lookup';
 import { lookupForTool } from '../lib/native-tools';
 import { compactAvailable, contextMessages } from '../lib/context';
-import { fitWebContext } from '../lib/web-context';
+import { fitToolContext, fitWebContext } from '../lib/web-context';
+import { prepareConversation, type Continuity } from '../lib/dynamic-context';
+import { historyQuery, searchHistory } from '../lib/history';
 import { printerSound } from '../lib/printer-sound';
 import { apiPost, getLibrary, getAdapters, startEngine, engineStatus, streamChat, countChatContext, transcribeAudio, speakReply, IMAGE_MARKER, chatSystemPrompt, parseReplyImages, generateReplyImage,
   listConversations, readConversation, writeConversation, deleteConversation,
@@ -58,6 +60,8 @@ export default function ChatView({ persona }: { persona?: PersonaSnapshot } = {}
   const [compactSummary, setCompactSummary] = useState('');
   const [compactedThrough, setCompactedThrough] = useState(0);
   const [compacting, setCompacting] = useState(false);
+  const [contextNotice, setContextNotice] = useState('');
+  const compactAbort = useRef<AbortController | null>(null);
   const [contextLength, setContextLength] = useState('');
   const [loadedContext, setLoadedContext] = useState<{
     context_limit?: number; context_profile?: { native_limit: number | null } }>({});
@@ -176,9 +180,10 @@ export default function ChatView({ persona }: { persona?: PersonaSnapshot } = {}
     try { return localStorage.getItem('uncloud.chat.web') !== 'off'; }
     catch { return true; }
   });
-  const nativeWeb = web && !rawMode
+  const nativeToolsAvailable = !rawMode
     && inference.info?.active?.model_path === activeModel?.path
     && inference.info?.active?.profile.capabilities.native_tools === true;
+  const nativeWeb = web && nativeToolsAvailable;
   useEffect(() => {
     try { localStorage.setItem('uncloud.chat.web', web ? 'on' : 'off'); }
     catch { /* a browser refusing storage is not worth an error */ }
@@ -241,6 +246,7 @@ export default function ChatView({ persona }: { persona?: PersonaSnapshot } = {}
   async function selectModel(model: LocalModel, adapter: AdapterCard | null = null) {
     if (loadingModel) return;
     chatAbort.current?.abort();
+    compactAbort.current?.abort();
     setPickerOpen(false);
     setLoadingModel(true);
     try {
@@ -371,11 +377,13 @@ export default function ChatView({ persona }: { persona?: PersonaSnapshot } = {}
    *  force-quit and a flat battery all skip anything scheduled for later, and
    *  those are exactly the moments this exists for.
    */
-  const persist = useCallback(async (id: string, turns: ChatMessage[]) => {
+  const persist = useCallback(async (id: string, turns: ChatMessage[],
+                                   continuity?: Continuity) => {
     if (!turns.length) return;
     try {
       await writeConversation(id, { messages: turns, model_path: activeModel?.path ?? null,
-        compact_summary: compactSummary, compacted_through: compactedThrough, persona: sessionPersona });
+        compact_summary: continuity?.summary ?? compactSummary,
+        compacted_through: continuity?.through ?? compactedThrough, persona: sessionPersona });
       refreshSaved();
     } catch {
       // Saving is not the user's job to supervise. A failure here must not
@@ -387,6 +395,9 @@ export default function ChatView({ persona }: { persona?: PersonaSnapshot } = {}
     setSessionPersona(persona);
     generationEpoch.current += 1;
     chatAbort.current?.abort();
+    compactAbort.current?.abort();
+    setCompacting(false);
+    setContextNotice('');
     chatAbort.current = null;
     printerSound.stop();
     setGenerating(false);
@@ -404,6 +415,9 @@ export default function ChatView({ persona }: { persona?: PersonaSnapshot } = {}
   const openSaved = useCallback(async (id: string) => {
     generationEpoch.current += 1;
     chatAbort.current?.abort();
+    compactAbort.current?.abort();
+    setCompacting(false);
+    setContextNotice('');
     chatAbort.current = null;
     printerSound.stop();
     setGenerating(false);
@@ -440,6 +454,7 @@ export default function ChatView({ persona }: { persona?: PersonaSnapshot } = {}
   useEffect(() => () => {
     generationEpoch.current += 1;
     chatAbort.current?.abort();
+    compactAbort.current?.abort();
     printerSound.stop();
   }, []);
 
@@ -517,7 +532,7 @@ export default function ChatView({ persona }: { persona?: PersonaSnapshot } = {}
     // A picture on its own is a perfectly good question — "what is this?" is
     // implied — so an empty box with an attachment still sends.
     if ((!text.trim() && !attached.length && !attachedFiles.length)
-        || !activeModel || generating) return;
+        || !activeModel || generating || compacting || loadingModel) return;
     // Audio contexts may only be unlocked by a user gesture. Do that now,
     // before loading a model, but do not actually make noise until the first
     // visible reply text arrives.
@@ -550,25 +565,79 @@ export default function ChatView({ persona }: { persona?: PersonaSnapshot } = {}
       let sent: ChatMessage[] = [
         ...next.slice(rawMode ? 0 : compactedThrough),
       ];
+      let memory = compactSummary;
+      let through = rawMode ? 0 : compactedThrough;
       let fittedReplyBudget: number | undefined;
       const lookups = new LookupSession();
       let nativeTurns: ChatMessage[] = [];
+      let historyRounds = 0;
+      const historyQueries = new Set<string>();
       const toolsEnabled = () => nativeWeb && lookups.phase !== 'final';
+      const historyEnabled = () => nativeToolsAvailable && through > 0 && historyRounds < 3;
       const requestedLookup = web && !rawMode ? initialWebLookup(text) : null;
       const requestedPictures = pictures && !rawMode && wantsPictures(text);
       const turnInference = inference.values;
       const replyPrompt = () => systemPrompt({ pictures: requestedPictures, web, manner,
         spoken: readAloud, webPhase: web && !rawMode ? lookups.phase : undefined });
-      const fitEvidence = async (evidence: string, assemble: (text: string) => ChatMessage[]) => {
+      const prepare = async (tail: ChatMessage[], allowOverflow = false) => {
+        if (rawMode) return tail;
+        const result = await prepareConversation([...next.slice(0, through), ...tail], {
+          summary: memory, through, system: replyPrompt(), signal: controller.signal, allowOverflow,
+          count: (turns, archived) => countChatContext(turns, turnInference, toolsEnabled(),
+            nativeToolsAvailable && archived && historyRounds < 3),
+          compact: async (turns, previous) => {
+            setCompacting(true);
+            try {
+              const result = await apiPost<{ summary: string }>('/api/context/compact', {
+                messages: turns, memory: previous, inference: turnInference,
+              }, controller.signal);
+              return result.summary;
+            } finally { if (epoch === generationEpoch.current) setCompacting(false); }
+          },
+        });
+        if (epoch !== generationEpoch.current) throw new DOMException('Stopped', 'AbortError');
+        if (result.summary !== memory || result.through !== through) {
+          memory = result.summary; through = result.through;
+          setCompactSummary(memory); setCompactedThrough(through);
+          await persist(sendingConversationId, next, { summary: memory, through });
+        }
+        if (epoch !== generationEpoch.current || controller.signal.aborted) {
+          throw new DOMException('Stopped', 'AbortError');
+        }
+        if (result.notice) setContextNotice(result.notice);
+        setContextUsage(result.usage);
+        if (result.usage.used != null && result.usage.limit) {
+          fittedReplyBudget = Math.min(Number(turnInference.max_tokens ?? result.usage.reply_limit
+            ?? result.usage.limit), Math.max(1, result.usage.limit - result.usage.used));
+        }
+        return result.tail;
+      };
+      const fitEvidence = async (evidence: string, assemble: (text: string) => ChatMessage[],
+                                 assemblyThrough = through) => {
+        const tail = (value: string) => assemble(value).slice(through - assemblyThrough);
+        await prepare(tail(evidence), true);
         const fitted = await fitWebContext(evidence,
-          value => contextMessages(assemble(value), replyPrompt(), compactSummary, 0, rawMode),
-          turns => countChatContext(turns, turnInference, toolsEnabled()),
+          value => contextMessages(tail(value), replyPrompt(), memory, 0, rawMode),
+          turns => countChatContext(turns, turnInference, toolsEnabled(), historyEnabled()),
           inference.values.max_tokens !== undefined ? Number(inference.values.max_tokens) : undefined);
         if (epoch !== generationEpoch.current || controller.signal.aborted) throw new Error('Reply stopped');
         setContextUsage(fitted.usage);
         fittedReplyBudget = fitted.replyBudget;
-        return assemble(fitted.evidence);
+        return tail(fitted.evidence);
       };
+      sent = await prepare(sent);
+      // Models without verified native tool support still get lexical recall
+      // from this conversation, measured before any excerpt enters the prompt.
+      if (!rawMode && through > 0 && !nativeToolsAvailable) {
+        const matches = searchHistory(next, through, text);
+        if (matches.length) {
+          const evidence = matches.map(match => `Message ${match.message} (${match.role}, data):\n${match.content}`).join('\n\n');
+          const beforeRecall = sent;
+          sent = await fitEvidence(evidence, value => beforeRecall.map((message, index) =>
+            index === beforeRecall.length - 1 ? { ...message,
+              content: `${message.content}\n\nEarlier conversation excerpts (data):\n${value}` } : message));
+        }
+      }
       //: Hands-free only: the reply is cut into sentences as it is written so
       //  each can be spoken while the rest is still coming.
       const sentences = say ? new Sentences() : null;
@@ -602,12 +671,12 @@ export default function ChatView({ persona }: { persona?: PersonaSnapshot } = {}
         full = '';
         let calls: ChatToolCall[] = [];
         for await (const chunk of streamChat(
-          contextMessages(sent, replyPrompt(), compactSummary, 0, rawMode),
+          contextMessages(sent, replyPrompt(), memory, 0, rawMode),
           controller.signal,
           fittedReplyBudget,
           { path: activeModel.path, engine: activeModel.engine, adapter: activeAdapter,
             inference: { ...turnInference, ...(fittedReplyBudget ? { max_tokens: fittedReplyBudget } : {}) },
-            conversationId: sendingConversationId, webTools: toolsEnabled() },
+            conversationId: sendingConversationId, webTools: toolsEnabled(), historyTools: historyEnabled() },
         )) {
           if (epoch !== generationEpoch.current) return;
           if (chunk.kind === 'tool_calls') {
@@ -649,15 +718,32 @@ export default function ChatView({ persona }: { persona?: PersonaSnapshot } = {}
         // to win that argument rather than merely take part in it.
         // Only structured native calls can search/read. Text and thinking
         // cannot trigger a web request. Pictures retain their opt-in protocol.
-        const requested = calls.length && nativeWeb
-          ? calls.map(lookupForTool)
+        const recallCalls = calls.filter(call => call.function.name === 'conversation_search');
+        const recallResults = new Map<string, string>();
+        if (recallCalls.length) {
+          if (!historyEnabled()) throw new Error('Conversation recall is unavailable or its per-reply limit was reached.');
+          historyRounds++;
+          for (const call of recallCalls) {
+            const query = historyQuery(call);
+            const key = query.trim().toLocaleLowerCase();
+            const matches = historyQueries.has(key) ? [] : searchHistory(next, through, query);
+            historyQueries.add(key);
+            recallResults.set(call.id, matches.length
+              ? matches.map(match => `Message ${match.message} (${match.role}, data${match.excerpt ? ', excerpt' : ''}):\n${match.content}`).join('\n\n')
+              : 'No additional matching earlier messages.');
+          }
+          setContextNotice('Earlier conversation searched locally.');
+        }
+        const webCalls = calls.filter(call => call.function.name !== 'conversation_search');
+        const requested = webCalls.length && nativeWeb
+          ? webCalls.map(lookupForTool)
           : [];
         const pictureRequests = requestedPictures
           ? findLookups(full).filter(l => l.kind === 'pictures') : [];
         const plan = web && !rawMode
           ? lookups.nextRequests([...requested, ...pictureRequests])
           : { kind: 'done' as const, lookups: [] };
-        if (plan.kind === 'done') break;
+        if (plan.kind === 'done' && !recallCalls.length) break;
         if (plan.kind === 'answer' && !calls.length) {
           setMessages(current => current.map((message, index) => index === assistantIndex
             ? { ...message, content: '', reasoning: '' } : message));
@@ -719,21 +805,32 @@ export default function ChatView({ persona }: { persona?: PersonaSnapshot } = {}
         // The request stays in the transcript the model sees — without it the
         // results arrive as an answer to nothing.
         if (calls.length) {
+          const lookupThrough = through;
           const beforeLookup: ChatMessage[] = [...sent,
             { role: 'assistant', content: full, tool_calls: calls }];
-          const responses: ChatMessage[] = calls.map(call => ({ role: 'tool', tool_call_id: call.id,
-            content: '' }));
+          const responses: ChatMessage[] = calls.map(call => {
+            const lookup = call.function.name === 'conversation_search' ? null : lookupForTool(call);
+            const part = lookup && fetched.find(p => lookupKey(p.lookup) === lookupKey(lookup));
+            return { role: 'tool', tool_call_id: call.id,
+              content: recallResults.get(call.id) ?? (part ? part.text : null)
+                ?? 'Lookup already completed or the per-reply lookup limit was reached.' };
+          });
           // Fit actual tool outputs with all call IDs and tool definitions
           // present. Keep the user's conversation and every supporting URL.
-          for (let index = 0; index < calls.length; index++) {
-            const part = fetched.find(p => lookupKey(p.lookup) === lookupKey(requested[index]));
-            const evidence = part?.text ?? 'Lookup already completed or the per-reply lookup limit was reached.';
-            const fitted = await fitEvidence(evidence, value => [...beforeLookup,
-              ...responses.map((response, i) => i === index ? { ...response, content: value } : response)]);
-            responses[index] = fitted[beforeLookup.length + index];
-          }
-          sent = [...beforeLookup, ...responses];
-          nativeTurns = [...nativeTurns, beforeLookup.at(-1)!, ...responses];
+          await prepare([...beforeLookup, ...responses], true);
+          const retained = beforeLookup.slice(through - lookupThrough);
+          const assemble = (values: string[]) => [...retained,
+            ...responses.map((response, index) => ({ ...response, content: values[index] }))];
+          const fitted = await fitToolContext(responses.map(response => response.content),
+            values => contextMessages(assemble(values), replyPrompt(), memory, 0, rawMode),
+            turns => countChatContext(turns, turnInference, toolsEnabled(), historyEnabled()),
+            turnInference.max_tokens !== undefined ? Number(turnInference.max_tokens) : undefined);
+          controller.signal.throwIfAborted();
+          if (epoch !== generationEpoch.current) return;
+          fittedReplyBudget = fitted.replyBudget;
+          setContextUsage(fitted.usage);
+          sent = assemble(fitted.evidence);
+          nativeTurns = [...nativeTurns, beforeLookup.at(-1)!, ...sent.slice(retained.length)];
           next[next.length - 1] = { ...next[next.length - 1], tool_turns: nativeTurns };
           setMessages(current => current.map((message, index) => index === next.length - 1
             ? { ...message, tool_turns: nativeTurns }
@@ -779,7 +876,7 @@ export default function ChatView({ persona }: { persona?: PersonaSnapshot } = {}
       const id = sendingConversationId;
       if (epoch !== generationEpoch.current) return;
       if (!conversationId) setConversationId(id);
-      void persist(id, [...next, { role: 'assistant', content: full } as ChatMessage]);
+      void persist(id, [...next, { role: 'assistant', content: full } as ChatMessage], { summary: memory, through });
       // Fire and forget: the reply is already readable, and a render may take
       // minutes. Pass the freshly minted id explicitly; state has not rerendered
       // yet on the first turn, and closing the phone must not orphan the file.
@@ -844,6 +941,8 @@ export default function ChatView({ persona }: { persona?: PersonaSnapshot } = {}
   function stopGenerating() {
     generationEpoch.current += 1;
     chatAbort.current?.abort();
+    compactAbort.current?.abort();
+    setCompacting(false);
     chatAbort.current = null;
     printerSound.stop();
     setGenerating(false);
@@ -886,31 +985,35 @@ export default function ChatView({ persona }: { persona?: PersonaSnapshot } = {}
         ...(input.trim() ? [{ role: 'user' as const, content: input.trim() }] : []),
       ], systemPrompt({ pictures: pictures && wantsPictures(currentText), web, manner,
         webPhase: web && !rawMode ? 'request' : undefined }), compactSummary, compactedThrough, rawMode);
-      void countChatContext(turns, inference.values, nativeWeb).then((usage) => {
+      void countChatContext(turns, inference.values, nativeWeb, nativeToolsAvailable && compactedThrough > 0).then((usage) => {
         if (!cancelled) setContextUsage(usage);
       }).catch(() => { if (!cancelled) setContextUsage(null); });
     }, 550);
     return () => { cancelled = true; clearTimeout(timer); };
   }, [activeModel, messages, input, compactSummary, compactedThrough, generating,
-      compacting, pictures, web, nativeWeb, manner, rawMode, inference.values, inference.info, systemPrompt, visible]);
+      compacting, pictures, web, nativeWeb, nativeToolsAvailable, manner, rawMode, inference.values, inference.info, systemPrompt, visible]);
 
   async function compactConversation() {
     if (!activeModel || generating || compacting || !messages.length) return;
     const through = messages.length > 4 ? messages.length - 2 : messages.length;
     if (through <= compactedThrough) return;
+    const epoch = generationEpoch.current;
+    const controller = new AbortController();
+    compactAbort.current = controller;
     setCompacting(true);
     try {
       const result = await apiPost<{ summary: string }>('/api/context/compact', {
         messages: messages.slice(compactedThrough, through), memory: compactSummary,
         inference: inference.values,
-      });
+      }, controller.signal);
+      if (epoch !== generationEpoch.current || controller.signal.aborted) return;
       const summary = result.summary.trim();
       if (!summary) throw new Error('The model returned an empty summary.');
       const system = systemPrompt({ pictures: false, web, manner,
         webPhase: web && !rawMode ? 'request' : undefined });
       const [before, after] = await Promise.all([
-        countChatContext(contextMessages(messages, system, compactSummary, compactedThrough), inference.values, nativeWeb),
-        countChatContext(contextMessages(messages, system, summary, through), inference.values, nativeWeb),
+        countChatContext(contextMessages(messages, system, compactSummary, compactedThrough), inference.values, nativeWeb, nativeToolsAvailable && compactedThrough > 0),
+        countChatContext(contextMessages(messages, system, summary, through), inference.values, nativeWeb, nativeToolsAvailable),
       ]);
       if (before.used == null || after.used == null) {
         throw new Error('Could not verify the compacted context size. Your original conversation is preserved.');
@@ -918,17 +1021,23 @@ export default function ChatView({ persona }: { persona?: PersonaSnapshot } = {}
       if (after.used >= before.used) {
         throw new Error('The summary did not reduce context. Your original conversation is preserved.');
       }
+      if (epoch !== generationEpoch.current || controller.signal.aborted) return;
       if (conversationId) {
         await writeConversation(conversationId, { messages, model_path: activeModel.path,
           compact_summary: summary, compacted_through: through, persona: sessionPersona });
         refreshSaved();
       }
+      if (epoch !== generationEpoch.current || controller.signal.aborted) return;
       setCompactSummary(summary);
       setCompactedThrough(through);
+      setContextNotice('Earlier messages compacted. Originals remain available for recall.');
     } catch (error) {
-      alert(`Could not compact this conversation: ${error}`);
+      if (!controller.signal.aborted && epoch === generationEpoch.current) {
+        setContextNotice(`Could not compact: ${error instanceof Error ? error.message : String(error)}. Original history is preserved.`);
+      }
     } finally {
-      setCompacting(false);
+      if (epoch === generationEpoch.current) setCompacting(false);
+      if (compactAbort.current === controller) compactAbort.current = null;
     }
   }
 
@@ -1053,7 +1162,7 @@ export default function ChatView({ persona }: { persona?: PersonaSnapshot } = {}
                       localStorage.setItem('uncloud.chat.contextWindows', JSON.stringify(windows));
                       setNetworkError('');
                       await inference.refresh();
-                      setContextUsage(await countChatContext(contextMessages(messages, systemPrompt({ pictures: false, web: false, manner }), compactSummary, compactedThrough, rawMode)));
+                      setContextUsage(await countChatContext(contextMessages(messages, systemPrompt({ pictures: false, web: false, manner }), compactSummary, compactedThrough, rawMode), inference.values, nativeWeb, nativeToolsAvailable && compactedThrough > 0));
                     } catch (error) { setNetworkError(error instanceof Error ? error.message : String(error)); }
                     finally { setLoadingModel(false); }
                   }}>Apply context window</button>
@@ -1264,14 +1373,14 @@ export default function ChatView({ persona }: { persona?: PersonaSnapshot } = {}
 
 
           <button
-            onClick={generating ? stopGenerating : () => send(input, autoSpeak)}
-            disabled={!activeModel || (!generating && !input.trim()
+            onClick={generating || compacting ? stopGenerating : () => send(input, autoSpeak)}
+            disabled={!activeModel || loadingModel || (!generating && !compacting && !input.trim()
               && !attached.length && !attachedFiles.length)}
-            title={generating ? 'Stop response' : 'Send'}
-            aria-label={generating ? 'Stop response' : 'Send'}
+            title={generating || compacting ? 'Stop response' : 'Send'}
+            aria-label={generating || compacting ? 'Stop response' : 'Send'}
             className="composer-send"
           >
-            {generating ? <Square size={12} fill="currentColor" /> : <ArrowUp size={17} />}
+            {generating || compacting ? <Square size={12} fill="currentColor" /> : <ArrowUp size={17} />}
           </button>
         </div>
       </div>
@@ -1297,6 +1406,7 @@ export default function ChatView({ persona }: { persona?: PersonaSnapshot } = {}
             </button>}
         </div>
       )}
+      {contextNotice && <p role="status" className="px-3 pt-1 text-xs text-[var(--text-faint)]">{contextNotice}</p>}
     </div>
   );
 

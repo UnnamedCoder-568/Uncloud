@@ -120,8 +120,8 @@ export async function api<T>(path: string, opts: RequestInit = {},
   return resp.json();
 }
 
-export async function apiPost<T>(path: string, body?: unknown): Promise<T> {
-  return api<T>(path, { method: 'POST', body: body ? JSON.stringify(body) : undefined });
+export async function apiPost<T>(path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
+  return api<T>(path, { method: 'POST', body: body ? JSON.stringify(body) : undefined, signal });
 }
 
 export interface Settings {
@@ -259,9 +259,10 @@ export interface ChatContextUsage {
   reply_limit?: number | null;
 }
 
-export async function countChatContext(messages: ChatMessage[], inference: Record<string, unknown> = {}, webTools = false) {
+export async function countChatContext(messages: ChatMessage[], inference: Record<string, unknown> = {}, webTools = false, historyTools = false) {
   return apiPost<ChatContextUsage>('/api/chat/context', {
     messages: messages.map(wireMessage), inference, web_tools: webTools,
+    ...(historyTools ? { history_tools: true } : {}),
   });
 }
 
@@ -444,7 +445,7 @@ export function wireMessage(message: ChatMessage) {
 
 export async function* streamChat(
   messages: ChatMessage[], signal?: AbortSignal, max_tokens?: number,
-  selection?: { path: string; engine: string; adapter?: string | null; temperature?: number; inference?: Record<string, unknown>; conversationId?: string | null; webTools?: boolean },
+  selection?: { path: string; engine: string; adapter?: string | null; temperature?: number; inference?: Record<string, unknown>; conversationId?: string | null; webTools?: boolean; historyTools?: boolean },
 ): AsyncGenerator<ChatChunk> {
   if (signal?.aborted) throw abortError();
   const body = { messages: messages.map(wireMessage), max_tokens,
@@ -452,6 +453,7 @@ export async function* streamChat(
     temperature: selection?.temperature, inference: selection?.inference ?? {}, inherit_defaults: false,
     conversation_id: selection?.conversationId ?? '' };
   Object.assign(body, { web_tools: selection?.webTools ?? false });
+  if (selection?.historyTools) Object.assign(body, { history_tools: true });
   const start = () => api<ChatRunState>('/api/chat/runs', {
     method: 'POST', body: JSON.stringify(body), signal });
   let run: ChatRunState;

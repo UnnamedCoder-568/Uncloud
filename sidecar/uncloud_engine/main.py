@@ -192,7 +192,10 @@ def principal_of_ws(websocket: WebSocket) -> str:
     return ""
 
 
-install_control_api(app, user_events, engine_manager, require_token, require_desktop, principal_of)
+install_control_api(app, user_events, engine_manager, require_token, require_desktop, principal_of,
+                    text_busy=lambda: bool(_legacy_chat_active or _agent_runs
+                        or automations_service.current
+                        or any(not run.task.done() for run in _chat_runs.values() if run.task)))
 
 # ----------------------------------------------------------------- approvals
 #
@@ -2029,7 +2032,7 @@ class EngineStartBody(BaseModel):
     model_path: str
     engine: str
     adapter_path: str | None = None
-    context_length: int | None = Field(default=None, ge=256, le=1048576)
+    context_length: int | None = Field(default=None, ge=256)
     reload: bool = False
 
 
@@ -2085,6 +2088,7 @@ class ContextCountBody(BaseModel):
     messages: list[dict]
     inference: dict = Field(default_factory=dict)
     web_tools: bool = False
+    history_tools: bool = False
 
 
 @app.post("/api/chat/context", dependencies=[Depends(require_token)])
@@ -2095,7 +2099,8 @@ async def chat_context(body: ContextCountBody) -> dict:
     from .context_count import count
 
     try:
-        used = await count(active, body.messages, body.inference, web_tools=body.web_tools)
+        used = await count(active, body.messages, body.inference, web_tools=body.web_tools,
+                           **({'history_tools': True} if body.history_tools else {}))
     except Exception:  # noqa: BLE001 - the meter must not break inference
         used = None
     profile = getattr(active, "inference_profile", {})
@@ -2111,6 +2116,7 @@ class ChatBody(BaseModel):
     sampling: dict = {}
     inference: dict = Field(default_factory=dict)
     web_tools: bool = False
+    history_tools: bool = False
     inherit_defaults: bool = True
     conversation_id: str = ""
     project_id: str = ""
@@ -2197,6 +2203,7 @@ async def _run_chat(run: ChatRun, body: ChatBody, active=None) -> None:
             effort=body.effort,
             inference=body.inference,
             web_tools=body.web_tools,
+            history_tools=body.history_tools,
         )
         run.timings["prompt_build_ms"] = (time.perf_counter() - build_start) * 1000
         run.timings["dispatch_ms"] = (time.perf_counter() - run.started) * 1000
@@ -2276,6 +2283,9 @@ async def _run_chat(run: ChatRun, body: ChatBody, active=None) -> None:
 
 @app.post("/api/chat/runs", dependencies=[Depends(require_token)])
 async def start_chat_run(body: ChatBody, request: Request) -> dict:
+    from .compaction import is_running
+    if is_running():
+        raise HTTPException(status_code=409, detail='Conversation compaction is still running.')
     if automations_service.current:
         raise HTTPException(
             status_code=409, detail="A saved agent is running. Pause it in Chisel first."
@@ -2301,7 +2311,7 @@ async def start_chat_run(body: ChatBody, request: Request) -> dict:
     try:
         apply(active, {}, body.inference)
         from .web_tools import definitions
-        definitions(active, body.web_tools)
+        definitions(active, body.web_tools, body.history_tools)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     # Finished runs are useful for a reconnect, but not forever.
@@ -2381,6 +2391,7 @@ async def chat(body: ChatBody) -> StreamingResponse:
                     effort=body.effort,
                     inference=body.inference,
                     web_tools=body.web_tools,
+                    history_tools=body.history_tools,
                 )
                 # Plain Chat is a direct-answer surface. Thinking-capable GGUF
                 # templates otherwise default to an unlimited private-reasoning

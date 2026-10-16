@@ -1,6 +1,6 @@
 """Count the actual model prompt using its native chat template and tokenizer.
 
-Called only for the optional UI meter; ordinary chat never waits for it.
+Shared by the UI meter, evidence fitting and rolling conversation context.
 """
 
 from __future__ import annotations
@@ -41,12 +41,17 @@ def _count_mlx(model_path: str, messages: list[dict], template_kwargs: dict | No
 
 
 async def count(active, messages: list[dict], inference: dict | None = None,
-                *, web_tools: bool = False) -> int | None:
+                *, web_tools: bool = False, history_tools: bool = False) -> int | None:
     from .inference_controls import apply
     from .web_tools import chat_turns, definitions
 
     messages = chat_turns(messages)
-    tools = definitions(active, web_tools)
+    # A fully compacted idle chat has only retained memory until the next user
+    # message. Native templates may reject system-only input; count the empty
+    # draft user turn in that case. This is accounting only, never inference.
+    if messages and not any(message.get('role') == 'user' for message in messages):
+        messages = [*messages, {'role': 'user', 'content': ''}]
+    tools = definitions(active, web_tools, history_tools)
 
     # Input tokenization depends on the native template, not on sampling or
     # output ceilings. A stale reply preference must not disable the meter.

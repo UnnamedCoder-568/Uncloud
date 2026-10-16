@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { fitWebContext } from './web-context';
+import { fitToolContext, fitWebContext } from './web-context';
 import type { ChatMessage } from './sidecar';
 
 const assemble = (text: string): ChatMessage[] => [{ role: 'user', content: `Original intent\n${text}` }];
@@ -35,4 +35,26 @@ it('never drops conversation to make room for outside evidence', async () => {
 });
 it('does not guess when native token accounting fails', async () => {
   await expect(fitWebContext('source', assemble, async () => ({ used: null, limit: 1024, exact: false }))).rejects.toThrow('Could not check');
+});
+
+it('fits all native tool results together, keeping every call and URL', async () => {
+  const calls = ['one', 'two'];
+  const assembleBatch = (values: string[]): ChatMessage[] => [
+    { role: 'user', content: 'Compare both sources' },
+    { role: 'assistant', content: '', tool_calls: calls.map(id => ({ id, type: 'function',
+      function: { name: 'web_read', arguments: JSON.stringify({ url: `https://${id}.example` }) } })) },
+    ...values.map((content, index) => ({ role: 'tool' as const, tool_call_id: calls[index], content })),
+  ];
+  const fitted = await fitToolContext(calls.map(id => `Source ${id}\nhttps://${id}.example\n${'Evidence '.repeat(1000)}`),
+    assembleBatch, async turns => ({ used: JSON.stringify(turns).length, limit: 2000, exact: true }));
+  expect(fitted.evidence[0]).toContain('https://one.example');
+  expect(fitted.evidence[1]).toContain('https://two.example');
+  expect(assembleBatch(fitted.evidence).slice(2).map(turn => turn.tool_call_id)).toEqual(calls);
+  expect(fitted.usage.used! + fitted.replyBudget).toBeLessThanOrEqual(2000);
+});
+
+it('can shorten a long single-line result without losing a URL on that line', async () => {
+  const fitted = await fitWebContext(`${'text '.repeat(1000)}https://example.com/original`, assemble, count);
+  expect(fitted.evidence).toContain('https://example.com/original');
+  expect(fitted.usage.used! + fitted.replyBudget).toBeLessThanOrEqual(1024);
 });

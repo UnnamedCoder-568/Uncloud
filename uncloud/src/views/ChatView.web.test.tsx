@@ -4,7 +4,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ChatView from './ChatView';
-import { countChatContext, engineStatus, startEngine, streamChat,
+import { apiPost, countChatContext, engineStatus, startEngine, streamChat,
   webRead, webSearch, writeConversation } from '../lib/sidecar';
 
 const state = vi.hoisted(() => ({ values: {} as Record<string, string> }));
@@ -23,6 +23,7 @@ vi.mock('../components/ReplyVoice', () => ({ default: () => null }));
 vi.mock('../components/ActivityOrb', () => ({ default: () => null }));
 vi.mock('../lib/sidecar', async (original) => ({
   ...await original<typeof import('../lib/sidecar')>(),
+  apiPost: vi.fn(),
   getLibrary: vi.fn(async () => []),
   engineStatus: vi.fn(async () => ({ running: true, model_path: '/test/model', engine: 'mlx' })),
   startEngine: vi.fn(),
@@ -45,6 +46,10 @@ describe('Web handoff through the Chat interface', () => {
     localStorage.setItem('uncloud.chat.pictures', 'off');
     state.values = {};
     vi.clearAllMocks();
+    vi.mocked(countChatContext).mockResolvedValue({ used: 100, limit: 8192, reply_limit: 2048, exact: true });
+    vi.mocked(webSearch).mockResolvedValue({ results: 'Source https://example.org/source\nVerified test evidence.' });
+    vi.mocked(webRead).mockResolvedValue({ text: 'Source https://example.org/source\nVerified test evidence.' });
+    vi.mocked(apiPost).mockReset();
     vi.mocked(engineStatus).mockResolvedValue({ running: true, model_path: '/test/model', engine: 'mlx' });
     container = document.createElement('div');
     document.body.append(container);
@@ -102,6 +107,70 @@ describe('Web handoff through the Chat interface', () => {
     await act(async () => container.querySelector<HTMLButtonElement>('button[aria-label="Send"]')!.click());
     expect(container.querySelector('button[aria-label="Stop response"]')).toBeNull();
   }
+
+  it.each([false, true])('continues a full context and recalls originals when summarizing fails=%s', async (failure) => {
+    vi.mocked(countChatContext).mockImplementation(async (turns) => ({
+      used: turns.reduce((sum, turn) => sum + turn.content.length, 200),
+      limit: 2000, reply_limit: 2000, exact: true,
+    }));
+    vi.mocked(apiPost).mockImplementation(async () => {
+      if (failure) throw new Error('Compaction timed out');
+      return { summary: 'Project Cedar.' };
+    });
+    let pass = 0;
+    vi.mocked(streamChat).mockImplementation(async function* () {
+      pass++;
+      if (pass === 1) yield { kind: 'text', text: 'Earlier response. '.repeat(100) };
+      else if (pass === 2) yield { kind: 'tool_calls', text: '', tool_calls: [{ id: 'recall-1', type: 'function',
+        function: { name: 'conversation_search', arguments: JSON.stringify({ query: 'Cedar code' }) } }] };
+      else if (pass === 3) yield { kind: 'text', text: 'The code was 42.' };
+      else throw new Error('Unexpected extra model pass');
+    });
+    await mount();
+    await send('The Cedar code is 42.');
+    await send('What was the code?');
+    expect(apiPost).toHaveBeenCalledTimes(1);
+    expect(streamChat).toHaveBeenCalledTimes(3);
+    expect(vi.mocked(streamChat).mock.calls[1][3]?.historyTools).toBe(true);
+    const recall = vi.mocked(streamChat).mock.calls[2][0].find(turn => turn.role === 'tool');
+    expect(recall?.content).toContain('The Cedar code is 42.');
+    const saved = vi.mocked(writeConversation).mock.calls.at(-1)![1];
+    expect(saved.messages).toHaveLength(4);
+    expect(saved.messages[0].content).toBe('The Cedar code is 42.');
+    expect(saved.compacted_through).toBe(2);
+    expect(container.textContent).toContain('The code was 42.');
+  });
+
+  it('compacts during a multi-tool handoff and fits both results without losing call IDs', async () => {
+    vi.mocked(countChatContext).mockImplementation(async turns => ({
+      used: JSON.stringify(turns).length + 200, limit: 2400, reply_limit: 2400, exact: true,
+    }));
+    vi.mocked(apiPost).mockResolvedValue({ summary: 'Earlier context retained.' });
+    vi.mocked(webSearch).mockResolvedValue({ results: `First source\nhttps://one.example/source\n${'Evidence one '.repeat(700)}` });
+    vi.mocked(webRead).mockResolvedValue({ text: `Second source\nhttps://two.example/source\n${'Evidence two '.repeat(700)}` });
+    let pass = 0;
+    vi.mocked(streamChat).mockImplementation(async function* () {
+      pass++;
+      if (pass === 1) yield { kind: 'text', text: 'Earlier reply. '.repeat(35) };
+      else if (pass === 2) yield { kind: 'tool_calls', text: '', tool_calls: [
+        { id: 'one', type: 'function', function: { name: 'web_search', arguments: '{"query":"first source"}' } },
+        { id: 'two', type: 'function', function: { name: 'web_read', arguments: '{"url":"https://two.example/source"}' } },
+      ] };
+      else if (pass === 3) yield { kind: 'text', text: 'Both sources compared.' };
+      else throw new Error('Unexpected extra model pass');
+    });
+    await mount();
+    await send('Some earlier context');
+    await send('Compare both sources');
+    expect(apiPost).toHaveBeenCalledTimes(1);
+    expect(streamChat).toHaveBeenCalledTimes(3);
+    const final = vi.mocked(streamChat).mock.calls[2][0];
+    expect(final.filter(turn => turn.role === 'tool').map(turn => turn.tool_call_id)).toEqual(['one', 'two']);
+    expect(JSON.stringify(final)).toContain('https://one.example/source');
+    expect(JSON.stringify(final)).toContain('https://two.example/source');
+    expect(container.textContent).toContain('Both sources compared.');
+    expect(vi.mocked(writeConversation).mock.calls.at(-1)![1].messages).toHaveLength(4);
+  });
 
   it('copies the user message verbatim without markdown or thinking cleanup', async () => {
     const writeText = vi.fn(async () => {});

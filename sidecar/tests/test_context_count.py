@@ -56,6 +56,24 @@ def test_gguf_native_counter_accepts_zero_without_falling_back(monkeypatch):
     assert requests == ["/v1/chat/completions/input_tokens"]
 
 
+def test_idle_compacted_memory_counts_an_empty_draft_and_scoped_history_tool(monkeypatch):
+    original = [{'role': 'system', 'content': 'Earlier memory'}]
+
+    def handle(request):
+        body = json.loads(request.content)
+        assert body['messages'] == [*original, {'role': 'user', 'content': ''}]
+        assert [tool['function']['name'] for tool in body['tools']] == ['conversation_search']
+        return httpx.Response(200, json={'input_tokens': 123})
+
+    client = httpx.AsyncClient
+    monkeypatch.setattr(context_count.httpx, 'AsyncClient',
+                        lambda **kwargs: client(transport=httpx.MockTransport(handle), **kwargs))
+    active = SimpleNamespace(engine='gguf', base_url='http://native', inference_profile={
+        'capabilities': {'native_tools': True, 'fields': [], 'reasoning': {'levels': ['auto']}}})
+    assert asyncio.run(context_count.count(active, original, history_tools=True)) == 123
+    assert original == [{'role': 'system', 'content': 'Earlier memory'}]
+
+
 def test_input_counter_is_independent_of_an_oversized_reply_ceiling(monkeypatch):
     def handler(request):
         body = json.loads(request.content)
