@@ -4,7 +4,8 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ChatView from './ChatView';
-import { countChatContext, streamChat, webRead, webSearch, writeConversation } from '../lib/sidecar';
+import { countChatContext, engineStatus, startEngine, streamChat,
+  webRead, webSearch, writeConversation } from '../lib/sidecar';
 
 const state = vi.hoisted(() => ({ values: {} as Record<string, string> }));
 vi.mock('../lib/inference', () => ({ useInference: () => ({
@@ -24,6 +25,8 @@ vi.mock('../lib/sidecar', async (original) => ({
   ...await original<typeof import('../lib/sidecar')>(),
   getLibrary: vi.fn(async () => []),
   engineStatus: vi.fn(async () => ({ running: true, model_path: '/test/model', engine: 'mlx' })),
+  startEngine: vi.fn(),
+  getPermissions: vi.fn(async () => ({ policy: { network: 'ask_category' } })),
   listConversations: vi.fn(async () => ({ conversations: [], unreadable: 0, secure: true, backend: 'test' })),
   writeConversation: vi.fn(async () => ({})),
   countChatContext: vi.fn(async () => ({ used: 100, limit: 8192, reply_limit: 2048 })),
@@ -42,6 +45,7 @@ describe('Web handoff through the Chat interface', () => {
     localStorage.setItem('uncloud.chat.pictures', 'off');
     state.values = {};
     vi.clearAllMocks();
+    vi.mocked(engineStatus).mockResolvedValue({ running: true, model_path: '/test/model', engine: 'mlx' });
     container = document.createElement('div');
     document.body.append(container);
     root = createRoot(container);
@@ -54,6 +58,30 @@ describe('Web handoff through the Chat interface', () => {
   });
 
   const mount = () => act(async () => root.render(<ChatView />));
+
+  it.each(['32768', ''])('applies custom context or resets Auto for input %s', async (value) => {
+    localStorage.setItem('uncloud.chat.contextWindows', JSON.stringify({ '/test/model': 16384 }));
+    vi.mocked(engineStatus).mockResolvedValue({ running: true, model_path: '/test/model', engine: 'gguf',
+      context_limit: 1024, context_profile: { native_limit: 131072, effective_limit: 1024,
+        source: 'runtime', limited_by_memory: true } });
+    vi.mocked(startEngine).mockResolvedValue({ running: true, engine: 'gguf', context_limit: 32768,
+      context_profile: { native_limit: 131072, effective_limit: 32768,
+        source: 'runtime', limited_by_memory: false } });
+    await mount();
+    expect(container.querySelector<HTMLInputElement>('#context-length')!.value).toBe('16384');
+    await act(() => {
+      const input = container.querySelector<HTMLInputElement>('#context-length')!;
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await act(async () => [...container.querySelectorAll('button')]
+      .find(button => button.textContent === 'Apply context window')!.click());
+    expect(startEngine).toHaveBeenCalledExactlyOnceWith('/test/model', 'gguf', null,
+      value ? 32768 : undefined, true);
+    expect(container.textContent).toContain('32,768 tokens');
+    const saved = JSON.parse(localStorage.getItem('uncloud.chat.contextWindows')!);
+    expect(saved['/test/model']).toBe(value ? 32768 : undefined);
+  });
   const replies = (...answers: string[]) => {
     vi.mocked(streamChat).mockImplementation(async function* () {
       const text = answers.shift();

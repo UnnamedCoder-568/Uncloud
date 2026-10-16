@@ -59,10 +59,13 @@ export default function ChatView({ persona }: { persona?: PersonaSnapshot } = {}
   const [compactedThrough, setCompactedThrough] = useState(0);
   const [compacting, setCompacting] = useState(false);
   const [contextLength, setContextLength] = useState('');
+  const [loadedContext, setLoadedContext] = useState<{
+    context_limit?: number; context_profile?: { native_limit: number | null } }>({});
   const [contextWindows, setContextWindows] = useState<Record<string, number>>(() => {
     try { return JSON.parse(localStorage.getItem('uncloud.chat.contextWindows') || '{}'); }
     catch { return {}; }
   });
+  const initialContextWindows = useRef(contextWindows);
   const [rawMode] = useState(() => localStorage.getItem('uncloud.debug.raw') === 'on');
   //: Which saved conversation this is. Made on the first send rather than on
   //  arrival, so opening Chat and changing your mind does not litter the list
@@ -203,7 +206,9 @@ export default function ChatView({ persona }: { persona?: PersonaSnapshot } = {}
 
   useEffect(() => {
     engineStatus().then((s) => {
+      setLoadedContext(s);
       if (s.running && s.model_path) {
+        setContextLength(initialContextWindows.current[s.model_path]?.toString() ?? '');
         setActiveAdapter(s.adapter_path ?? null);
         setActiveModel((prev) => prev ?? {
           id: s.model_path!, name: s.model_path!.split('/').pop()!, category: 'text',
@@ -216,7 +221,9 @@ export default function ChatView({ persona }: { persona?: PersonaSnapshot } = {}
 
   useWhenVisible(() => {
     void engineStatus().then(status => {
+      setLoadedContext(status);
       if (!status.running || !status.model_path) { setActiveModel(null); return; }
+      setContextLength(contextWindows[status.model_path]?.toString() ?? '');
       setActiveAdapter(status.adapter_path ?? null);
       setActiveModel(models.find(m => m.path === status.model_path) ?? {
         id: status.model_path, name: status.model_path.split('/').pop()!, category: 'text',
@@ -232,13 +239,18 @@ export default function ChatView({ persona }: { persona?: PersonaSnapshot } = {}
   }, [messages]);
 
   async function selectModel(model: LocalModel, adapter: AdapterCard | null = null) {
+    if (loadingModel) return;
+    chatAbort.current?.abort();
     setPickerOpen(false);
     setLoadingModel(true);
     try {
-      await startEngine(model.path, model.engine, adapter?.path, contextWindows[model.path]);
+      const status = await startEngine(
+        model.path, model.engine, adapter?.path, contextWindows[model.path]);
+      setLoadedContext(status);
       setContextLength(contextWindows[model.path]?.toString() ?? '');
       setActiveModel(model);
       setActiveAdapter(adapter?.path ?? null);
+      await inference.refresh();
     } catch (e) {
       alert(`Failed to load model: ${e}`);
     } finally {
@@ -1011,18 +1023,36 @@ export default function ChatView({ persona }: { persona?: PersonaSnapshot } = {}
               {rawMode && <span className="text-xs">Direct-model diagnostic mode</span>}
               {activeModel?.engine === 'gguf' && <div className="text-xs flex flex-col gap-1">
                 <label htmlFor="context-length">Model context window · applies when reloaded</label>
-                <input id="context-length" className="input" type="number" min="256" step="256"
+                <input id="context-length" className="input" type="number" min="256" step="1"
+                  max={loadedContext.context_profile?.native_limit ?? undefined}
                   placeholder={`Auto · ${contextUsage?.limit ?? 'model and memory'}`} value={contextLength}
                   onChange={e => setContextLength(e.target.value)} />
                 <span className="faint">Larger windows use more memory. Cannot exceed the model’s supported limit.</span>
-                <button className="pill" disabled={generating || loadingModel || !contextLength}
+                <span role="status" className="faint">
+                  Loaded: {(loadedContext.context_limit ?? contextUsage?.limit)?.toLocaleString() ?? '—'} tokens
+                  {loadedContext.context_profile?.native_limit
+                    ? ` · Model maximum: ${loadedContext.context_profile.native_limit.toLocaleString()}` : ''}
+                </span>
+                <button className="pill" disabled={generating || loadingModel}
                   onClick={async () => {
                     setLoadingModel(true);
                     try {
-                      await startEngine(activeModel.path, activeModel.engine, activeAdapter, Number(contextLength));
-                      const windows = { ...contextWindows, [activeModel.path]: Number(contextLength) };
+                      const value = contextLength.trim() ? Number(contextLength) : undefined;
+                      const maximum = loadedContext.context_profile?.native_limit;
+                      if (value !== undefined && (!Number.isInteger(value) || value < 256
+                        || (maximum != null && value > maximum))) {
+                        throw new Error(`Choose a whole number from 256 to ${maximum?.toLocaleString() ?? 'the model maximum'}, or leave blank for Auto.`);
+                      }
+                      const status = await startEngine(
+                        activeModel.path, activeModel.engine, activeAdapter, value, true);
+                      setLoadedContext(status);
+                      const windows = { ...contextWindows };
+                      if (value === undefined) delete windows[activeModel.path];
+                      else windows[activeModel.path] = value;
                       setContextWindows(windows);
                       localStorage.setItem('uncloud.chat.contextWindows', JSON.stringify(windows));
+                      setNetworkError('');
+                      await inference.refresh();
                       setContextUsage(await countChatContext(contextMessages(messages, systemPrompt({ pictures: false, web: false, manner }), compactSummary, compactedThrough, rawMode)));
                     } catch (error) { setNetworkError(error instanceof Error ? error.message : String(error)); }
                     finally { setLoadingModel(false); }

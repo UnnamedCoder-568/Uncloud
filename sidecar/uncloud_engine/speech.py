@@ -49,7 +49,32 @@ REPLY_TIMEOUT = 300
 AUDIO_SUFFIXES = (".wav", ".mp3", ".flac", ".m4a", ".ogg", ".webm", ".aiff", ".aif")
 
 pool = Pool()
+_worker_models: dict[str, dict] = {}
 _clips_lock = threading.Lock()
+
+
+def _request(engine: str, request: dict, *, on_progress=None, timeout=None) -> dict:
+    python = interpreter(engine)
+    key = str(python)
+    worker = pool.get(python)
+    record = {'kind': 'Voice', 'path': request['folder'], 'engine': engine}
+    if _worker_models.get(key) != record:
+        _worker_models.pop(key, None)
+
+    def progress(done, total):
+        _worker_models[key] = record
+        if on_progress:
+            on_progress(done, total)
+
+    result = worker.request(request, on_progress=progress, timeout=timeout)
+    _worker_models[key] = record
+    return result
+
+
+def resident_models() -> list[dict]:
+    with pool._lock:
+        live = {key for key, worker in pool._workers.items() if worker.alive}
+    return [dict(record) for key, record in list(_worker_models.items()) if key in live]
 
 
 # -------------------------------------------------------------- environments
@@ -500,7 +525,7 @@ def _run(job: SpeechJob, engine: str, request: dict, finished) -> None:
         try:
             with keep_awake("speech"):
                 job.stage = "loading the voice"
-                result = pool.get(interpreter(engine)).request(request, on_progress=progress)
+                result = _request(engine, request, on_progress=progress)
             job.clip = finished(result).to_dict()
             job.status, job.stage = "done", ""
         except (WorkerError, ValueError, OSError) as exc:
@@ -520,7 +545,7 @@ def speak_reply(text: str, saved: str) -> Clip:
     request, label = _voice_request(kept.engine, kept.model_path, saved=saved)
     out = _unique(output_dir_for("voice/replies") / f"{_file_name(text)}.wav")
     request.update(op="speak", text=text, out=str(out), format="wav", bit_depth=16)
-    result = pool.get(interpreter(kept.engine)).request(request, timeout=REPLY_TIMEOUT)
+    result = _request(kept.engine, request, timeout=REPLY_TIMEOUT)
     return add_clip(Clip(id=uuid.uuid4().hex[:12], name=out.stem, path=result["path"],
                          kind="reply", engine=kept.engine, voice=label, text=text[:500],
                          duration=float(result.get("duration", 0)), created=time.time()))
@@ -540,6 +565,7 @@ def record_reply(path: str, text: str, voice: str) -> Clip:
 
 def stop() -> None:
     pool.stop_all()
+    _worker_models.clear()
 
 
 def resident_count() -> int:

@@ -16,6 +16,7 @@ import { inDesktop } from '../lib/platform';
 import AppearanceSection from '../components/AppearanceSection';
 import PrinterSoundSection from '../components/PrinterSoundSection';
 import InferenceDiagnostics from '../components/InferenceDiagnostics';
+import ResidentModelList from '../components/ResidentModelList';
 import { Check } from 'lucide-react';
 
 export default function SettingsView() {
@@ -224,28 +225,7 @@ export default function SettingsView() {
               <div className="min-w-0">
                 <h2 className="text-sm mb-1">Models in memory</h2>
                 {resident.anything ? (
-                  <ul className="text-xs text-[var(--text-dim)] font-mono leading-relaxed">
-                    {([
-                      ['Chat', resident.text_model],
-                      ['Image', resident.image_pipeline],
-                      ['Image (MLX)', resident.mflux_model],
-                      ['Image (assembled)', resident.flux2_profile],
-                      ['Video', resident.video_pipeline],
-                    ] as [string, string | null][])
-                      .filter(([, v]) => v)
-                      .map(([k, v]) => (
-                        <li key={k} className="truncate">
-                          <span className="text-[var(--text-faint)]">{k}: </span>
-                          {/* Whatever the engine says, read as a path: a value
-                              of an unexpected shape here took the whole
-                              application down rather than one line of a list. */}
-                          {String(v).split('/').pop()}
-                        </li>
-                      ))}
-                    {resident.speech_workers > 0 && <li>Voice: {resident.speech_workers} active</li>}
-                    {resident.music_jobs > 0 && <li>Music: {resident.music_jobs} active</li>}
-                    {resident.narration_jobs > 0 && <li>Narration: {resident.narration_jobs} active</li>}
-                  </ul>
+                  <ResidentModelList resident={resident} />
                 ) : (
                   <p className="text-xs text-[var(--text-faint)] max-w-xl">
                     Nothing loaded. Models are freed when you quit, but they stay

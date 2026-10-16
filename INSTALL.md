@@ -31,6 +31,11 @@ Windows 11 includes the WebView2 runtime. On Windows 10, install the
 [WebView2 Evergreen Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)
 only if Uncloud opens without a visible window.
 
+Windows packages include CPU and Vulkan GPU chat runtimes. Uncloud selects the
+GPU runtime when it detects a usable GPU through the installed graphics driver;
+otherwise it uses the CPU fallback. Settings → Models lists the selected text
+runtime device, allocated context window and other models currently in memory.
+
 ### Linux x64
 
 Download `Uncloud-Linux-x64.AppImage`, then:

@@ -2030,6 +2030,7 @@ class EngineStartBody(BaseModel):
     engine: str
     adapter_path: str | None = None
     context_length: int | None = Field(default=None, ge=256, le=1048576)
+    reload: bool = False
 
 
 @app.post("/api/engine/start", dependencies=[Depends(require_token)])
@@ -2054,12 +2055,14 @@ async def start_engine(body: EngineStartBody) -> dict:
         active = await engine_manager.start(
             body.model_path, body.engine, body.adapter_path,
             **({"context_length": body.context_length} if body.context_length is not None else {}),
+            **({'reload': True} if body.reload else {}),
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
-    return {"running": True, "port": active.port, "engine": active.engine}
+    return {**engine_manager.status(), "running": True, "port": active.port,
+            "engine": active.engine}
 
 
 @app.post("/api/engine/stop", dependencies=[Depends(require_token)])
@@ -2203,6 +2206,10 @@ async def _run_chat(run: ChatRun, body: ChatBody, active=None) -> None:
         from .chat_transport import client as chat_client
 
         client = chat_client()
+        from .generation_guard import ReasoningLoop
+
+        reasoning_loop = ReasoningLoop()
+        answer_started = False
         async with client.stream(
             "POST",
             f"{active.base_url}/v1/chat/completions",
@@ -2236,6 +2243,11 @@ async def _run_chat(run: ChatRun, body: ChatBody, active=None) -> None:
                     try:
                         frame = json.loads(data)
                         delta = (frame.get("choices") or [{}])[0].get("delta", {})
+                        if delta.get('content'):
+                            answer_started = True
+                        reasoning = delta.get('reasoning_content') or delta.get('reasoning')
+                        if isinstance(reasoning, str) and not answer_started:
+                            reasoning_loop.push(reasoning)
                         if any(delta.get(k) for k in ("content", "reasoning", "reasoning_content")):
                             run.timings.setdefault(
                                 "first_token_ms", (time.perf_counter() - run.started) * 1000

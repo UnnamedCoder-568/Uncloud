@@ -6,7 +6,7 @@ machine and talks to a private Python engine on localhost.
 
 Created by Aswin Ajith.
 
-> **Current release:** v0.4.6. Windows, Linux, and Apple-silicon macOS packages
+> **Current release:** v0.4.36. Windows, Linux, and Apple-silicon macOS packages
 > are intended for external testing and are not code-signed or notarised.
 
 ## Download

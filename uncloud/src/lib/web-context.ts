@@ -18,7 +18,11 @@ export async function fitWebContext(
     Math.max(1, Math.floor(original.limit / 4)));
   const reserve = replyBudget != null && replyBudget < original.limit ? replyBudget : automatic;
   const fits = (usage: ChatContextUsage) => usage.used != null && usage.used + reserve <= original.limit!;
-  if (fits(original)) return { evidence, usage: original, replyBudget: reserve };
+  // The fitting reserve is not the generation ceiling. Auto can use all space
+  // remaining after the final prompt; a saved manual ceiling is never raised.
+  const outputLimit = (usage: ChatContextUsage) => Math.min(
+    replyBudget ?? original.reply_limit ?? original.limit!, original.limit! - usage.used!);
+  if (fits(original)) return { evidence, usage: original, replyBudget: outputLimit(original) };
   const blocks = evidence.split(/\n\n+/);
   const excerpt = (fraction: number) => blocks.map(block => {
     const lines = block.split('\n');
@@ -38,5 +42,5 @@ export async function fitWebContext(
     if (fits(measured)) { low = fraction; selected = candidate; usage = measured; }
     else high = fraction;
   }
-  return { evidence: selected, usage, replyBudget: reserve };
+  return { evidence: selected, usage, replyBudget: outputLimit(usage) };
 }

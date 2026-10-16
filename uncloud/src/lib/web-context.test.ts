@@ -19,8 +19,15 @@ it('leaves evidence unchanged when the full request fits', async () => {
 });
 it('bounds a saved ceiling that exceeds the newly selected runtime window', async () => {
   const fitted = await fitWebContext('source', assemble, count, 4096);
-  expect(fitted.replyBudget).toBe(256);
+  expect(fitted.replyBudget).toBe(1024 - fitted.usage.used!);
   expect(fitted.usage.used! + fitted.replyBudget).toBeLessThanOrEqual(1024);
+});
+
+it('does not cap Auto generation to the fraction reserved while fitting evidence', async () => {
+  const fitted = await fitWebContext('source', assemble, async () => ({
+    used: 2000, limit: 131072, reply_limit: 131072, exact: true,
+  }));
+  expect(fitted.replyBudget).toBe(129072);
 });
 it('never drops conversation to make room for outside evidence', async () => {
   const full = (text: string): ChatMessage[] => [{ role: 'user', content: 'intent '.repeat(200) + text }];

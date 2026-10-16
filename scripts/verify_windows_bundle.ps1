@@ -35,11 +35,14 @@ if (-not $app) { throw 'Installed package does not include the Uncloud applicati
 $uvVersion = & $uv.FullName --version
 if ($uvVersion -notlike 'uv 0.12.13*') { throw "Unexpected bundled runtime: $uvVersion" }
 
-$server = Get-ChildItem -LiteralPath $installDir -Recurse -File -Filter 'llama-server.exe' | Select-Object -First 1
+$server = Get-ChildItem -LiteralPath $installDir -Recurse -File -Filter 'llama-server.exe' |
+    Where-Object { $_.Directory.Name -ne 'vulkan' } | Select-Object -First 1
 if (-not $server) { throw 'Installed package does not include the Windows chat runtime' }
 & $server.FullName --version
 if ($LASTEXITCODE -ne 0) { throw 'Bundled Windows chat runtime cannot start' }
-$env:UNCLOUD_LLAMA_SERVER = $server.FullName
+$gpuServer = Join-Path $server.Directory.FullName 'vulkan/llama-server.exe'
+if (-not (Test-Path -LiteralPath $gpuServer)) { throw 'Installed package does not include the Vulkan GPU chat runtime' }
+$env:UNCLOUD_LLAMA_RUNTIME_DIR = $server.Directory.FullName
 $env:USERPROFILE = $stateDir
 $appProcess = Start-Process -FilePath $app.FullName -PassThru
 try {

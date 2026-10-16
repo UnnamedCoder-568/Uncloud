@@ -10,6 +10,34 @@ from .config import output_dir_for
 _whisper: dict[str, Any] = {}
 _kokoro: dict[str, Any] = {}
 
+
+def resident_models() -> list[dict]:
+    rows = []
+    for kind, cache, instance in (
+        ('Transcription', _whisper, 'model'),
+        ('Transcription', _transformers_whisper, 'pipe'),
+        ('Text to voice', _kokoro, 'pipeline'),
+    ):
+        if cache.get(instance) is not None:
+            rows.append({'kind': kind, 'path': cache.get('path') or 'hexgrad/Kokoro-82M'})
+    return rows
+
+
+def unload() -> None:
+    import gc
+    import sys
+
+    _whisper.clear()
+    _transformers_whisper.clear()
+    _kokoro.clear()
+    gc.collect()
+    torch = sys.modules.get('torch')
+    if torch is not None:
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        elif torch.backends.mps.is_available():
+            torch.mps.empty_cache()
+
 KOKORO_VOICES = [
     "af_heart", "af_bella", "af_nicole", "af_sarah",
     "am_adam", "am_michael", "bf_emma", "bm_george",

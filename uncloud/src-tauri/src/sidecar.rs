@@ -405,10 +405,7 @@ pub fn spawn_sidecar(app: &AppHandle) -> Result<(Child, SidecarInfo), String> {
 
     #[cfg(target_os = "windows")]
     if let Ok(resources) = app.path().resource_dir() {
-        command.env(
-            "UNCLOUD_LLAMA_SERVER",
-            resources.join("llama/llama-server.exe"),
-        );
+        command.env("UNCLOUD_LLAMA_RUNTIME_DIR", resources.join("llama"));
     }
     if let Some(dist) = web_dist(app) {
         command.env("UNCLOUD_WEB_DIST", dist);

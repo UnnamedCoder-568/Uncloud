@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import os
 import socket
 import subprocess
@@ -14,9 +13,9 @@ import httpx
 
 from .context_profile import for_model
 from .inference_profile import load as load_inference_profile
-from .native_chat import server_path
+from .native_chat import host_fit_margin_mb, inspect_runtime, server_path
 
-LLAMA_SERVER_BIN = server_path()
+LLAMA_SERVER_BIN = os.environ.get('UNCLOUD_LLAMA_SERVER')
 
 
 def _free_port() -> int:
@@ -35,6 +34,8 @@ class ActiveEngine:
     context_limit: int = 8192
     model_profile: object = None
     inference_profile: dict = field(default_factory=dict)
+    context_details: dict = field(default_factory=dict)
+    runtime: dict = field(default_factory=dict)
     logs: deque = field(default_factory=lambda: deque(maxlen=80), repr=False)
 
     @property
@@ -51,11 +52,13 @@ class EngineManager:
 
     def __init__(self) -> None:
         self.active: ActiveEngine | None = None
+        self.loading: ActiveEngine | None = None
         self._lock = asyncio.Lock()
 
     async def start(
         self, model_path: str, engine: str, adapter_path: str | None = None,
         context_length: int | None = None,
+        reload: bool = False,
     ) -> ActiveEngine:
         async with self._lock:
             if engine == "mlx":
@@ -68,6 +71,7 @@ class EngineManager:
                 and self.active.engine == engine
                 and self.active.adapter_path == adapter_path
                 and self.active.process.poll() is None
+                and not reload
                 and (context_length is None or self.active.context_limit == context_length)
             ):
                 return self.active
@@ -75,10 +79,13 @@ class EngineManager:
             if context_length is not None:
                 native = profile.get("native_limit")
                 if (
-                    not isinstance(context_length, int) or context_length < 256
+                    isinstance(context_length, bool) or not isinstance(context_length, int)
+                    or context_length < 256
                     or (native and context_length > native)
                 ):
-                    raise ValueError("Context must fit the model's supported window.")
+                    raise ValueError(
+                        'Context must fit the supported window: a whole number from 256 '
+                        f"to {native or 'the native limit'}.")
                 profile = {**profile, "effective_limit": context_length}
                 if engine != "gguf" or not native:
                     raise ValueError("Context overrides require GGUF context metadata.")
@@ -89,10 +96,13 @@ class EngineManager:
             port = _free_port()
             model_profile, inference_profile = load_inference_profile(model_path, engine)
             from .inference_controls import discover
-            inference_profile["capabilities"] = discover(
-                model_path, engine, native=bool(LLAMA_SERVER_BIN or server_path()))
+            native = (LLAMA_SERVER_BIN or server_path()) if engine == 'gguf' else None
+            runtime = inspect_runtime(native)
+            automatic_context = engine == 'gguf' and context_length is None and runtime['auto_fit']
+            inference_profile["capabilities"] = discover(model_path, engine, native=bool(native))
             if engine == "gguf":
-                proc = self._spawn_llama_cpp(model_path, port, profile["effective_limit"])
+                proc = self._spawn_llama_cpp(
+                    model_path, port, None if automatic_context else profile["effective_limit"])
             elif engine == "mlx":
                 proc = self._spawn_mlx(model_path, port, adapter_path, profile["effective_limit"])
                 # The library's generic 512-token default is not a model limit.
@@ -111,10 +121,16 @@ class EngineManager:
                 port=port,
                 process=proc,
                 adapter_path=adapter_path,
-                context_limit=profile["effective_limit"],
+                context_limit=(profile.get('native_limit') or profile['effective_limit'])
+                              if automatic_context else profile['effective_limit'],
                 model_profile=model_profile,
                 inference_profile=inference_profile,
+                context_details={**profile, 'requested_limit': context_length,
+                                 'source': 'Native runtime memory fitting'
+                                 if automatic_context else profile.get('source', 'Model metadata')},
+                runtime={**runtime, 'executable': native},
             )
+            self.loading = active
             threading.Thread(target=self._drain_logs, args=(active,), daemon=True).start()
             try:
                 await self._wait_healthy(active)
@@ -129,12 +145,20 @@ class EngineManager:
                                 response.json().get("default_generation_settings", {}).get("n_ctx")
                             )
                             if isinstance(effective, int) and effective > 0:
-                                active.context_limit = min(active.context_limit, effective)
+                                active.context_limit = effective
+                            elif automatic_context:
+                                raise RuntimeError(
+                                    'The runtime did not report its fitted context window.')
                             predicted = response.json().get("default_generation_settings", {}).get(
                                 "params", {}).get("n_predict")
                             if isinstance(predicted, int) and predicted > 0:
                                 inference_profile["capabilities"].setdefault(
                                     "runtime_defaults", {})["max_tokens"] = predicted
+                            else:
+                                # Native -1 means unlimited generation. Bound the total reply
+                                # to the loaded window, without splitting thinking vs answer.
+                                inference_profile['capabilities'].setdefault(
+                                    'runtime_defaults', {})['max_tokens'] = active.context_limit
                             # Count this model's native boundary once at load.
                             # Never assume every tokenizer closes thinking in one token.
                             budget = inference_profile["capabilities"]["reasoning"].get("budget")
@@ -150,6 +174,9 @@ class EngineManager:
                                         "The native thinking boundary could not be counted.")
                                 budget["closing_tokens"] = len(token_ids)
                     except (httpx.HTTPError, ValueError, AttributeError):
+                        if automatic_context:
+                            raise RuntimeError(
+                                'Could not confirm the runtime context window.') from None
                         # Python/older servers need not expose native metadata.
                         cap = inference_profile["capabilities"]
                         reason = cap["reasoning"]
@@ -167,11 +194,14 @@ class EngineManager:
                                     "A native thinking limit could not be verified.")
             except BaseException:
                 self._stop_process(active)
+                self.loading = None
                 raise
+            self.loading = None
             self.active = active
             return active
 
-    def _spawn_llama_cpp(self, model_path: str, port: int, context_limit: int) -> subprocess.Popen:
+    def _spawn_llama_cpp(self, model_path: str, port: int,
+                         context_limit: int | None) -> subprocess.Popen:
         native = LLAMA_SERVER_BIN or server_path()
         if native:
             command = [
@@ -182,13 +212,17 @@ class EngineManager:
                 str(port),
                 "--host",
                 "127.0.0.1",
-                "-ngl",
-                "999",
-                "-c",
-                str(context_limit),
-                "--parallel",
-                "1",
             ]
+            options = inspect_runtime(native)
+            if context_limit is not None:
+                command += ['-c', str(context_limit)]
+            if options['auto_fit']:
+                command += ['--fit', 'on']
+                if not options['devices'] and (margin := host_fit_margin_mb()) is not None:
+                    command += ['--fit-target', str(margin)]
+            if options['context_stop']:
+                command += ['--no-context-shift']
+            command += ['--parallel', '1']
         else:
             try:
                 import llama_cpp  # noqa: F401
@@ -210,7 +244,7 @@ class EngineManager:
                 "--n_gpu_layers",
                 "999",
                 "--n_ctx",
-                str(context_limit),
+                str(context_limit or 8192),
             ]
         return subprocess.Popen(
             command,
@@ -295,14 +329,24 @@ class EngineManager:
         raise RuntimeError("Timed out waiting for the inference engine to become healthy.")
 
     def _stop_process(self, active: ActiveEngine) -> None:
+        process = active.process
+        if process.poll() is not None:
+            return
         try:
-            active.process.terminate()
-            active.process.wait(timeout=5)
-        except Exception:  # noqa: BLE001
-            with contextlib.suppress(Exception):
-                active.process.kill()
+            process.terminate()
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=5)
+        except ProcessLookupError:
+            pass
+        if process.poll() is None:
+            raise RuntimeError('The previous model could not be unloaded. No new model was loaded.')
 
     def stop(self) -> None:
+        if self.loading:
+            self._stop_process(self.loading)
+            self.loading = None
         if self.active:
             self._stop_process(self.active)
             self.active = None
@@ -318,9 +362,14 @@ class EngineManager:
             "adapter_path": self.active.adapter_path,
             "context_limit": self.active.context_limit,
             "context_profile": {
-                **for_model(self.active.model_path, self.active.engine),
+                **(getattr(self.active, 'context_details', {}) or for_model(
+                    self.active.model_path, self.active.engine)),
                 "effective_limit": self.active.context_limit,
+                'limited_by_memory': bool(getattr(self.active, 'context_details', {}).get(
+                    'native_limit') and self.active.context_limit < self.active.context_details[
+                        'native_limit']),
             },
+            'runtime': getattr(self.active, 'runtime', {}),
             "inference_profile": self.active.inference_profile,
             # So the interface can offer image attachment against a model that
             # can actually receive one, and say why when it cannot — rather

@@ -22,6 +22,8 @@ class Released:
     speech_workers: bool = False
     music_jobs: bool = False
     narration_jobs: bool = False
+    voice_models: bool = False
+    narration_model: bool = False
     browser: bool = False
     wake_lock: bool = False
 
@@ -35,6 +37,8 @@ class Released:
             "speech_workers": self.speech_workers,
             "music_jobs": self.music_jobs,
             "narration_jobs": self.narration_jobs,
+            "voice_models": self.voice_models,
+            "narration_model": self.narration_model,
             "browser": self.browser,
             "wake_lock": self.wake_lock,
             "anything": any(vars(self).values()),
@@ -50,8 +54,11 @@ def resident() -> dict:
     try:
         from .engines import engine_manager
 
-        if engine_manager.active:
+        if engine_manager.active and engine_manager.active.process.poll() is None:
             out["text_model"] = engine_manager.active.model_path
+        loading = getattr(engine_manager, 'loading', None)
+        if loading and loading.process.poll() is None:
+            out['text_loading'] = loading.model_path
     except Exception:  # noqa: BLE001
         pass
     try:
@@ -84,7 +91,8 @@ def resident() -> dict:
         # over as it stands sent a two-element list to an interface that reads
         # this as a filename, and Settings went blank for anyone who opened it
         # after generating an image.
-        loaded = getattr(image_engine, "_pipe_path", None)
+        loaded = (getattr(image_engine, "_pipe_path", None)
+                  if getattr(image_engine, '_pipe', None) is not None else None)
         out["image_pipeline"] = loaded[0] if isinstance(loaded, tuple) else loaded
     except Exception:  # noqa: BLE001
         pass
@@ -103,10 +111,39 @@ def resident() -> dict:
     try:
         from .video_engine import video_engine
 
-        out["video_pipeline"] = getattr(video_engine, "_loaded_path", None)
+        out["video_pipeline"] = (getattr(video_engine, "_loaded_path", None)
+                                 if getattr(video_engine, '_pipe', None) is not None else None)
     except Exception:  # noqa: BLE001
         pass
 
+    models = []
+    for key, kind in (('text_model', 'Chat'), ('image_pipeline', 'Image'),
+                      ('mflux_model', 'Image (MLX)'), ('flux2_profile', 'Image (assembled)'),
+                      ('video_pipeline', 'Video'), ('text_loading', 'Chat (loading)')):
+        if out.get(key):
+            models.append({'kind': kind, 'path': out[key]})
+            if key == 'text_model':
+                active = engine_manager.active
+                devices = getattr(active, 'runtime', {}).get('devices', [])
+                models[-1]['device'] = ('Apple GPU' if active.engine in ('mlx', 'mlx-vlm')
+                                        else f"GPU available: {', '.join(devices)}"
+                                        if devices else 'CPU')
+                models[-1]['context_limit'] = active.context_limit
+    if out['image_pipeline']:
+        loaded = getattr(image_engine, '_pipe_path', None)
+        if isinstance(loaded, tuple) and len(loaded) > 1 and loaded[1]:
+            models.append({'kind': 'Image text encoder', 'path': loaded[1]})
+    try:
+        from . import speech, voice_engine
+        from .narration_engine import narration_engine
+
+        models.extend(voice_engine.resident_models())
+        models.extend(speech.resident_models())
+        if narration_engine._model is not None and narration_engine._model_dir:
+            models.append({'kind': 'Narration', 'path': narration_engine._model_dir})
+    except Exception:  # noqa: BLE001 - a missing module must not hide other models
+        pass
+    out['models'] = models
     out["anything"] = any(v for v in out.values())
     return out
 
@@ -123,7 +160,7 @@ async def stop_all(*, close_browser: bool = True) -> Released:
     try:
         from .engines import engine_manager
 
-        if engine_manager.active:
+        if engine_manager.active or engine_manager.loading:
             engine_manager.stop()
             freed.text_model = True
     except Exception:  # noqa: BLE001
@@ -185,7 +222,19 @@ async def stop_all(*, close_browser: bool = True) -> Released:
         from .narration_engine import narration_engine
 
         freed.narration_jobs = narration_engine.cancel_all()
+        if narration_engine._model is not None:
+            narration_engine.unload()
+            freed.narration_model = True
     except Exception:  # noqa: BLE001
+        pass
+
+    try:
+        from . import voice_engine
+
+        if voice_engine.resident_models():
+            voice_engine.unload()
+            freed.voice_models = True
+    except Exception:  # noqa: BLE001 - continue releasing other modules
         pass
 
     if close_browser:

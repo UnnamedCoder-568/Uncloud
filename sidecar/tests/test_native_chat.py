@@ -22,10 +22,12 @@ def archive() -> bytes:
 def test_verified_runtime_installs_executable_and_adjacent_libraries(tmp_path, monkeypatch):
     data = archive()
     monkeypatch.setattr(native_chat, "SHA256", hashlib.sha256(data).hexdigest())
+    monkeypatch.setattr(native_chat, "GPU_SHA256", hashlib.sha256(data).hexdigest())
     monkeypatch.setattr(native_chat.urllib.request, "urlopen", lambda *a, **k: io.BytesIO(data))
     native_chat.install_windows_runtime(tmp_path, say=lambda _: None)
     assert (tmp_path / "llama-server.exe").read_bytes() == b"server"
     assert (tmp_path / "ggml.dll").read_bytes() == b"library"
+    assert (tmp_path / "vulkan/llama-server.exe").read_bytes() == b"server"
 
 
 def test_corrupt_runtime_is_rejected_before_installation(tmp_path, monkeypatch):

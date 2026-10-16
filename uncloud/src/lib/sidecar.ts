@@ -203,6 +203,10 @@ export interface EngineStatus {
    *  accepted and silently ignored. */
   supports_vision?: boolean;
   adapter_path?: string | null;
+  context_limit?: number;
+  context_profile?: { native_limit: number | null; effective_limit: number;
+    requested_limit?: number | null; source: string; limited_by_memory: boolean };
+  runtime?: { devices: string[]; executable?: string; auto_fit: boolean };
 }
 
 export async function getSettings() {
@@ -235,8 +239,11 @@ export async function listDownloads() {
 export async function cancelDownload(id: string) {
   return apiPost(`/api/downloads/${id}/cancel`);
 }
-export async function startEngine(model_path: string, engine: string, adapter_path?: string | null, context_length?: number) {
-  return apiPost<{ running: boolean; port: number; engine: string }>('/api/engine/start', { model_path, engine, adapter_path, context_length });
+export async function startEngine(model_path: string, engine: string, adapter_path?: string | null,
+  context_length?: number, reload = false) {
+  return apiPost<EngineStatus>('/api/engine/start', {
+    model_path, engine, adapter_path, context_length, ...(reload ? { reload } : {}),
+  });
 }
 export async function stopEngine() {
   return apiPost('/api/engine/stop');
@@ -1410,6 +1417,7 @@ export async function clearWeightCache() {
 }
 
 export interface ResidentModels {
+  models?: { kind: string; path: string; engine?: string; device?: string; context_limit?: number }[];
   text_model: string | null;
   image_pipeline: string | null;
   mflux_model: string | null;
