@@ -11,7 +11,7 @@ from collections.abc import Mapping
 from functools import lru_cache
 from pathlib import Path
 
-import httpx
+from .chat_transport import connection
 
 
 @lru_cache(maxsize=4)
@@ -96,13 +96,13 @@ async def count(active, messages: list[dict], inference: dict | None = None,
                         return None  # Do not invent counts for unknown modalities.
                 content = parts
             turns.append({"role": message["role"], "content": content})
-        async with httpx.AsyncClient(timeout=10) as client:
+        async with connection() as client:
             response = await client.post(
                 f"{active.base_url}/v1/responses/input_tokens",
                 json={"model": active.model_path, "input": turns,
                       **({'tools': tools} if tools else {}),
                       **({"enable_thinking": controls["enable_thinking"]}
-                         if "enable_thinking" in controls else {})},
+                         if "enable_thinking" in controls else {})}, timeout=10,
             )
             if not response.is_success:
                 return None
@@ -110,13 +110,13 @@ async def count(active, messages: list[dict], inference: dict | None = None,
             return value if isinstance(value, int) else None
     if active.engine != "gguf":
         return None
-    async with httpx.AsyncClient(timeout=10) as client:
+    async with connection() as client:
         # Current llama.cpp counts the fully rendered chat template here.
         response = await client.post(
             f"{active.base_url}/v1/chat/completions/input_tokens",
             json={"messages": messages, **({'tools': tools} if tools else {}),
                   **({"chat_template_kwargs": controls.get('chat_template_kwargs')}
-                     if controls.get('chat_template_kwargs') else {})},
+                     if controls.get('chat_template_kwargs') else {})}, timeout=10,
         )
         if response.is_success:
             data = response.json()
@@ -132,13 +132,13 @@ async def count(active, messages: list[dict], inference: dict | None = None,
             f"{active.base_url}/apply-template",
             json={"messages": messages, **({'tools': tools} if tools else {}),
                   **({"chat_template_kwargs": controls.get('chat_template_kwargs')}
-                     if controls.get('chat_template_kwargs') else {})},
+                     if controls.get('chat_template_kwargs') else {})}, timeout=10,
         )
         template.raise_for_status()
         prompt = template.json()["prompt"]
         tokens = await client.post(
             f"{active.base_url}/tokenize",
-            json={"content": prompt, "add_special": False, "parse_special": True},
+            json={"content": prompt, "add_special": False, "parse_special": True}, timeout=10,
         )
         tokens.raise_for_status()
         return len(tokens.json()["tokens"])

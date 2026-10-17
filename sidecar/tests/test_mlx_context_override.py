@@ -19,8 +19,14 @@ def test_mlx_override_reloads_with_requested_native_window(monkeypatch, engine):
     events = []
     old = SimpleNamespace(model_path='old', process=SimpleNamespace(poll=lambda: None))
     manager.active = old
+    monkeypatch.setattr(engines, '_free_port', lambda: 12345)
     monkeypatch.setattr(manager, '_stop_process', lambda active: events.append('unload'))
     monkeypatch.setattr(manager, '_wait_healthy', AsyncMock())
+    async def prepare(active):
+        assert manager.active is None and manager.loading is active
+        events.append('initialized')
+        return {'ready': True}
+    monkeypatch.setattr('uncloud_engine.inference_ready.prepare', prepare)
 
     def spawn(*args):
         assert events == ['unload']
@@ -31,6 +37,10 @@ def test_mlx_override_reloads_with_requested_native_window(monkeypatch, engine):
     active = asyncio.run(manager.start('/checkpoint', engine, context_length=65536))
     assert active.context_limit == 65536
     assert active.context_details['requested_limit'] == 65536
+    assert events == ['unload', 'initialized']
+    assert active.runtime['initialization']['ready'] is True
+    assert asyncio.run(manager.start('/checkpoint', engine, context_length=65536)) is active
+    assert events == ['unload', 'initialized']  # A resident model is not warmed per chat.
 
 
 def test_override_above_native_limit_never_unloads_current_model(monkeypatch):

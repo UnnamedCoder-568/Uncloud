@@ -1,4 +1,6 @@
 """One loopback connection pool for chat, closed with the sidecar."""
+from contextlib import asynccontextmanager
+
 import httpx
 
 _client: httpx.AsyncClient | None = None
@@ -9,6 +11,12 @@ def client() -> httpx.AsyncClient:
     if _client is None or _client.is_closed:
         _client = httpx.AsyncClient(timeout=httpx.Timeout(None, connect=10), trust_env=False)
     return _client
+
+
+@asynccontextmanager
+async def connection():
+    """Borrow the engine pool; a context check must not close chat's client."""
+    yield client()
 
 
 async def close() -> None:

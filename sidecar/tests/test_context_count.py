@@ -1,12 +1,22 @@
 import asyncio
 import json
 from collections import UserDict
+from contextlib import asynccontextmanager
 from types import SimpleNamespace
 
 import httpx
 import pytest
 
 from uncloud_engine import context_count
+
+
+@pytest.fixture(autouse=True)
+def isolated_connection(monkeypatch):
+    @asynccontextmanager
+    async def connection():
+        async with httpx.AsyncClient() as client:
+            yield client
+    monkeypatch.setattr(context_count, 'connection', connection)
 
 
 @pytest.mark.parametrize(
@@ -43,7 +53,7 @@ def test_gguf_native_counter_accepts_zero_without_falling_back(monkeypatch):
 
     factory = httpx.AsyncClient
     monkeypatch.setattr(
-        context_count.httpx,
+        httpx,
         "AsyncClient",
         lambda **kwargs: factory(transport=httpx.MockTransport(handler), **kwargs),
     )
@@ -66,7 +76,7 @@ def test_idle_compacted_memory_counts_an_empty_draft_and_scoped_history_tool(mon
         return httpx.Response(200, json={'input_tokens': 123})
 
     client = httpx.AsyncClient
-    monkeypatch.setattr(context_count.httpx, 'AsyncClient',
+    monkeypatch.setattr(httpx, 'AsyncClient',
                         lambda **kwargs: client(transport=httpx.MockTransport(handle), **kwargs))
     active = SimpleNamespace(engine='gguf', base_url='http://native', inference_profile={
         'capabilities': {'native_tools': True, 'fields': [], 'reasoning': {'levels': ['auto']}}})
@@ -81,7 +91,7 @@ def test_input_counter_is_independent_of_an_oversized_reply_ceiling(monkeypatch)
         assert body['chat_template_kwargs'] == {'enable_thinking': False}
         return httpx.Response(200, json={'input_tokens': 15})
     client = httpx.AsyncClient
-    monkeypatch.setattr(context_count.httpx, 'AsyncClient',
+    monkeypatch.setattr(httpx, 'AsyncClient',
         lambda **kw: client(transport=httpx.MockTransport(handler), **kw))
     active = SimpleNamespace(engine='gguf', base_url='http://native', context_limit=1024,
         inference_profile={'capabilities': {'fields': ['max_tokens'], 'reasoning': {
@@ -101,7 +111,7 @@ def test_vlm_counts_native_prompt_and_preserves_thinking_and_images(monkeypatch)
         ]}]
         return httpx.Response(200, json={'input_tokens': 314})
     client = httpx.AsyncClient
-    monkeypatch.setattr(context_count.httpx, 'AsyncClient',
+    monkeypatch.setattr(httpx, 'AsyncClient',
         lambda **kw: client(transport=httpx.MockTransport(handler), **kw))
     active = SimpleNamespace(engine='mlx-vlm', base_url='http://native', model_path='/model',
                              inference_profile={'capabilities': {'fields': [], 'reasoning': {
@@ -134,7 +144,7 @@ def test_vlm_counts_native_tool_definitions_and_history(monkeypatch):
         return httpx.Response(200, json={'input_tokens': 517})
 
     client = httpx.AsyncClient
-    monkeypatch.setattr(context_count.httpx, 'AsyncClient',
+    monkeypatch.setattr(httpx, 'AsyncClient',
         lambda **kw: client(transport=httpx.MockTransport(handler), **kw))
     active = SimpleNamespace(engine='mlx-vlm', base_url='http://native', model_path='/model',
                              inference_profile={'capabilities': {'native_tools': True, 'fields': [],
@@ -158,7 +168,7 @@ def test_gguf_counts_same_tools_and_history_sent_to_inference(monkeypatch, chart
         return httpx.Response(200, json={'input_tokens': 400})
 
     client = httpx.AsyncClient
-    monkeypatch.setattr(context_count.httpx, 'AsyncClient',
+    monkeypatch.setattr(httpx, 'AsyncClient',
         lambda **kw: client(transport=httpx.MockTransport(handler), **kw))
     assert asyncio.run(context_count.count(
         active, messages, web_tools=True, chart_tools=chart_tools)) == 400

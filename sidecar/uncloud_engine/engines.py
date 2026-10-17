@@ -198,6 +198,9 @@ class EngineManager:
                                 reason["levels"] = ["auto"]
                                 reason["explanation"] = (
                                     "A native thinking limit could not be verified.")
+                from .inference_ready import prepare
+
+                active.runtime['initialization'] = await prepare(active)
             except BaseException:
                 self._stop_process(active)
                 self.loading = None

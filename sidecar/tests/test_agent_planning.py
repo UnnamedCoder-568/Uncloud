@@ -38,7 +38,8 @@ def test_planning_reply_ceiling_fits_the_native_context_without_mutating_prefere
     monkeypatch.setattr(context_count, 'count', AsyncMock(return_value=200))
     sent = []
 
-    async def post(self, url, json):
+    async def post(self, url, json, timeout):
+        assert timeout == 900
         sent.append(json)
         return httpx.Response(200, request=httpx.Request('POST', url), json={
             'choices': [{'message': {'content': __import__('json').dumps(PLAN)}}],
@@ -79,7 +80,8 @@ def test_prose_is_repaired_without_executing_tools(monkeypatch):
     monkeypatch.setattr(module, "_active_tool_specs", lambda: SPECS)
     requests = []
 
-    async def post(self, url, json):
+    async def post(self, url, json, timeout):
+        assert timeout == 900
         requests.append(json)
         content = (
             "The user wants a PDF on the desktop."
@@ -111,7 +113,8 @@ def test_reasoning_without_an_answer_is_not_executed(monkeypatch):
     monkeypatch.setattr(module, "_active_profile", lambda: None)
     monkeypatch.setattr(module, "_active_tool_specs", lambda: SPECS)
 
-    async def post(self, url, json):
+    async def post(self, url, json, timeout):
+        assert timeout == 900
         return httpx.Response(
             200,
             request=httpx.Request("POST", url),
@@ -153,7 +156,8 @@ def test_coding_plan_applies_real_files_only_after_approval(tmp_path, monkeypatc
                    "dependencies": ["write"]},
     }}
 
-    async def post(self, url, json):
+    async def post(self, url, json, timeout):
+        assert timeout == 900
         return httpx.Response(200, request=httpx.Request("POST", url), json={
             "choices": [{"message": {"content": __import__("json").dumps(plan)}}],
         })
@@ -202,7 +206,8 @@ def test_code_example_is_not_reported_as_an_executed_coding_task(monkeypatch):
     runner = AsyncMock()
     monkeypatch.setattr(module, "run_tool", runner)
 
-    async def post(self, url, json):
+    async def post(self, url, json, timeout):
+        assert timeout == 900
         return httpx.Response(200, request=httpx.Request("POST", url), json={
             "choices": [{"message": {"content": "```python\ndef square(n): return n * n\n```"}}],
         })

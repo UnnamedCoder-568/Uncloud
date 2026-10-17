@@ -7,6 +7,7 @@ from typing import Any
 
 import httpx
 
+from ..chat_transport import connection
 from ..core import Effort, Plan
 from ..core import translate as translate_effort
 from ..engines import engine_manager
@@ -214,7 +215,7 @@ class Orchestrator:
         if "response_format" in fields and "response_format" not in payload:
             payload["response_format"] = {"type": "json_object"}
         try:
-            async with httpx.AsyncClient(timeout=900) as client:
+            async with connection() as client:
                 for attempt in range(2):
                     if getattr(active, "context_limit", 0):
                         from ..context_count import count
@@ -237,7 +238,7 @@ class Orchestrator:
                             payload.get("max_tokens") or available, available)
                     resp = await client.post(
                         f"{active.base_url}/v1/chat/completions",
-                        json={**payload, "messages": messages},
+                        json={**payload, "messages": messages}, timeout=900,
                     )
                     resp.raise_for_status()
                     choice = resp.json()["choices"][0]
