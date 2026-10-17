@@ -1143,7 +1143,7 @@ export default function ChatView({ persona }: { persona?: PersonaSnapshot } = {}
                  onKeyDown={(e) => { if (e.key === 'Escape') { e.currentTarget.closest('details')?.removeAttribute('open'); } }}>
               <span className="text-xs text-[var(--text-dim)]">Chat settings</span>
               {rawMode && <span className="text-xs">Direct-model diagnostic mode</span>}
-              {activeModel?.engine === 'gguf' && <div className="text-xs flex flex-col gap-1">
+              {activeModel && ['gguf', 'mlx', 'mlx-vlm'].includes(activeModel.engine) && <div className="text-xs flex flex-col gap-1">
                 <label htmlFor="context-length">Model context window · applies when reloaded</label>
                 <input id="context-length" className="input" type="number" min="256" step="1"
                   max={loadedContext.context_profile?.native_limit ?? undefined}
@@ -1377,10 +1377,20 @@ export default function ChatView({ persona }: { persona?: PersonaSnapshot } = {}
             <summary>Compacted memory</summary>
             <div>{compactSummary}</div>
           </details>}
-          {contextUsage?.limit && <span role="status" title="Tokens in this conversation, counted with the selected model's chat template">
-            {contextUsage.used == null ? 'Context unavailable' :
-              `${contextUsage.used.toLocaleString()} / ${contextUsage.limit.toLocaleString()} tokens`}
-          </span>}
+          {contextUsage?.limit && <details className="chat-context-memory">
+            <summary aria-label="Context token details" role="status">
+            {contextUsage.used == null ? (!messages.length && !input.trim()
+              ? `${contextUsage.limit.toLocaleString()} context capacity` : 'Context count unavailable') :
+              `${contextUsage.used.toLocaleString()} / ${contextUsage.limit.toLocaleString()} context tokens`}
+            </summary>
+            <div>Working context, counted with the loaded model’s native tokenizer and template.
+              Includes retained messages, tool definitions and results, file text, and compacted memory.
+              This is not a lifetime usage counter. Earlier archived messages remain saved for recall.
+              <p className="mt-2">Loaded window: {contextUsage.limit.toLocaleString()} tokens.
+                {loadedContext.context_profile?.native_limit ? ` Model maximum: ${loadedContext.context_profile.native_limit.toLocaleString()}.` : ''}
+                {' '}Replies also need space inside this window.</p>
+            </div>
+          </details>}
           {!rawMode && compactAvailable(contextUsage?.used ?? null, contextUsage?.limit ?? null) &&
             <button onClick={() => void compactConversation()} disabled={compacting || generating}
                     title="Preserve important earlier context in an inspectable summary">
@@ -1429,7 +1439,7 @@ export default function ChatView({ persona }: { persona?: PersonaSnapshot } = {}
         </div>
       ) : (
         <>
-          <div ref={scrollRef} className="flex-1 chassis-scroll" style={{ padding: '8px 24px 0' }}>
+          <div ref={scrollRef} className="flex-1 chassis-scroll chat-transcript">
             <div className="chat-message-list column flex flex-col pt-4 pb-12">
             {messages.map((m, i) => (
               <div key={`${conversationId ?? 'draft'}:${i}`} className={`chat-message ${m.role === 'user' ? 'chat-message-user' : 'chat-message-assistant'}`}>

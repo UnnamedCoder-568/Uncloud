@@ -33,3 +33,19 @@ def test_mlx_context_comes_from_nested_text_config(tmp_path):
     assert profile['native_limit'] == 32768
     assert profile['effective_limit'] == 32768
     assert profile['source'] == 'Model config.json'
+
+
+def test_hybrid_window_counts_only_declared_growing_cache_layers(tmp_path):
+    config = {'text_config': {'max_position_embeddings': 262144,
+        'num_hidden_layers': 32, 'num_attention_heads': 16,
+        'num_key_value_heads': 4, 'head_dim': 256,
+        'layer_types': ['linear_attention'] * 3 + ['full_attention']}}
+    # A malformed layer list must keep the conservative all-layer estimate.
+    (tmp_path / 'config.json').write_text(json.dumps(config))
+    conservative = describe(str(tmp_path), 'mlx-vlm', 16)['effective_limit']
+    config['text_config']['layer_types'] *= 8
+    (tmp_path / 'config.json').write_text(json.dumps(config))
+    describe.cache_clear()
+    hybrid = describe(str(tmp_path), 'mlx-vlm', 16)['effective_limit']
+    assert conservative < hybrid <= 262144
+    assert hybrid >= conservative * 3.9

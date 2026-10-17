@@ -62,6 +62,13 @@ def describe(model_path: str, engine: str, total_memory_gb: float) -> dict:
             if native:
                 source = "Model config.json"
             blocks = _positive_int(text.get("num_hidden_layers"))
+            layers = text.get('layer_types')
+            if (blocks and isinstance(layers, list) and len(layers) == blocks
+                    and set(layers) <= {'full_attention', 'linear_attention'}
+                    and 'full_attention' in layers):
+                # Recurrent linear-attention state does not grow per token.
+                # Only explicitly declared full-attention layers retain K/V.
+                blocks = layers.count('full_attention')
             heads = _positive_int(text.get("num_attention_heads"))
             kv_heads = _positive_int(text.get("num_key_value_heads")) or heads
             width = _positive_int(text.get("hidden_size"))
@@ -84,7 +91,11 @@ def describe(model_path: str, engine: str, total_memory_gb: float) -> dict:
                 if path.is_file()
                 else sum(p.stat().st_size for p in path.glob("*.safetensors"))
             ) / 1e9
-            kv_budget = max(0.5, (total_memory_gb - weights_gb - 3) * 0.5) * 1e9
+            # Native hybrid prefix caching may keep two 512 MiB snapshots.
+            # Reserve that separately from active K/V and working buffers.
+            cache_reserve_gb = (1024 ** 3) / 1e9 if engine == 'mlx-vlm' else 0
+            kv_budget = max(0.5, (total_memory_gb - weights_gb - 3 - cache_reserve_gb)
+                            * 0.5) * 1e9
             memory_limit = max(1024, int(kv_budget / kv_bytes_per_token) // 256 * 256)
             effective = min(effective, memory_limit)
         else:

@@ -2159,6 +2159,7 @@ class ChatRun:
     changed: asyncio.Event = field(default_factory=asyncio.Event, repr=False)
     timings: dict = field(default_factory=dict)
     started: float = field(default_factory=time.perf_counter, repr=False)
+    benchmark: bool = False
 
     def public(self, cursor: int = 0) -> dict:
         start = max(0, min(cursor, len(self.frames)))
@@ -2260,6 +2261,8 @@ async def _run_chat(run: ChatRun, body: ChatBody, active=None) -> None:
                         if isinstance(reasoning, str) and not answer_started:
                             reasoning_loop.push(reasoning)
                         if any(delta.get(k) for k in ("content", "reasoning", "reasoning_content")):
+                            run.timings['last_token_ms'] = (
+                                time.perf_counter() - run.started) * 1000
                             run.timings.setdefault(
                                 "first_token_ms", (time.perf_counter() - run.started) * 1000
                             )
@@ -2270,23 +2273,28 @@ async def _run_chat(run: ChatRun, body: ChatBody, active=None) -> None:
                     except (ValueError, TypeError, KeyError):
                         pass
         run.status = "done"
-        user_events.notify("completed", "chat", run.id, owner=run.owner, target="chat",
-                         run_id=run.id, conversation_id=body.conversation_id)
+        if not run.benchmark:
+            user_events.notify("completed", "chat", run.id, owner=run.owner, target="chat",
+                             run_id=run.id, conversation_id=body.conversation_id)
     except asyncio.CancelledError:
         run.status = "cancelled"
         raise
     except Exception as exc:  # noqa: BLE001 - delivered to the owning UI
         run.status = "error"
         run.error = str(exc).strip() or type(exc).__name__
-        user_events.notify("failed", "chat", run.id, owner=run.owner, target="chat",
-                         run_id=run.id, conversation_id=body.conversation_id)
+        if not run.benchmark:
+            user_events.notify("failed", "chat", run.id, owner=run.owner, target="chat",
+                             run_id=run.id, conversation_id=body.conversation_id)
     finally:
         run.timings["total_ms"] = (time.perf_counter() - run.started) * 1000
+        generated = run.timings.get('usage', {}).get('completion_tokens', 0)
+        elapsed = run.timings.get('last_token_ms', 0) - run.timings.get('first_token_ms', 0)
+        if generated > 1 and elapsed > 0:
+            run.timings['stream_tokens_per_second'] = (generated - 1) * 1000 / elapsed
         run.changed.set()
 
 
-@app.post("/api/chat/runs", dependencies=[Depends(require_token)])
-async def start_chat_run(body: ChatBody, request: Request) -> dict:
+def _check_chat_idle() -> None:
     from .compaction import is_running
     if is_running():
         raise HTTPException(status_code=409, detail='Conversation compaction is still running.')
@@ -2294,6 +2302,17 @@ async def start_chat_run(body: ChatBody, request: Request) -> dict:
         raise HTTPException(
             status_code=409, detail="A saved agent is running. Pause it in Chisel first."
         )
+    if _legacy_chat_active or any(
+        run.status == 'running' and (run.task is None or not run.task.done())
+        for run in _chat_runs.values()
+    ):
+        raise HTTPException(status_code=409,
+                            detail='The model is busy. Stop the current reply first.')
+
+
+@app.post("/api/chat/runs", dependencies=[Depends(require_token)])
+async def start_chat_run(body: ChatBody, request: Request) -> dict:
+    _check_chat_idle()
     active = engine_manager.active
     if (
         not active
@@ -2326,6 +2345,45 @@ async def start_chat_run(body: ChatBody, request: Request) -> dict:
     run = ChatRun(id=uuid.uuid4().hex, owner=principal_of(request))
     _chat_runs[run.id] = run
     run.task = asyncio.create_task(_run_chat(run, body, active), name=f"chat-{run.id[:8]}")
+    return run.public()
+
+
+@app.get('/api/models/performance', dependencies=[Depends(require_token)])
+async def model_performance() -> dict:
+    active = engine_manager.active
+    if active is None or active.process.poll() is not None:
+        return {'running': False}
+    from .performance import snapshot
+
+    return {'running': True, **await snapshot(active)}
+
+
+@app.post('/api/models/benchmark', dependencies=[Depends(require_token)])
+async def benchmark_model(request: Request) -> dict:
+    _check_chat_idle()
+    active = engine_manager.active
+    if active is None or active.process.poll() is not None:
+        raise HTTPException(status_code=409, detail='Load a text model before benchmarking.')
+    # One bounded request, native recommendations, no tools or user history.
+    # It uses the same transport as Chat and never starts another model.
+    body = ChatBody(messages=[{'role': 'user', 'content':
+        'Explain how the water cycle works in one short paragraph.'}], max_tokens=128)
+    run = ChatRun(id=uuid.uuid4().hex, owner=principal_of(request), benchmark=True)
+    _chat_runs[run.id] = run
+
+    async def measure():
+        await _run_chat(run, body, active)
+        from .performance import snapshot
+
+        status = run.status
+        run.status = 'running'
+        try:
+            run.timings['runtime'] = await snapshot(active)
+        finally:
+            run.status = status
+            run.changed.set()
+
+    run.task = asyncio.create_task(measure(), name=f'benchmark-{run.id[:8]}')
     return run.public()
 
 

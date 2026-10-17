@@ -438,7 +438,14 @@ body {
 
 /* Float controls in the normal gap between messages, without adding an empty
    row to the answer. Padding bridges the pointer path from text to controls. */
-.chat-message-list { gap: 36px; }
+.chat-transcript {
+  padding: 8px var(--space-6) 0;
+  /* Keep the reading column centered with the composer when a scrollbar
+     occupies space, rather than shifting only the transcript to the left. */
+  scrollbar-gutter: stable both-edges;
+}
+.chat-message-list { gap: 32px; }
+.chat-message-assistant + .chat-message-user { margin-top: 12px; }
 .chat-message { position: relative; min-width: 0; }
 .chat-message-user { align-self: flex-end; max-width: 80%; overflow-wrap: anywhere; }
 .chat-message-assistant { align-self: stretch; width: 100%; overflow-wrap: anywhere; }
@@ -447,6 +454,7 @@ body {
 @media (max-width: 767.98px) {
   /* Match the existing 44px touch buttons without overlapping the next turn. */
   .chat-message-list { gap: 56px; padding-bottom: 64px; }
+  .chat-message-assistant + .chat-message-user { margin-top: 0; }
 }
 /* Touch devices have no hover; keyboard focus also reveals the controls. */
 @media (hover: hover) and (pointer: fine) {

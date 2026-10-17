@@ -87,8 +87,8 @@ class EngineManager:
                         'Context must fit the supported window: a whole number from 256 '
                         f"to {native or 'the native limit'}.")
                 profile = {**profile, "effective_limit": context_length}
-                if engine != "gguf" or not native:
-                    raise ValueError("Context overrides require GGUF context metadata.")
+                if engine not in ('gguf', 'mlx', 'mlx-vlm') or not native:
+                    raise ValueError("Context overrides require native model context metadata.")
             if self.active:
                 self._stop_process(self.active)
                 self.active = None

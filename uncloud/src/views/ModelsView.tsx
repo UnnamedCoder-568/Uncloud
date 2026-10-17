@@ -17,11 +17,15 @@ import Panes from '../components/Panes';
 import ModelsLibrary from './ModelsLibrary';
 import TrainingView from './TrainingView';
 import QuantizeView from './QuantizeView';
+import BenchmarkView from './BenchmarkView';
+import LoadedModelsView from './LoadedModelsView';
 
-type Tab = 'library' | 'quantize' | 'train';
+type Tab = 'library' | 'loaded' | 'benchmark' | 'quantize' | 'train';
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'library', label: 'Library' },
+  { id: 'loaded', label: 'Loaded' },
+  { id: 'benchmark', label: 'Benchmark' },
   { id: 'quantize', label: 'Quantize' },
   { id: 'train', label: 'Train' },
 ];
@@ -53,6 +57,8 @@ export default function ModelsView() {
           className="h-full"
           panes={[
             { id: 'library', render: () => <ModelsLibrary /> },
+            { id: 'loaded', render: () => <LoadedModelsView /> },
+            { id: 'benchmark', render: () => <BenchmarkView /> },
             { id: 'quantize', render: () => <CapabilityGate names="quantize"><QuantizeView /></CapabilityGate> },
             { id: 'train', render: () => <CapabilityGate names="train"><TrainingView /></CapabilityGate> },
           ]}
