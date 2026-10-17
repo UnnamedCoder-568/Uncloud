@@ -79,6 +79,7 @@ jobs:
             --with 'cryptography>=44' \
             --with 'fastapi>=0.141.1' \
             --with 'httpx>=0.28.1' \
+            --with 'jinja2>=3.1.6,<4' \
             --with 'keyring>=25.6' \
             --with pillow \
             --with 'pydantic>=2.13.4' \
