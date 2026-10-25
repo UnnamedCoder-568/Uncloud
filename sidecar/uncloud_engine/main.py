@@ -2572,75 +2572,32 @@ async def generate_image(body: ImageGenerateBody, request: Request) -> dict:
 UPLOAD_DIR = CONFIG_DIR / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
-CHAT_DOCUMENT_TYPES = {
-    ".txt",
-    ".md",
-    ".markdown",
-    ".csv",
-    ".tsv",
-    ".json",
-    ".yaml",
-    ".yml",
-    ".py",
-    ".js",
-    ".jsx",
-    ".ts",
-    ".tsx",
-    ".css",
-    ".html",
-    ".xml",
-    ".toml",
-    ".ini",
-    ".log",
-    ".sql",
-    ".rs",
-    ".go",
-    ".java",
-    ".c",
-    ".h",
-    ".cpp",
-    ".docx",
-    ".xlsx",
-    ".pptx",
-}
-MAX_CHAT_DOCUMENT_BYTES = 10 * 1024 * 1024
-MAX_CHAT_DOCUMENT_CHARS = 120_000
-
-
 @app.post("/api/chat/attachments", dependencies=[Depends(require_token)])
 async def upload_chat_attachment(file: UploadFile = File(...)) -> dict:
     """Extract a bounded, user-visible document for a chat turn."""
-    from .core.integrations.documents import extract
+    from .chat_attachments import MAX_BYTES, MAX_CHARACTERS, extract_chat_document
 
-    name = Path(file.filename or "attachment.txt").name
+    name = Path((file.filename or "attachment.txt").replace('\\', '/')).name
     suffix = Path(name).suffix.lower()
-    if suffix not in CHAT_DOCUMENT_TYPES:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"{suffix or 'That file type'} cannot be read in Chat yet. "
-                "Use text, source code, Word, Excel, or PowerPoint."
-            ),
-        )
-    raw = await file.read(MAX_CHAT_DOCUMENT_BYTES + 1)
-    if len(raw) > MAX_CHAT_DOCUMENT_BYTES:
+    raw = await file.read(MAX_BYTES + 1)
+    if len(raw) > MAX_BYTES:
         raise HTTPException(status_code=413, detail="That file is larger than 10 MB")
     dest = UPLOAD_DIR / f"chat-{uuid.uuid4().hex[:12]}{suffix}"
     try:
         dest.write_bytes(raw)
-        text = extract(dest).strip()
+        text = await asyncio.to_thread(extract_chat_document, dest)
     except Exception as exc:  # noqa: BLE001 - convert parser detail to a useful 400
         raise HTTPException(status_code=400, detail=f"{name} could not be read: {exc}") from exc
     finally:
         with contextlib.suppress(OSError):
             dest.unlink()
-    if not text:
+    if not text.strip():
         raise HTTPException(status_code=400, detail=f"{name} contains no readable text")
-    clipped = len(text) > MAX_CHAT_DOCUMENT_CHARS
+    clipped = len(text) > MAX_CHARACTERS
     return {
         "name": name,
         "type": file.content_type or "application/octet-stream",
-        "text": text[:MAX_CHAT_DOCUMENT_CHARS],
+        "text": text[:MAX_CHARACTERS],
         "clipped": clipped,
     }
 

@@ -188,10 +188,11 @@ describe('Web handoff through the Chat interface', () => {
     expect(button.textContent).toBe('Copied');
   });
 
-  it('offers document attachments directly on the composer for a text model', async () => {
+  it.each(['report.pdf', 'report.csv', 'report.docx', 'report.xlsx', 'report.pptx', 'main.swift', 'README'])
+  ('attaches %s directly on the composer for a text model', async (name) => {
     const click = vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(() => {});
-    const file = new File(['Revenue,Value\nA,12'], 'report.csv', { type: 'text/csv' });
-    vi.mocked(uploadChatAttachment).mockResolvedValue({ name: 'report.csv', type: 'text/csv', text: 'Revenue,Value\nA,12', clipped: false });
+    const file = new File(['test upload'], name);
+    vi.mocked(uploadChatAttachment).mockResolvedValue({ name, type: 'text/plain', text: 'Revenue,Value\nA,12', clipped: false });
     replies('The file contains a revenue table.');
     await mount();
     const attach = container.querySelector<HTMLButtonElement>('[aria-label="Attach files"]')!;
@@ -199,12 +200,12 @@ describe('Web handoff through the Chat interface', () => {
     expect(attach.closest('details')).toBeNull();
     await act(() => attach.click());
     const picker = click.mock.instances.at(-1) as HTMLInputElement;
-    expect(picker?.accept).toContain('.csv');
-    expect(picker?.accept).not.toContain('.png');
+    expect(picker?.accept).toBe(''); // Native pickers must not hide readable files.
+    expect(picker?.multiple).toBe(true);
     Object.defineProperty(picker!, 'files', { value: [file] });
     await act(async () => picker!.dispatchEvent(new Event('change')));
     expect(uploadChatAttachment).toHaveBeenCalledExactlyOnceWith(file);
-    expect(container.querySelector('.composer-attachments')?.textContent).toContain('report.csv');
+    expect(container.querySelector('.composer-attachments')?.textContent).toContain(name);
     await send('Read this file.');
     expect(JSON.stringify(vi.mocked(streamChat).mock.calls[0][0])).toContain('Revenue,Value');
     click.mockRestore();
@@ -216,8 +217,70 @@ describe('Web handoff through the Chat interface', () => {
     await mount();
     await act(() => container.querySelector<HTMLButtonElement>('[aria-label="Attach files or images"]')!.click());
     const picker = click.mock.instances.at(-1) as HTMLInputElement;
-    expect(picker?.accept).toContain('.png');
-    expect(picker?.accept).toContain('.docx');
+    expect(picker?.accept).toBe('');
+    click.mockRestore();
+  });
+
+  it('continues attaching readable documents after one file fails', async () => {
+    const click = vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(() => {});
+    vi.mocked(uploadChatAttachment).mockRejectedValueOnce(new Error('This PDF is damaged.'))
+      .mockResolvedValueOnce({ name: 'good.pdf', type: 'application/pdf', text: 'Revenue: 12345', clipped: false });
+    await mount();
+    await act(() => container.querySelector<HTMLButtonElement>('[aria-label="Attach files"]')!.click());
+    const picker = click.mock.instances.at(-1) as HTMLInputElement;
+    Object.defineProperty(picker, 'files', { value: [new File(['bad'], 'bad.pdf'), new File(['good'], 'good.pdf')] });
+    await act(async () => picker.dispatchEvent(new Event('change')));
+    expect(uploadChatAttachment).toHaveBeenCalledTimes(2);
+    expect(container.querySelector('.composer-attachments')?.textContent).toContain('good.pdf');
+    expect(container.textContent).toContain('bad.pdf: This PDF is damaged.');
+    click.mockRestore();
+  });
+
+  it('restores attachments and the question when inference rejects the request before answering', async () => {
+    const click = vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(() => {});
+    vi.mocked(uploadChatAttachment).mockResolvedValue({ name: 'report.pdf', type: 'application/pdf',
+      text: 'Project code: ORBIT-37.', clipped: false });
+    vi.mocked(streamChat).mockImplementationOnce(async function* () {
+      yield* [];
+      throw new Error('Unsupported saved thinking setting');
+    }).mockImplementation(async function* () { yield { kind: 'text', text: 'ORBIT-37.' }; });
+    await mount();
+    await act(() => container.querySelector<HTMLButtonElement>('[aria-label="Attach files"]')!.click());
+    const picker = click.mock.instances.at(-1) as HTMLInputElement;
+    Object.defineProperty(picker, 'files', { value: [new File(['pdf'], 'report.pdf')] });
+    await act(async () => picker.dispatchEvent(new Event('change')));
+    await send('What is the project code?');
+    expect(container.querySelector('.composer-attachments')?.textContent).toContain('report.pdf');
+    expect(container.querySelector<HTMLTextAreaElement>('[aria-label="Message"]')!.value)
+      .toBe('What is the project code?');
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Send"]')!.click());
+    const retry = vi.mocked(streamChat).mock.calls[1][0];
+    expect(retry).toHaveLength(1);
+    expect(retry[0]).toMatchObject({ content: 'What is the project code?', files: [
+      expect.objectContaining({ text: 'Project code: ORBIT-37.' }),
+    ] });
+    expect(container.querySelector('.composer-attachments')).toBeNull();
+    expect(container.textContent).toContain('ORBIT-37.');
+    click.mockRestore();
+  });
+
+  it('waits for extraction before sending and labels a shortened document', async () => {
+    const click = vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(() => {});
+    let finish!: (value: Awaited<ReturnType<typeof uploadChatAttachment>>) => void;
+    vi.mocked(uploadChatAttachment).mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+    replies('The report contains revenue.');
+    await mount();
+    await act(() => container.querySelector<HTMLButtonElement>('[aria-label="Attach files"]')!.click());
+    const picker = click.mock.instances.at(-1) as HTMLInputElement;
+    Object.defineProperty(picker, 'files', { value: [new File(['report'], 'long.pdf')] });
+    await act(() => picker.dispatchEvent(new Event('change')));
+    await send('Read the report.');
+    expect(container.querySelector<HTMLButtonElement>('[aria-label="Send"]')!.disabled).toBe(true);
+    expect(streamChat).not.toHaveBeenCalled();
+    await act(() => finish({ name: 'long.pdf', text: 'Revenue: 12345', type: 'application/pdf', clipped: true }));
+    expect(container.querySelector('.composer-attachments')?.textContent).toContain('Excerpt');
+    await send('Read the report.');
+    expect(JSON.stringify(vi.mocked(streamChat).mock.calls[0][0])).toContain('Revenue: 12345');
     click.mockRestore();
   });
 

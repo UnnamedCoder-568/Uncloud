@@ -477,33 +477,42 @@ export default function ChatView({ persona }: { persona?: PersonaSnapshot } = {}
   const attachDocuments = useCallback(() => {
     const picker = document.createElement('input');
     picker.type = 'file';
-    picker.accept = `${visionOk ? '.png,.jpg,.jpeg,.webp,' : ''}.txt,.md,.markdown,.csv,.tsv,.json,.yaml,.yml,.py,.js,.jsx,.ts,.tsx,.css,.html,.xml,.toml,.ini,.log,.sql,.rs,.go,.java,.c,.h,.cpp,.docx,.xlsx,.pptx`;
+    // Let the local reader validate files. WebView file-type filters can hide
+    // readable documents/source files, particularly unregistered extensions.
     picker.multiple = true;
     picker.onchange = async () => {
       setAttachingFile(true);
+      setLastError(null);
+      const errors: string[] = [];
       try {
         for (const file of Array.from(picker.files ?? [])) {
-          if (/\.(png|jpe?g|webp)$/i.test(file.name)) {
-            if (!visionOk) {
-              throw new Error('This model cannot see images. Load a vision model from Models, '
-                + 'then attach the screenshot again.');
+          try {
+            if (file.size > 10 * 1024 * 1024) throw new Error('That file is larger than 10 MB.');
+            if (file.type.startsWith('image/') || /\.(png|jpe?g|webp|gif|bmp|tiff?|heic)$/i.test(file.name)) {
+              if (!visionOk) {
+                throw new Error('This model cannot see images. Load a vision model from Models, '
+                  + 'then attach the screenshot again.');
+              }
+              if (!/\.(png|jpe?g|webp)$/i.test(file.name)) {
+                throw new Error('Use PNG, JPEG or WebP for images.');
+              }
+              const url = await new Promise<string>((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(String(reader.result || ''));
+                reader.onerror = () => reject(new Error(`Could not read ${file.name}.`));
+                reader.readAsDataURL(file);
+              });
+              setAttached((current) => [...current, url]);
+              continue;
             }
-            if (file.size > 10 * 1024 * 1024) throw new Error('That image is larger than 10 MB.');
-            const url = await new Promise<string>((resolve, reject) => {
-              const reader = new FileReader();
-              reader.onload = () => resolve(String(reader.result || ''));
-              reader.onerror = () => reject(new Error(`Could not read ${file.name}.`));
-              reader.readAsDataURL(file);
-            });
-            setAttached((current) => [...current, url]);
-            continue;
+            const attachment = await uploadChatAttachment(file);
+            setAttachedFiles((current) => [...current, attachment]);
+          } catch (error) {
+            errors.push(`${file.name}: ${String(error).replace(/^Error:\s*/, '')}`);
           }
-          const attachment = await uploadChatAttachment(file);
-          setAttachedFiles((current) => [...current, attachment]);
         }
-      } catch (error) {
-        setLastError(String(error).replace(/^Error:\s*/, ''));
       } finally {
+        if (errors.length) setLastError(errors.join('\n'));
         setAttachingFile(false);
       }
     };
@@ -515,7 +524,7 @@ export default function ChatView({ persona }: { persona?: PersonaSnapshot } = {}
     // A picture on its own is a perfectly good question — "what is this?" is
     // implied — so an empty box with an attachment still sends.
     if ((!text.trim() && !attached.length && !attachedFiles.length)
-        || !activeModel || generating || compacting || loadingModel) return;
+        || !activeModel || generating || compacting || loadingModel || attachingFile) return;
     // Audio contexts may only be unlocked by a user gesture. Do that now,
     // before loading a model, but do not actually make noise until the first
     // visible reply text arrives.
@@ -922,6 +931,14 @@ export default function ChatView({ persona }: { persona?: PersonaSnapshot } = {}
           return copy;
         });
       } else {
+        // A rejected request must not consume the documents before the model
+        // has answered. Failed turns are deliberately excluded from context;
+        // return their attachments to the composer for an explicit retry.
+        if (!full.trim() && (files.length || images.length)) {
+          setAttachedFiles(current => [...files.filter(file => !current.includes(file)), ...current]);
+          setAttached(current => [...new Set([...images, ...current])]);
+          setInput(current => current || text);
+        }
         setMessages((m) => {
           const copy = [...m];
           const last = copy[copy.length - 1];
@@ -1078,7 +1095,9 @@ export default function ChatView({ persona }: { persona?: PersonaSnapshot } = {}
                                                     px-3 pr-6 rounded-lg border border-[var(--border)]
                                                     bg-[var(--bg-inset)] text-xs">
                 <FileText size={15} className="shrink-0 text-[var(--text-faint)]" />
-                <span className="truncate" title={file.name}>{file.name}</span>
+                <span className="truncate" title={file.clipped ? `${file.name} · Text excerpt (reading limit reached)` : file.name}>
+                  {file.name}{file.clipped && <span className="faint"> · Excerpt</span>}
+                </span>
                 <button
                   className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-[var(--bg-inset)]
                              border border-[var(--border)] flex items-center justify-center"
@@ -1112,7 +1131,7 @@ export default function ChatView({ persona }: { persona?: PersonaSnapshot } = {}
 
         <div className="composer-actions">
           <button onClick={attachDocuments} disabled={!activeModel || loadingModel || attachingFile}
-            title={visionOk ? 'Attach images, documents or source files' : 'Attach documents or source files. This model cannot see images.'}
+            title={visionOk ? 'Attach PDF, documents, text or images (10 MB each)' : 'Attach PDF, documents or text (10 MB each). Images need a vision model.'}
             aria-label={visionOk ? 'Attach files or images' : 'Attach files'} className="pill pill-icon composer-attach">
             {attachingFile ? <ActivityOrb state="working" size={20} label="Reading file…" /> : <Paperclip size={17} />}
           </button>
@@ -1361,8 +1380,8 @@ export default function ChatView({ persona }: { persona?: PersonaSnapshot } = {}
 
           <button
             onClick={generating || compacting ? stopGenerating : () => send(input, autoSpeak)}
-            disabled={!activeModel || loadingModel || (!generating && !compacting && !input.trim()
-              && !attached.length && !attachedFiles.length)}
+            disabled={!activeModel || loadingModel || (!generating && !compacting && (attachingFile
+              || (!input.trim() && !attached.length && !attachedFiles.length)))}
             title={generating || compacting ? 'Stop response' : 'Send'}
             aria-label={generating || compacting ? 'Stop response' : 'Send'}
             className="composer-send"
