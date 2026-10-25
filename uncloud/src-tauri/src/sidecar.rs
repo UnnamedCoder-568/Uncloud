@@ -291,6 +291,21 @@ pub fn install_engine(app: &AppHandle) -> Result<(), String> {
     if !code.success() {
         return Err(format!("`uv sync` exited with status {code}"));
     }
+    if cfg!(target_os = "macos") {
+        emit("Deploying the native chat runtime.");
+        let mut native = Command::new(venv_python(&dir));
+        native
+            .args(["-c", "from uncloud_engine.native_chat import install_native_runtime; install_native_runtime()"])
+            .current_dir(&dir)
+            .env("PATH", child_path_env());
+        hide_console(&mut native);
+        let status = native
+            .status()
+            .map_err(|e| format!("Could not install native chat: {e}"))?;
+        if !status.success() {
+            return Err("Native chat installation failed. Retry engine setup.".to_string());
+        }
+    }
     emit("Engine deployment complete. Running final checks.");
 
     // Optional voice engines are prepared through their feature gates. Installing

@@ -87,6 +87,10 @@ jobs:
             --with 'soundfile>=0.14.0' \
             --with 'uvicorn>=0.52.3' \
             --with 'websockets>=17.0.1' \
+            --with 'reportlab>=4.4,<5' \
+            --with 'pypdf>=6,<7' \
+            --with 'python-docx>=1.2,<2' \
+            --with 'openpyxl>=3.1,<4' \
             pytest -q sidecar/tests
           uv run --no-project --python 3.12 --with 'ruff>=0.13,<1' \
             ruff check sidecar/uncloud_engine sidecar/tests scripts

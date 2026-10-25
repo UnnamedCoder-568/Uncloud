@@ -1926,6 +1926,7 @@ class QuantizeBody(BaseModel):
     encoder_bits: int = 8
     kind: str = "image"
     adapter_path: str | None = None
+    allow_requantize: bool = False
     dest_dir: str | None = None
     lora_paths: list[str] = []
     lora_scales: list[float] = []
@@ -1933,9 +1934,19 @@ class QuantizeBody(BaseModel):
 
 @app.get("/api/quantize/bases", dependencies=[Depends(require_token)])
 def quantize_bases() -> dict:
-    from .quantize import BITS, base_models
+    from .quantize import BITS, GGUF_TYPES, base_models
 
-    return {"bits": list(BITS), "bases": base_models()}
+    return {"bits": list(BITS), "gguf_bits": list(GGUF_TYPES), "bases": base_models()}
+
+
+@app.post('/api/quantize/source', dependencies=[Depends(require_token)])
+def quantize_source(body: ModelPathBody) -> dict:
+    from .quantize import gguf_source
+
+    try:
+        return gguf_source(str(_existing(body.path)))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get("/api/quantize", dependencies=[Depends(require_token)])
@@ -1970,6 +1981,7 @@ async def quantize_start(body: QuantizeBody) -> dict:
             lora_scales=body.lora_scales,
             kind=body.kind,
             adapter_path=body.adapter_path,
+            allow_requantize=body.allow_requantize,
         )
     except (ValueError, FileNotFoundError, RuntimeError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -3833,8 +3845,8 @@ async def _execute_automation(item, update):
             async def progress(g):
                 await update(g.to_dict())
 
-            await asyncio.wait_for(orchestrator._execute(graph, progress), timeout=600)
-        if any(t.status == "failed" for t in graph.tasks.values()):
+            await asyncio.wait_for(orchestrator.run(graph, progress, effort='fast'), timeout=600)
+        if graph.failed_tasks():
             raise NeedsAttention(
                 "Some steps failed or require permission. Review saved progress before resuming."
             )
@@ -4087,7 +4099,7 @@ async def agent_ws(websocket: WebSocket) -> None:
         from .agent.questions import asking as asking_questions
         with agent_tools_mod.tool_session(), agent_approval.asking(ask), asking_questions(question):
             await orchestrator.run(graph, on_update, effort=effort)
-        failed = any(t.status == "failed" for t in graph.tasks.values())
+        failed = bool(graph.failed_tasks())
         user_events.run(run_id, owner, "failed" if failed else "done", graph.to_dict())
         user_events.notify("failed" if failed else "completed", "chisel", run_id,
                          owner=owner, run_id=run_id)
@@ -4126,12 +4138,19 @@ class ResumeAgentBody(BaseModel):
 
 @app.post("/api/agent/resume", dependencies=[Depends(require_token)])
 async def resume_agent(body: ResumeAgentBody, request: Request) -> dict:
+    from .agent.graph import EXPIRED_APPROVAL, PERMISSION_STOP
+
     owner = principal_of(request)
     with user_events.lock:
         record = user_events.data["runs"].get(body.run_id)
         if not record or record["owner"] != owner:
             raise HTTPException(status_code=404, detail="Unknown saved task")
-        if record["status"] != "interrupted" or not record.get("graph"):
+        original = record.get('graph') or {}
+        expired = original.get('halt_reason') == EXPIRED_APPROVAL and any(
+            task.get('status') == 'failed' and task.get('error') == EXPIRED_APPROVAL
+            and task.get('output') is None for task in original.get('tasks', {}).values())
+        if not original or not (record['status'] == 'interrupted'
+                                or record['status'] == 'failed' and expired):
             raise HTTPException(
                 status_code=409, detail="This task cannot be resumed from saved progress."
             )
@@ -4143,7 +4162,15 @@ async def resume_agent(body: ResumeAgentBody, request: Request) -> dict:
         raise HTTPException(status_code=409, detail="Load the planning model before resuming.")
     from .agent.orchestrator import _active_tool_specs, _graph_from_plan
     try:
-        graph = _graph_from_plan(saved, saved["goal"], TOOL_SPECS)
+        if not previously_waiting and any(
+            task.get('status') == 'in_progress' for task in saved['tasks'].values()
+        ):
+            raise ValueError(
+                'A step was interrupted during execution. Review its effects and start a '
+                'fresh task; it will not be repeated automatically.')
+        graph = _graph_from_plan(saved, saved["goal"], TOOL_SPECS,
+                                 literal_tasks={ident for ident, task in saved['tasks'].items()
+                                                if task.get('literal_args') is True})
         allowed = {spec["id"] for spec in _active_tool_specs()}
         for ident, task in graph.tasks.items():
             previous = saved["tasks"][ident]
@@ -4152,13 +4179,22 @@ async def resume_agent(body: ResumeAgentBody, request: Request) -> dict:
                     "A step was interrupted during execution. Review its effects and start a "
                     "fresh task; it will not be repeated automatically."
                 )
-            task.status = "pending" if previous["status"] == "in_progress" else previous["status"]
+            unexecuted = expired and previous['status'] == 'failed' \
+                and previous.get('output') is None \
+                and previous.get('error') in {EXPIRED_APPROVAL, PERMISSION_STOP}
+            task.status = ('pending' if previous['status'] == 'in_progress' or unexecuted
+                           else previous['status'])
             if task.status not in {"pending", "completed", "failed"}:
                 raise ValueError("Unknown saved task state")
             task.output, task.error = previous.get("output"), previous.get("error")
+            if task.status == 'pending':
+                task.error = None
+            task.recovered_by = previous.get('recovered_by', [])
             if task.status == "pending" and task.tool_id not in allowed:
                 raise ValueError("A remaining tool is no longer enabled. Review tool access first.")
         graph.inference = saved.get("inference", {})
+        graph.response = saved.get('response')
+        graph.context = saved.get('context', [])
     except (ValueError, KeyError) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     run_id = uuid.uuid4().hex
@@ -4183,7 +4219,7 @@ async def resume_agent(body: ResumeAgentBody, request: Request) -> dict:
             with keep_awake("agent"), agent_tools_mod.tool_session(), agent_approval.asking(ask), \
                     asking_questions(question):
                 await orchestrator.run(graph, progress, effort="fast")
-            failed = any(t.status == "failed" for t in graph.tasks.values())
+            failed = bool(graph.failed_tasks())
             user_events.run(run_id, owner, "failed" if failed else "done", graph.to_dict())
             user_events.notify(
                 "failed" if failed else "completed", "chisel", run_id, owner=owner, run_id=run_id

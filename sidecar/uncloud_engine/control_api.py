@@ -64,7 +64,7 @@ def install(app, events, manager, require_token, require_desktop, principal_of, 
 
     @app.post("/api/agent/context", dependencies=[Depends(require_token)])
     async def planning_context(body: PlanningContextBody):
-        from .agent.orchestrator import planning_messages
+        from .agent.orchestrator import planning_input
         from .context_count import count
 
         active = manager.active
@@ -72,8 +72,9 @@ def install(app, events, manager, require_token, require_desktop, principal_of, 
             raise HTTPException(status_code=409, detail="Load the selected model first.")
         try:
             values = validate(body.inference)
-            _, messages = planning_messages(body.goal, body.context, values)
-            used = await count(active, messages, values)
+            _, messages, tools = planning_input(active, body.goal, body.context, values)
+            used = await count(active, messages, values,
+                               **({'native_tools': tools} if tools is not None else {}))
             return {"used": used, "limit": active.context_limit}
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc

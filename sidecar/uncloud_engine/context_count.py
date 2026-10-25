@@ -42,7 +42,8 @@ def _count_mlx(model_path: str, messages: list[dict], template_kwargs: dict | No
 
 async def count(active, messages: list[dict], inference: dict | None = None,
                 *, web_tools: bool = False, history_tools: bool = False,
-                chart_tools: bool = False) -> int | None:
+                chart_tools: bool = False,
+                native_tools: list[dict] | None = None) -> int | None:
     from .inference_controls import apply
     from .tool_template import template_kwargs
     from .web_tools import chat_turns, definitions
@@ -53,7 +54,8 @@ async def count(active, messages: list[dict], inference: dict | None = None,
     # draft user turn in that case. This is accounting only, never inference.
     if messages and not any(message.get('role') == 'user' for message in messages):
         messages = [*messages, {'role': 'user', 'content': ''}]
-    tools = definitions(active, web_tools, history_tools, chart_tools)
+    tools = (native_tools if native_tools is not None
+             else definitions(active, web_tools, history_tools, chart_tools))
 
     # Input tokenization depends on the native template, not on sampling or
     # output ceilings. A stale reply preference must not disable the meter.

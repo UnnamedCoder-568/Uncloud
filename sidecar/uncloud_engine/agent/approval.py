@@ -26,9 +26,10 @@ from collections.abc import Awaitable, Callable
 from contextvars import ContextVar
 
 from ..core import ApprovalRequired, Decision, Gate, Mode, Request
+from .graph import EXPIRED_APPROVAL
 from .tools import current_gate
 
-#: An asker returns "yes", "no", "always" or "never".
+#: An asker returns "yes", "no", "always", "never", or the internal "expired" sentinel.
 AsyncAsker = Callable[[Request], Awaitable[str]]
 
 _asker: ContextVar[AsyncAsker | None] = ContextVar("agent_asker", default=None)
@@ -76,6 +77,9 @@ async def decide(request: Request, *, gate: Gate | None = None) -> Decision:
         answer = await asker(request)
         if gate.mode_for(request.category) is Mode.DENY:
             settled = Decision(False, Mode.DENY, "Permission was revoked while waiting", asked=True)
+        elif answer == 'expired':
+            settled = Decision(False, gate.mode_for(request.category),
+                               EXPIRED_APPROVAL, asked=True)
         else:
             settled = gate.answer(request, answer)
     return gate.settle(request, settled)

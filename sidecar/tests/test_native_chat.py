@@ -3,12 +3,71 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import io
+import subprocess
+import tarfile
 import zipfile
 from types import SimpleNamespace
 
 import pytest
 
 from uncloud_engine import native_chat, readiness
+
+
+def test_gpu_probe_recognizes_real_backend_device_names(monkeypatch):
+    devices = ('Available devices:\n  BLAS: Accelerate (0 MiB)\n'
+               '  MTL0: Apple M5 (18186 MiB)\n  Metal: Apple GPU\n'
+               '  CUDA0: NVIDIA GPU\n  Vulkan1: AMD GPU\n  SYCL0: Intel GPU\n')
+
+    def run(command, **kwargs):
+        return SimpleNamespace(returncode=0, stderr='', stdout=devices
+            if command[-1] == '--list-devices' else '--fit-ctx --fit on --no-context-shift')
+
+    monkeypatch.setattr(native_chat.subprocess, 'run', run)
+    native_chat._inspect.cache_clear()
+    try:
+        result = native_chat._inspect('/native/server', 0, 0)
+    finally:
+        native_chat._inspect.cache_clear()
+    assert [row.split(':')[0] for row in result['devices']] == [
+        'MTL0', 'Metal', 'CUDA0', 'Vulkan1', 'SYCL0']
+    assert result['auto_fit']
+
+
+@pytest.mark.parametrize('failure', ['timeout', 'device_exit'])
+def test_failed_cold_probe_is_retried_instead_of_cached_as_cpu_only(tmp_path, monkeypatch,
+                                                                 failure):
+    executable = tmp_path / 'server'
+    executable.touch()
+    calls = []
+
+    def run(command, **kwargs):
+        calls.append(command)
+        if failure == 'timeout' and len(calls) == 1:
+            raise subprocess.TimeoutExpired(command, 60)
+        if failure == 'device_exit' and len(calls) == 2:
+            return SimpleNamespace(returncode=1, stderr='GPU initialization failed', stdout='')
+        return SimpleNamespace(returncode=0, stderr='', stdout=(
+            '--fit-ctx --fit on --no-context-shift' if command[-1] == '--help'
+            else 'MTL0: Apple GPU'))
+
+    monkeypatch.setattr(native_chat.subprocess, 'run', run)
+    native_chat._inspect.cache_clear()
+    try:
+        assert not native_chat.inspect_runtime(str(executable))['devices']
+        assert native_chat.inspect_runtime(str(executable))['devices'] == ['MTL0: Apple GPU']
+    finally:
+        native_chat._inspect.cache_clear()
+
+
+def test_unsupported_engine_does_not_unload_resident_model():
+    from uncloud_engine import engines
+
+    manager = engines.EngineManager()
+    resident = SimpleNamespace(model_path='resident')
+    manager.active = resident
+    with pytest.raises(ValueError, match='launcher'):
+        asyncio.run(manager.start('unsupported', 'invented'))
+    assert manager.active is resident
 
 
 def archive() -> bytes:
@@ -37,6 +96,40 @@ def test_corrupt_runtime_is_rejected_before_installation(tmp_path, monkeypatch):
     with pytest.raises(RuntimeError, match="checksum"):
         native_chat.install_windows_runtime(tmp_path, say=lambda _: None)
     assert not list(tmp_path.iterdir())
+
+
+def test_mac_archive_is_verified_and_preserves_executable_and_libraries(tmp_path, monkeypatch):
+    data = io.BytesIO()
+    with tarfile.open(fileobj=data, mode='w:gz') as bundle:
+        for name, body in [('llama-server', b'server'), ('libllama.dylib', b'library')]:
+            entry = tarfile.TarInfo(f'llama-{native_chat.VERSION}/{name}')
+            entry.size = len(body)
+            entry.mode = 0o755
+            bundle.addfile(entry, io.BytesIO(body))
+    raw = data.getvalue()
+    monkeypatch.setattr(native_chat.sys, 'platform', 'darwin')
+    monkeypatch.setattr(native_chat.platform, 'machine', lambda: 'arm64')
+    monkeypatch.setitem(native_chat.MAC_SHA256, 'arm64', hashlib.sha256(raw).hexdigest())
+    monkeypatch.setattr(native_chat.urllib.request, 'urlopen', lambda *a, **k: io.BytesIO(raw))
+    native_chat.install_native_runtime(tmp_path, say=lambda _: None)
+    root = tmp_path / f'llama-{native_chat.VERSION}'
+    assert (root / 'llama-server').stat().st_mode & 0o111
+    assert (root / 'libllama.dylib').read_bytes() == b'library'
+    monkeypatch.setattr(native_chat, 'RUNTIME_DIR', tmp_path)
+    monkeypatch.delenv('UNCLOUD_LLAMA_SERVER', raising=False)
+    assert native_chat.server_path() == str(root / 'llama-server')
+
+
+def test_corrupt_mac_archive_cannot_replace_an_existing_runtime(tmp_path, monkeypatch):
+    root = tmp_path / f'llama-{native_chat.VERSION}'
+    root.mkdir()
+    (root / 'llama-server').write_bytes(b'working')
+    monkeypatch.setattr(native_chat.sys, 'platform', 'darwin')
+    monkeypatch.setattr(native_chat.platform, 'machine', lambda: 'arm64')
+    monkeypatch.setattr(native_chat.urllib.request, 'urlopen', lambda *a, **k: io.BytesIO(b'bad'))
+    with pytest.raises(RuntimeError, match='checksum'):
+        native_chat.install_native_runtime(tmp_path, say=lambda _: None)
+    assert (root / 'llama-server').read_bytes() == b'working'
 
 
 def test_windows_readiness_executes_bundled_server_without_python_binding(monkeypatch):

@@ -9,7 +9,7 @@ import sys
 import threading
 from pathlib import Path
 
-from .native_chat import install_windows_runtime, server_path
+from .native_chat import install_native_runtime, server_path
 
 ROOT = Path(__file__).resolve().parent.parent
 _LOCK = threading.Lock()
@@ -32,7 +32,8 @@ SPECS = {
     'quality': ('Quality narration', ['vibevoice'], False, '.venv-vibevoice-hq'),
     'chatterbox': ('Chatterbox speech', ['chatterbox'], False, '.venv-chatterbox'),
     'browser': ('Browser tools', ['playwright.sync_api'], False, None),
-    'tools': ('Files, web and documents', ['httpx', 'trafilatura'], False, None),
+    'tools': ('Files, web and documents',
+              ['httpx', 'trafilatura', 'reportlab', 'pypdf', 'docx', 'openpyxl'], False, None),
 }
 
 
@@ -59,7 +60,7 @@ def check(name: str) -> dict:
             except (OSError, subprocess.TimeoutExpired):
                 pass
         if not row['ready']:
-            row['detail'] = 'The Windows chat runtime needs installation or repair.'
+            row['detail'] = 'The native chat runtime needs installation or repair.'
         return row
     probe = f'import importlib; [importlib.import_module(m) for m in {modules!r}]'
     if name == 'browser':
@@ -102,8 +103,8 @@ def install(name: str, say) -> None:
         if not uv:
             raise RuntimeError('The bundled installer is missing. Reinstall Uncloud.')
         say(f"Installing {SPECS[name][0]}…")
-        if name == 'chat' and sys.platform == 'win32':
-            install_windows_runtime(say=say)
+        if name == 'chat' and sys.platform in {'win32', 'darwin'}:
+            install_native_runtime(say=say)
         elif name == 'music':
             from .music_engine import install_acestep
             install_acestep(say)

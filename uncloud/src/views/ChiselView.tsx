@@ -16,7 +16,9 @@ import { describeTalk, useTalk } from '../lib/useTalk';
 import { useSettings } from '../lib/useSettings';
 import { onHandoffSignal, takeHandoff } from '../lib/handoff';
 import { printerSound } from '../lib/printer-sound';
+import { formatToolOutput } from '../lib/tool-output';
 import Markdown from '../components/Markdown';
+import PendingInteractions from '../components/PendingInteractions';
 
 interface AgentTask {
   id: string;
@@ -27,11 +29,13 @@ interface AgentTask {
   status: 'pending' | 'in_progress' | 'completed' | 'failed';
   output: string | null;
   error: string | null;
+  recovered_by?: string[];
 }
 interface AgentGraph {
   goal: string;
   tasks: Record<string, AgentTask>;
   start_node_ids: string[];
+  response?: string | null;
 }
 
 function taskOrbState(toolId: string) {
@@ -46,11 +50,12 @@ function TaskOutput({ task }: { task: AgentTask }) {
   const [saved, setSaved] = useState(false);
   const output = task.output ?? '';
   if (!output) return null;
-  const shown = output.length > 12_000
-    ? `${output.slice(0, 12_000)}\n\n_(output clipped on screen)_` : output;
+  const formatted = formatToolOutput(output);
+  const shown = formatted.length > 12_000
+    ? `${formatted.slice(0, 12_000)}\n\n(output clipped on screen)` : formatted;
   return (
     <div className="mt-2 rounded-lg bg-[var(--bg-inset)] p-3 overflow-x-auto">
-      <Markdown>{shown}</Markdown>
+      <pre className="whitespace-pre-wrap break-words text-xs font-mono">{shown}</pre>
       <div className="mt-2 flex items-center gap-1 text-[10px] text-[var(--text-faint)]">
         <button className="pill h-7 px-2" onClick={async () => {
           await navigator.clipboard.writeText(output);
@@ -70,11 +75,12 @@ function TaskOutput({ task }: { task: AgentTask }) {
 function spokenOutcome(graph: AgentGraph): string {
   const tasks = Object.values(graph.tasks);
   if (!tasks.length) return 'I could not make a plan for that.';
-  const failed = tasks.filter((t) => t.status === 'failed');
+  const failed = tasks.filter((t) => t.status === 'failed' && !t.recovered_by?.length);
   const dependedOn = new Set(tasks.flatMap((t) => t.dependencies));
   const last = [...tasks].reverse().find((t) => !dependedOn.has(t.id) && t.output);
   const plain = (text: string) => text.replace(/[#*_`>|[\]]/g, ' ').replace(/\s+/g, ' ').trim();
-  const result = last?.output ? plain(last.output).slice(0, 400) : '';
+  const output = graph.response || last?.output;
+  const result = output ? plain(output).slice(0, 400) : '';
   if (failed.length) {
     return `Done, but ${failed.length} of ${tasks.length} steps failed. ${plain(failed[0].error ?? '')}`.trim();
   }
@@ -233,7 +239,10 @@ export default function ChiselView() {
       }
       if (msg.type === 'done') {
         setGraph(msg.graph);
-        setPhase('done');
+        const failed = (Object.values(msg.graph.tasks) as AgentTask[])
+          .filter(task => task.status === 'failed' && !task.recovered_by?.length);
+        setPhase(failed.length ? 'error' : 'done');
+        if (failed.length) setError('Some steps need attention. Review the results below.');
         printerSound.stop();
         finish(spokenOutcome(msg.graph));
       }
@@ -430,7 +439,7 @@ export default function ChiselView() {
               <div key={task.id} className="card p-4 flex gap-3">
                 <div className="pt-0.5">
                   {task.status === 'completed' && <CheckCircle2 size={16} className="text-emerald-400" />}
-                  {task.status === 'failed' && <XCircle size={16} className="text-rose-400" />}
+                  {task.status === 'failed' && <XCircle size={16} className={task.recovered_by?.length ? 'text-[var(--text-faint)]' : 'text-rose-400'} />}
                   {task.status === 'in_progress' && (
                     <ActivityOrb state={taskOrbState(task.tool_id)} label={`Working on ${task.description}`} />
                   )}
@@ -441,14 +450,22 @@ export default function ChiselView() {
                   <div className="text-[10px] font-mono text-[var(--text-faint)] mt-1 uppercase">{task.tool_id}</div>
                   <TaskOutput task={task} />
                   {task.error && <div className="text-[11px] text-rose-400 mt-2">{task.error}</div>}
+                  {!!task.recovered_by?.length && <div className="text-[11px] muted mt-1">Recovered in later steps.</div>}
                 </div>
               </div>
             ))}
           </div>
         )}
+        {graph?.response && <div className="max-w-[768px] mt-4"><Markdown>{graph.response}</Markdown></div>}
       </div>
 
       <div className="p-4 border-t border-[var(--border-soft)]">
+        <PendingInteractions />
+        {phase === 'running' && !orderedTasks.some(task => task.status === 'in_progress') &&
+          <div className="flex items-center gap-2 text-xs muted mb-3" role="status">
+            <ActivityOrb state="solving" label="Checking the next step" />
+            <span>Checking the next step…</span>
+          </div>}
         {loaded && <div className="flex justify-end gap-3 text-[10px] faint mb-2">
           {compactMemory && <details className="max-w-lg"><summary>Context memory</summary><pre className="whitespace-pre-wrap">{compactMemory}</pre></details>}
           {originalHandoff && <details className="max-w-lg"><summary>Original handoff</summary><pre className="whitespace-pre-wrap">{originalHandoff}</pre></details>}
@@ -464,7 +481,7 @@ export default function ChiselView() {
           {loaded ? (
             <>
               <span className="text-[var(--text-faint)]">Planning with</span>
-              <select aria-label="Chisel model" className="input text-xs max-w-xs" value={loaded} disabled={loading || phase !== 'idle'} onChange={(e) => { const m = textModels.find(x => x.path === e.target.value); if (m) loadModel(m); }}>
+              <select aria-label="Chisel model" className="input text-xs max-w-xs" value={loaded} disabled={loading || busy} onChange={(e) => { const m = textModels.find(x => x.path === e.target.value); if (m) loadModel(m); }}>
                 {!textModels.some(m => m.path === loaded) && <option value={loaded}>{loaded.split('/').pop()}</option>}
                 {textModels.map(m => <option key={m.id} value={m.path}>{m.name}</option>)}
               </select>

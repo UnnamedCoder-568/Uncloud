@@ -59,7 +59,7 @@ export default function ModelsView() {
             { id: 'library', render: () => <ModelsLibrary /> },
             { id: 'loaded', render: () => <LoadedModelsView /> },
             { id: 'benchmark', render: () => <BenchmarkView /> },
-            { id: 'quantize', render: () => <CapabilityGate names="quantize"><QuantizeView /></CapabilityGate> },
+            { id: 'quantize', render: () => <QuantizeView /> },
             { id: 'train', render: () => <CapabilityGate names="train"><TrainingView /></CapabilityGate> },
           ]}
         />

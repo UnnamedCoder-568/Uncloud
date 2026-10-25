@@ -65,6 +65,8 @@ class EngineManager:
                 from .text_runtime import for_mlx_model
 
                 engine = for_mlx_model(model_path)
+            if engine not in {'gguf', 'mlx', 'mlx-vlm'}:
+                raise ValueError(f"No text-inference launcher for engine: {engine}")
             if (
                 self.active
                 and self.active.model_path == model_path
@@ -232,10 +234,12 @@ class EngineManager:
             if options['context_stop']:
                 command += ['--no-context-shift']
             command += ['--parallel', '1']
+            if options.get('template_file'):
+                command += ['--jinja']
             if tool_template:
                 from .tool_template import cache_file
 
-                command += ['--jinja', '--chat-template-file', cache_file(tool_template)]
+                command += ['--chat-template-file', cache_file(tool_template)]
         else:
             try:
                 import llama_cpp  # noqa: F401

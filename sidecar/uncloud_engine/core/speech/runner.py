@@ -98,6 +98,16 @@ def _espeak_ready() -> None:
 
 
 # ------------------------------------------------------------------ loading
+def _load_piper(folder: Path, variant: str) -> dict:
+    from piper import PiperVoice
+
+    found = catalogue.piper_model(folder)
+    if found is None or (variant and variant != found[0].stem):
+        raise ValueError("Choose a complete Piper ONNX voice and matching configuration.")
+    model = PiperVoice.load(found[0])
+    return {"model": model, "rate": model.config.sample_rate}
+
+
 def _load_kokoro(folder: Path, device: str) -> dict:
     from kokoro import KModel
 
@@ -187,7 +197,9 @@ def _model(engine: str, folder: Path, variant: str, device: str) -> dict:
     import gc
 
     gc.collect()
-    if engine == "kokoro":
+    if engine == "piper":
+        state = _load_piper(folder, variant)
+    elif engine == "kokoro":
         state = _load_kokoro(folder, device)
     elif engine == "kokoro-mlx":
         from mlx_audio.tts.utils import load_model
@@ -206,6 +218,22 @@ def _model(engine: str, folder: Path, variant: str, device: str) -> dict:
 
 
 # ----------------------------------------------------------------- speaking
+def _say_piper(state: dict, piece: str, request: dict):
+    import numpy as np
+    from piper import SynthesisConfig
+
+    model = state["model"]
+    speaker = int(request.get("voice") or 0)
+    if not 0 <= speaker < model.config.num_speakers:
+        raise ValueError("This Piper model does not contain that speaker.")
+    speed = float(request.get("controls", {}).get("speed", 1.0))
+    if not 0.5 <= speed <= 2.0:
+        raise ValueError("Piper speed must be between 0.5 and 2.0.")
+    config = SynthesisConfig(speaker_id=speaker, length_scale=1.0 / speed)
+    parts = [chunk.audio_float_array for chunk in model.synthesize(piece, syn_config=config)]
+    return np.concatenate(parts) if parts else np.zeros(0, np.float32)
+
+
 def _say_kokoro(state: dict, folder: Path, piece: str, request: dict):
     import numpy as np
     from kokoro import KPipeline
@@ -333,7 +361,9 @@ def speak(request: dict) -> dict:
         variant = found[0].id
 
     import numpy as np
-    if engine == "kokoro-mlx":
+    if engine == "piper":
+        device = "cpu"
+    elif engine == "kokoro-mlx":
         device = "mlx"
     else:
         import torch
@@ -344,7 +374,9 @@ def speak(request: dict) -> dict:
     silence = np.zeros(int(GAP * rate), dtype=np.float32)
     audio_parts = []
     for i, piece in enumerate(pieces):
-        if engine == "kokoro":
+        if engine == "piper":
+            part = _say_piper(state, piece, request)
+        elif engine == "kokoro":
             part = _say_kokoro(state, folder, piece, request)
         elif engine == "kokoro-mlx":
             part = _say_kokoro_mlx(state, folder, piece, request)
@@ -391,9 +423,14 @@ def handle(request: dict) -> dict:
     if op == "ping":
         import importlib.util
 
-        return {"python": sys.version.split()[0], "engines": [
-            e.id for e in catalogue.ENGINES.values()
-            if all(importlib.util.find_spec(m) for m in e.modules)]}
+        available = []
+        for engine in catalogue.ENGINES.values():
+            try:
+                if all(importlib.util.find_spec(m) for m in engine.modules):
+                    available.append(engine.id)
+            except ModuleNotFoundError:
+                pass  # An optional engine's parent package is not installed here.
+        return {"python": sys.version.split()[0], "engines": available}
     if op == "unload":
         _loaded.clear()
         return {}
@@ -404,8 +441,8 @@ def handle(request: dict) -> dict:
     except (RuntimeError, NotImplementedError) as exc:
         # Some operations these models use have no Apple GPU kernel. Retried
         # once on the CPU: slower, and it finishes.
-        if request.get("engine") == "kokoro-mlx":
-            raise  # MLX has no Torch CPU fallback; preserve the actual failure.
+        if request.get("engine") in ("kokoro-mlx", "piper"):
+            raise  # These engines have no Torch CPU fallback; preserve the actual failure.
         import torch
 
         engine = request.get("engine", "chatterbox") if op == "speak" else "chatterbox"

@@ -14,6 +14,7 @@ import httpx
 from ..config import settings
 from ..core import Gate, Mode, Request, Risk
 from ..library import scan_library
+from .contracts import validate_args
 
 WORKSPACE_DIR = Path.home() / ".uncloud" / "workspace"
 WORKSPACE_DIR.mkdir(parents=True, exist_ok=True)
@@ -51,6 +52,10 @@ RESOLVED_AT_CALL_TIME: frozenset[str] = frozenset({"capability"})
 
 TOOL_RISK: dict[str, Risk] = {
     "shell": Risk.SHELL,
+    "python_exec": Risk.SHELL,
+    "runtime_info": Risk.READ,
+    "file_info": Risk.READ,
+    "document_write": Risk.WRITE,
     "app_open": Risk.DEVICE,
     "screen_capture": Risk.DEVICE,
     "computer_read": Risk.DEVICE,
@@ -185,13 +190,19 @@ def _summarise(tool_id: str, args: dict[str, Any]) -> tuple[str, dict]:
         return f"Control the focused application: {tool_id.removeprefix('computer_')}", dict(args)
     if tool_id == "shell":
         command = first("command")
-        return f"Run this command: {command}", {"command": command}
+        return f"Run this command: {command}", {
+            "command": command, "cwd": args.get('cwd', str(WORKSPACE_DIR))}
+    if tool_id == "python_exec":
+        return "Run Python code", {"code": first("code"), "outputs": args.get("output_paths", []),
+                                   "cwd": args.get("cwd", str(WORKSPACE_DIR))}
+    if tool_id == 'document_write':
+        return f"Write document {first('path')}", dict(args)
     if tool_id in ("fs_write", "fs_edit"):
         path = first("path")
         body = str(args.get("content") or args.get("new") or "")
         return (
             f"{'Write' if tool_id == 'fs_write' else 'Edit'} {path}",
-            {"path": path, "bytes": len(body), "preview": body[:600]},
+            {"path": path, "bytes": len(body.encode('utf-8')), "preview": body[:600]},
         )
     if tool_id == "app_open":
         target = first("target", "app")
@@ -222,7 +233,16 @@ TOOL_SPECS = [
     {"id": "ask_user",
      "description": "Ask the user for missing information and wait for their answer.",
      "args": ["question", "options"]},
-    {"id": "shell", "name": "Shell", "description": "Run a shell command.", "args": ["command"]},
+    {"id": "shell", "name": "Shell", "description": "Run a shell command.",
+     "args": ["command", "cwd (optional)"]},
+    {"id": "python_exec", "name": "Run Python", "description": "Execute Python; verify outputs.",
+     "args": ["code", "output_paths (optional)", "cwd (optional)"]},
+    {"id": "runtime_info", "name": "Local runtime", "description": "Python, modules, workspace.",
+     "args": []},
+    {"id": "file_info", "name": "Verify File", "description": "File size and format validation.",
+     "args": ["path"]},
+    {"id": "document_write", "name": "Write document", "description": "PDF, Word, Excel output.",
+     "args": ["path", "title (optional)", "paragraphs (optional)", "rows (optional)"]},
     {
         "id": "capability",
         "name": "Use a Capability",
@@ -312,7 +332,8 @@ TOOL_SPECS = [
         "something is done. Save instructions a person could follow, never code to run. "
         "'tools' optionally lists the tool ids it expects to use, so it can be offered only "
         "where they are available.",
-        "args": ["name", "description", "instructions", "tools (optional)"],
+        "args": ["name", "description", "instructions", "tools (optional)",
+                 "capabilities (optional)", "memory_gb (optional)"],
     },
     {
         "id": "browser_console",
@@ -564,6 +585,13 @@ TOOL_SPECS.extend(
 )
 
 
+FILE_TOOLS = {'fs_read', 'fs_write', 'fs_list', 'fs_edit', 'fs_glob', 'fs_grep', 'file_info',
+              'document_write'}
+for _spec in TOOL_SPECS:
+    if _spec['id'] in FILE_TOOLS:
+        _spec['args'].append('cwd (optional)')
+
+
 def _resolve_image_model(name: str | None):
     models = [m for m in scan_library(settings.models_dir) if m.category == "image" and m.ready]
     if not models:
@@ -618,6 +646,21 @@ async def run_tool(tool_id: str, args: dict[str, Any], *, origin: str = "") -> s
             raise PermissionError("This tool is disabled. Review Chisel tool access first.")
 
     check_enabled()
+    spec = next((spec for spec in TOOL_SPECS if spec['id'] == tool_id), None)
+    if spec is not None:
+        validate_args(spec, args)
+    if tool_id in {'shell', 'python_exec'}:
+        cwd = _resolve_path(args.get('cwd', '.'))
+        if not cwd.is_dir():
+            raise NotADirectoryError(str(cwd))
+        args = {**args, 'cwd': str(cwd)}
+    if tool_id in FILE_TOOLS:
+        cwd = _resolve_path(args.get('cwd', '.'))
+        if not cwd.is_dir():
+            raise NotADirectoryError(str(cwd))
+        # Resolve before approval so the displayed destination is the same one
+        # execution will use. _resolve_path still enforces workspace scope.
+        args = {**args, 'path': str(_resolve_path(str(cwd / args.get('path', '.'))))}
     # Integration actions are namespaced (`documents.read`) and carry their own
     # risk category, declared by the integration rather than listed here. They
     # go to `registry.perform`, which asks the gate exactly as this function
@@ -664,7 +707,7 @@ async def run_tool(tool_id: str, args: dict[str, Any], *, origin: str = "") -> s
     # Approval is consent, not OS isolation. These capabilities can escape any
     # project directory, so do not expose them through confined workspace mode.
     if not settings.agent_device_access and (
-        tool_id == "shell" or tool_id.startswith("computer_") or tool_id == "app_open"
+        tool_id in {"shell", "python_exec", "app_open"} or tool_id.startswith("computer_")
     ):
         raise PermissionError(
             "This action requires full device access. Workspace mode cannot "
@@ -683,7 +726,7 @@ async def run_tool(tool_id: str, args: dict[str, Any], *, origin: str = "") -> s
     # Settings may change while the task is paused for permission.
     check_enabled()
     if not settings.agent_device_access and (
-        tool_id == "shell" or tool_id.startswith("computer_") or tool_id == "app_open"
+        tool_id in {"shell", "python_exec", "app_open"} or tool_id.startswith("computer_")
     ):
         raise PermissionError("Full device access was revoked while waiting for approval.")
 
@@ -692,7 +735,40 @@ async def run_tool(tool_id: str, args: dict[str, Any], *, origin: str = "") -> s
 
         return await asyncio.to_thread(execute, tool_id, args)
     if tool_id == "shell":
-        return await _shell(args.get("command", ""))
+        return await _shell(args['command'], args.get('cwd', '.'))
+    if tool_id == 'python_exec':
+        from .execution import execute, file_info
+
+        cwd = _resolve_path(args.get('cwd', '.'))
+        outputs = [_resolve_path(str(cwd / path)) for path in args.get('output_paths', [])]
+        before = {p: (p.stat().st_mtime_ns, p.stat().st_size) if p.exists() else None
+                  for p in outputs}
+        out = await execute(cwd=cwd, code=args['code'])
+        verified = []
+        try:
+            for path in outputs:
+                info = file_info(path)
+                if before[path] == (path.stat().st_mtime_ns, path.stat().st_size):
+                    raise ValueError(f'Output was not updated by this task: {path}')
+                verified.append(info)
+        except Exception as exc:
+            raise ValueError(f'Output verification failed: {exc}\nProcess stdout:\n{out}') from exc
+        return json.dumps({'stdout': out, 'outputs': verified}, ensure_ascii=False)
+    if tool_id == 'runtime_info':
+        from .execution import runtime_info
+
+        return runtime_info(WORKSPACE_DIR)
+    if tool_id == 'file_info':
+        from .execution import file_info
+
+        return json.dumps(file_info(_resolve_path(args['path'])), ensure_ascii=False)
+    if tool_id == 'document_write':
+        from .documents import write_document
+
+        return await asyncio.to_thread(write_document, _resolve_path(args['path']),
+                                       title=args.get('title', ''),
+                                       paragraphs=args.get('paragraphs', []),
+                                       rows=args.get('rows', []))
     if tool_id == "integrations":
         return _integrations()
     if tool_id == "fs_read":
@@ -910,41 +986,34 @@ def _truthy(value: Any) -> bool:
     return str(value).strip().lower() in ("true", "yes", "1")
 
 
-async def _shell(command: str) -> str:
+async def _shell(command: str, cwd: str = '.') -> str:
     if not command:
         raise ValueError("shell tool requires a 'command' argument")
     if not settings.agent_device_access:
         raise PermissionError(
             "Shell execution is unavailable in workspace mode until an OS sandbox is available."
         )
-    cwd = str(Path.home()) if settings.agent_device_access else str(WORKSPACE_DIR)
-    proc = await asyncio.create_subprocess_shell(
-        command,
-        cwd=cwd,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.STDOUT,
-    )
-    try:
-        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=120)
-    except TimeoutError as exc:
-        proc.kill()
-        raise RuntimeError("Command timed out after 120s") from exc
-    out = stdout.decode(errors="ignore")[-8000:]
-    if proc.returncode != 0:
-        raise RuntimeError(f"Exit {proc.returncode}: {out}")
-    return out or "(no output)"
+    from .execution import execute
+
+    return await execute(cwd=_resolve_path(cwd), command=command)
 
 
 def _fs_read(path: str) -> str:
+    from .execution import read_file
+
     p = _resolve_path(path)
-    return p.read_text(errors="ignore")[:20000]
+    return read_file(p)
 
 
 def _fs_write(path: str, content: str) -> str:
     p = _resolve_path(path)
+    if p.suffix.lower() in {'.pdf', '.docx', '.xlsx', '.pptx', '.png', '.jpg', '.jpeg',
+                             '.webp', '.gif', '.zip'}:
+        raise ValueError('fs_write writes UTF-8 text. Use python_exec for binary formats, '
+                         'then file_info to verify the result.')
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(content)
-    return f"Wrote {len(content)} bytes to {p}"
+    size = p.write_bytes(content.encode('utf-8'))
+    return f"Wrote {size} bytes to {p}"
 
 
 def _fs_list(path: str) -> str:
@@ -1395,35 +1464,50 @@ def _app_open(target: str, app: str = "") -> str:
     target = (target or "").strip()
     app = (app or "").strip()
     if not target and not app:
-        return "Nothing to open: give a target (URL or path) or an app name."
+        raise ValueError('app_open requires a target or app name.')
 
     if sys.platform == "darwin":
         cmd = ["open"]
         if app:
             cmd += ["-a", app]
         if target:
-            cmd.append(target)
+            cmd += ['--', target]
     elif sys.platform.startswith("linux"):
         if not target:
-            return f"Cannot launch an application by name on this platform: {app}"
+            raise ValueError(f"Cannot launch an application by name on this platform: {app}")
         cmd = ["xdg-open", target]
     elif sys.platform == "win32":
-        cmd = ["cmd", "/c", "start", "", target or app]
+        import os
+
+        try:
+            if app and target:
+                subprocess.Popen([app, target])
+            else:
+                os.startfile(target or app)
+        except OSError as exc:
+            raise RuntimeError(f'Could not open {target or app}: {exc}') from exc
+        return f'Opened {target or app}.'
     else:
-        return f"Opening things is not supported on {sys.platform}."
+        raise RuntimeError(f"Opening things is not supported on {sys.platform}.")
 
     try:
         done = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
     except (OSError, subprocess.SubprocessError) as exc:
-        return f"Could not open {target or app}: {exc}"
+        raise RuntimeError(f"Could not open {target or app}: {exc}") from exc
     if done.returncode != 0:
-        return f"Could not open {target or app}: {done.stderr.strip() or done.returncode}"
+        raise RuntimeError(f"Could not open {target or app}: "
+                           f"{done.stderr.strip() or done.returncode}")
     what = target or app
     where = f" in {app}" if app and target else ""
     return f"Opened {what}{where}."
 
 
 TOOL_GROUPS: dict[str, dict] = {
+    "integrations": {
+        "label": "Connected apps",
+        "note": "Discover connected apps and use their supported actions.",
+        "ids": {"integrations", "capability"},
+    },
     "computer": {
         "label": "Computer use",
         "note": "Control desktop apps with keyboard and pointer. Device "
@@ -1441,12 +1525,12 @@ TOOL_GROUPS: dict[str, dict] = {
     "files": {
         "label": "Files",
         "note": "Read, write, edit, list, glob and grep.",
-        "ids": {"fs_read", "fs_write", "fs_list", "fs_edit", "fs_glob", "fs_grep"},
+        "ids": FILE_TOOLS,
     },
     "shell": {
         "label": "Shell",
         "note": "Run commands, and open things in the user's own apps.",
-        "ids": {"shell", "app_open"},
+        "ids": {"shell", "python_exec", "runtime_info", "app_open"},
     },
     "web": {
         "label": "Web",

@@ -62,6 +62,14 @@ class Engine:
 
 
 ENGINES: dict[str, Engine] = {
+    "piper": Engine(
+        id="piper", label="Piper",
+        summary="Fast local speech using a trained ONNX voice. "
+                "Voice weights are separate downloads.",
+        requirements=("piper-tts==1.8.0", "soundfile>=0.13"),
+        modules=("piper", "soundfile"),
+        controls=(Control("speed", "Speed", 0.5, 2.0, 1.0, 0.05),),
+    ),
     "kokoro": Engine(
         id="kokoro", label="Kokoro",
         summary="Small and quick. Natural preset voices; ideal for replies read aloud.",
@@ -203,6 +211,27 @@ def chatterbox_variants(folder: Path) -> tuple[Variant, ...]:
     return tuple(out)
 
 
+def piper_model(folder: Path) -> tuple[Path, dict] | None:
+    """An ONNX model with Piper's matching phoneme/configuration file."""
+    for model in sorted(folder.glob("*.onnx")):
+        config = model.with_suffix(".onnx.json")
+        try:
+            if config.stat().st_size > 1024 * 1024:
+                continue
+            data = json.loads(config.read_text(encoding="utf-8"))
+            if (isinstance(data, dict) and isinstance(data.get("audio"), dict)
+                    and isinstance(data["audio"].get("sample_rate"), int)
+                    and data["audio"]["sample_rate"] > 0
+                    and isinstance(data.get("phoneme_id_map"), dict)
+                    and data["phoneme_id_map"]
+                    and isinstance(data.get("num_speakers"), int)
+                    and 0 < data["num_speakers"] <= 1024):
+                return model, data
+        except (OSError, ValueError):
+            continue
+    return None
+
+
 def recognise(folder: Path) -> Recognised | None:
     """What speech engine these weights belong to, or None."""
     folder = Path(folder)
@@ -222,6 +251,14 @@ def recognise(folder: Path) -> Recognised | None:
     if (folder / "voices").is_dir() and any(folder.glob("kokoro*.pth")):
         return Recognised("kokoro", (Variant("kokoro", "Kokoro",
                                              tuple(KOKORO_LANGUAGES)),))
+    if piper := piper_model(folder):
+        model, config = piper
+        language_info = config.get("language")
+        language = language_info.get("code", "") if isinstance(language_info, dict) else ""
+        if not isinstance(language, str):
+            language = ""
+        return Recognised("piper", (Variant(model.stem, model.stem.replace("-", " ").title(),
+                                            (language,) if language else ()),))
     return None
 
 
@@ -229,6 +266,15 @@ def presets(engine: str, folder: Path) -> list[Preset]:
     """The voices that ship with the weights. Read from the folder, so the list
     is what is actually on disk rather than what a model card once promised."""
     folder = Path(folder)
+    if engine == "piper" and (piper := piper_model(folder)):
+        _, config = piper
+        speakers = config.get("speaker_id_map")
+        names = ({value: name for name, value in speakers.items()
+                  if isinstance(value, int) and isinstance(name, str)}
+                 if isinstance(speakers, dict) else {})
+        return [Preset(str(i), names.get(i, "Default voice" if config["num_speakers"] == 1
+                                        else f"Speaker {i + 1}"))
+                for i in range(config["num_speakers"])]
     if engine in ("kokoro", "kokoro-mlx"):
         out = []
         for f in sorted((folder / "voices").glob(

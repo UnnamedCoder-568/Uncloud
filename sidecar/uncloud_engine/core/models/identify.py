@@ -704,12 +704,12 @@ def _bundle(identification: Identification, folder: Path) -> bool:
         identification.saw("files", f"Chatterbox weights: {found}" if found else
                            "t3, s3gen and ve weights together: the Chatterbox set")
         return True
-    if speech is not None and speech.engine in ("kokoro", "kokoro-mlx"):
-        # A .pth and a voices folder: nothing a name-free reader could mistake.
+    if speech is not None and speech.engine in ("kokoro", "kokoro-mlx", "piper"):
         identification.layout = Layout.BUNDLE
         identification.task, identification.family = Task.TEXT_TO_SPEECH, speech.engine
         identification.confidence = Confidence.INFERRED
-        identification.saw("files", "kokoro weights with a voices folder")
+        identification.saw("files", "Piper ONNX weights with phoneme configuration"
+                           if speech.engine == "piper" else "kokoro weights with a voices folder")
         return True
     subfolders = [p for p in folder.iterdir() if p.is_dir() and not p.name.startswith(".")]
     if any(p.name.startswith("acestep") for p in subfolders):

@@ -98,6 +98,53 @@ def test_kokoro_voices_are_what_is_on_disk(tmp_path: Path) -> None:
     assert ids == ["af_heart", "bm_george"]
 
 
+def piper_fixture(folder: Path, **changes) -> Path:
+    touch(folder / "renamed.onnx")
+    config = {"audio": {"sample_rate": 22050}, "num_speakers": 1,
+              "phoneme_id_map": {"a": [1]}, "language": {"code": "en_GB"}}
+    touch(folder / "renamed.onnx.json", json.dumps({**config, **changes}).encode())
+    return folder
+
+
+def test_piper_requires_matching_voice_configuration(tmp_path: Path) -> None:
+    folder = piper_fixture(tmp_path / "arbitrary name")
+    recognised = engines.recognise(folder)
+    assert recognised.engine == "piper"
+    assert recognised.variants[0].id == "renamed"
+    assert recognised.variants[0].languages == ("en_GB",)
+    assert [preset.id for preset in engines.presets("piper", folder)] == ["0"]
+    (folder / "renamed.onnx.json").rename(folder / "other.onnx.json")
+    assert engines.recognise(folder) is None
+
+
+@pytest.mark.parametrize("changes", [{"audio": {}}, {"num_speakers": -1},
+                                    {"phoneme_id_map": None}])
+def test_unrelated_onnx_metadata_is_not_claimed_as_piper(tmp_path, changes) -> None:
+    assert engines.recognise(piper_fixture(tmp_path, **changes)) is None
+
+
+def test_piper_multispeaker_presets_use_the_models_names(tmp_path) -> None:
+    folder = piper_fixture(tmp_path, num_speakers=2, speaker_id_map={"First": 0, "Second": 1})
+    assert [(preset.id, preset.name) for preset in engines.presets("piper", folder)] == [
+        ("0", "First"), ("1", "Second")]
+
+
+def test_piper_can_be_imported_and_saved_as_an_optional_voice(speech) -> None:
+    from uncloud_engine.core.models import identify
+    from uncloud_engine.model_import import verdict
+
+    module, models = speech
+    folder = piper_fixture(models / "Personal trained voice")
+    identification = identify(folder)
+    assert identification.family == "piper"
+    assert verdict(identification).runnable
+    saved = module.save_voice(name="Trained voice", engine="piper", model_path=str(folder),
+                              variant="renamed", preset="0")
+    request, _ = module._voice_request("piper", "", saved=saved.slug)
+    assert request["folder"] == str(folder)
+    assert request["variant"] == "renamed" and request["voice"] == "0"
+
+
 def test_weights_nothing_recognises_are_not_guessed(tmp_path: Path) -> None:
     touch(tmp_path / "x" / "model.safetensors")
     assert engines.recognise(tmp_path / "x") is None

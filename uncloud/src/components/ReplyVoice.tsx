@@ -9,6 +9,7 @@ import type { SavedVoice } from '../lib/sidecar';
  */
 
 const ENGINE_NOTE: Record<string, string> = {
+  piper: 'Piper',
   chatterbox: 'Chatterbox · slower replies',
   bark: 'Bark · slow replies',
   kokoro: 'Kokoro',

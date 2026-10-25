@@ -174,6 +174,38 @@ def test_gguf_counts_same_tools_and_history_sent_to_inference(monkeypatch, chart
         active, messages, web_tools=True, chart_tools=chart_tools)) == 400
 
 
+@pytest.mark.parametrize('engine', ['gguf', 'mlx', 'mlx-vlm'])
+def test_custom_native_agent_tools_are_included_in_the_actual_prompt_count(monkeypatch, engine):
+    from uncloud_engine.chat import model_payload
+
+    active = SimpleNamespace(engine=engine, base_url='http://native', model_path='/model',
+        context_limit=4096, inference_profile={'capabilities': {
+            'native_tools': True, 'fields': [], 'reasoning': {'levels': ['auto']}}})
+    tools = [{'type': 'function', 'function': {'name': 'python_exec', 'parameters': {
+        'type': 'object', 'properties': {'code': {'type': 'string'}}, 'required': ['code']}}}]
+    messages = [{'role': 'user', 'content': 'Calculate'}]
+    payload = model_payload(active, messages, native_tools=tools)
+
+    def handler(request):
+        body = json.loads(request.content)
+        assert body['tools'] == payload['tools'] == tools
+        assert body.get('messages', body.get('input')) == payload['messages']
+        return httpx.Response(200, json={'input_tokens': 400})
+
+    class Tokenizer:
+        chat_template = 'native'
+
+        def apply_chat_template(self, turns, **kwargs):
+            assert turns == payload['messages'] and kwargs['tools'] == tools
+            return [0] * 400
+
+    client = httpx.AsyncClient
+    monkeypatch.setattr(httpx, 'AsyncClient',
+        lambda **kw: client(transport=httpx.MockTransport(handler), **kw))
+    monkeypatch.setattr(context_count, '_mlx_tokenizer', lambda _: Tokenizer())
+    assert asyncio.run(context_count.count(active, messages, native_tools=tools)) == 400
+
+
 def test_compaction_keeps_tool_source_evidence_separate_from_user_instructions():
     from uncloud_engine.compaction import retained_context, transcript
     messages = [{'role': 'user', 'content': 'Summarize the planet', 'tool_turns': [

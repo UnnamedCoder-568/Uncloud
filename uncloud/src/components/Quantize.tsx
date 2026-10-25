@@ -1,10 +1,11 @@
 import ActivityOrb from './ActivityOrb';
+import CapabilityGate from './CapabilityGate';
 import { useEffect, useState } from 'react';
 import { Gauge, CheckCircle2, XCircle } from 'lucide-react';
 import {
-  getQuantizeBases, startQuantize, listQuantizeJobs, cancelQuantize,
+  getQuantizeBases, getQuantizeSource, startQuantize, listQuantizeJobs, cancelQuantize,
 } from '../lib/sidecar';
-import type { LocalModel, QuantizeBase, QuantizeJob } from '../lib/sidecar';
+import type { LocalModel, QuantizeBase, QuantizeJob, QuantizeSource } from '../lib/sidecar';
 
 /**
  * Build a pre-quantised MLX copy of a model at one precision.
@@ -35,6 +36,7 @@ export function quantisable(models: LocalModel[]): LocalModel[] {
 
 // What a model of this size costs to hold, roughly, at a given bit width.
 function estimate(model: LocalModel, bits: number): string {
+  if (model.category === 'text') return 'Output size is reported after conversion';
   if (!model.size_gb) return '';
   // Source is bf16 — 16 bits per weight.
   return `~${((model.size_gb * bits) / 16).toFixed(1)} GB`;
@@ -69,6 +71,7 @@ export default function Quantize({ models, onBuilt }: {
 }) {
   const [bases, setBases] = useState<QuantizeBase[]>([]);
   const [bits, setBits] = useState<number[]>([4, 6, 8]);
+  const [ggufBits, setGgufBits] = useState<number[]>([2, 3, 4, 5, 6, 8]);
   const [jobs, setJobs] = useState<QuantizeJob[]>([]);
 
   const [source, setSource] = useState<string>('');
@@ -76,14 +79,15 @@ export default function Quantize({ models, onBuilt }: {
   const [qBits, setQBits] = useState(6);
   const [name, setName] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [sourceInfo, setSourceInfo] = useState<QuantizeSource | null>(null);
+  const [sourceError, setSourceError] = useState('');
+  const [allowRequantize, setAllowRequantize] = useState(false);
 
-  // Anything already stored as MLX shards is done; offering to requantise it
-  // would just be a lossy copy of a lossy copy.
   const candidates = quantisable(models);
 
   useEffect(() => {
     getQuantizeBases()
-      .then((r) => { setBases(r.bases); setBits(r.bits); })
+      .then((r) => { setBases(r.bases); setBits(r.bits); if (r.gguf_bits) setGgufBits(r.gguf_bits); })
       .catch(() => undefined);
   }, []);
 
@@ -101,22 +105,40 @@ export default function Quantize({ models, onBuilt }: {
 
   const model = candidates.find((m) => m.path === source) ?? null;
   const text = model?.category === 'text';
+  const gguf = text && model?.engine === 'gguf';
+  const precisionBits = gguf ? ggufBits : bits;
+  const unchanged = gguf && sourceInfo?.unchanged_bits.includes(qBits);
   const unsupported = !!model && !text && UNSUPPORTED.test(model.name);
 
   useEffect(() => {
-    if (!model || !bases.length) return;
-    setBase(guessBase(model.name, bases));
+    if (!model) return;
+    setBase(text ? '' : guessBase(model.name, bases));
     setName(`${model.name} (${qBits}-bit ${model.engine === 'gguf' ? 'GGUF' : 'MLX'})`);
   }, [source, bases.length, qBits]);
 
+  useEffect(() => {
+    if (!precisionBits.includes(qBits)) setQBits(precisionBits[0]);
+  }, [gguf, bits, ggufBits, qBits]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setSourceInfo(null); setSourceError(''); setAllowRequantize(false); setError(null);
+    if (gguf && model) void getQuantizeSource(model.path).then(value => {
+      if (!cancelled) setSourceInfo(value);
+    }).catch(e => { if (!cancelled) setSourceError(String(e)); });
+    return () => { cancelled = true; };
+  }, [source, gguf]);
+
   async function build() {
-    if (!model || (!text && !base) || !name.trim()) return;
+    if (!model || (!text && !base) || !name.trim() || unchanged
+      || (gguf && (!sourceInfo || (sourceInfo.quantized && !allowRequantize)))) return;
     setError(null);
     try {
       await startQuantize({
         source: model.path, base, name: name.trim(),
         kind: text ? (model.engine === 'gguf' ? 'gguf' : 'text') : 'image',
         transformer_bits: qBits, encoder_bits: qBits,
+        allow_requantize: gguf && allowRequantize,
       });
       setJobs(await listQuantizeJobs().catch(() => []));
     } catch (e) {
@@ -127,6 +149,12 @@ export default function Quantize({ models, onBuilt }: {
   if (!candidates.length) return null;
   const running = jobs.filter((j) => !j.done);
   const select = 'bg-[var(--bg-inset)] text-xs px-2 py-1.5 rounded-lg border border-[var(--border-soft)]';
+  const buildButton = <button onClick={build}
+    disabled={!model || (!text && !base) || !name.trim() || unsupported || !!unchanged
+      || (!!gguf && (!sourceInfo || (sourceInfo.quantized && !allowRequantize)))}
+    className="btn-accent text-xs px-4 py-1.5 rounded-lg disabled:opacity-40 disabled:cursor-not-allowed">
+    Build
+  </button>;
 
   return (
     <section className="card p-4 mb-8">
@@ -167,7 +195,7 @@ export default function Quantize({ models, onBuilt }: {
         <label className="flex flex-col gap-1">
           <span className="text-[10px] uppercase tracking-wider text-[var(--text-faint)]">Precision</span>
           <select className={select} value={qBits} onChange={(e) => setQBits(Number(e.target.value))}>
-            {bits.map((b) => <option key={b} value={b}>{b}-bit</option>)}
+            {precisionBits.map((b) => <option key={b} value={b}>{b}-bit</option>)}
           </select>
         </label>
 
@@ -177,16 +205,22 @@ export default function Quantize({ models, onBuilt }: {
                  placeholder="Name for the new model" />
         </label>
 
-        <button
-          onClick={build}
-          disabled={!model || (!text && !base) || !name.trim() || unsupported}
-          className="btn-accent text-xs px-4 py-1.5 rounded-lg disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          Build
-        </button>
+        {!model || gguf ? buildButton : <CapabilityGate names={text ? 'mlx' : 'quantize'}>
+          {buildButton}
+        </CapabilityGate>}
       </div>
 
-      {text && <p className="text-xs text-[var(--text-faint)] mt-2">Builds a separate copy. Re-quantizing already compressed weights can reduce quality; use original full-precision weights when available.</p>}
+      {gguf && !sourceInfo && !sourceError && <p className="text-xs text-[var(--text-faint)] mt-2">Reading stored precision…</p>}
+      {sourceError && <p role="alert" className="text-xs text-rose-400 mt-2">{sourceError}</p>}
+      {gguf && sourceInfo && <p className="text-xs text-[var(--text-faint)] mt-2">
+        Source precision: {sourceInfo.quantization}.
+        {unchanged && ' This is already the selected format. Choose a lower precision for a smaller copy.'}
+      </p>}
+      {gguf && sourceInfo?.quantized && <label className="flex items-center gap-2 text-xs mt-3">
+        <input type="checkbox" checked={allowRequantize} onChange={e => setAllowRequantize(e.target.checked)} />
+        Allow re-quantizing compressed weights
+      </label>}
+      {text && <p className="text-xs text-[var(--text-faint)] mt-2">Re-quantizing can reduce quality. Increasing precision does not restore lost detail. Use original full-precision weights when available.</p>}
       {running.map(job => <button key={job.id} className="pill text-xs mt-2" onClick={() => void cancelQuantize(job.id).then(() => listQuantizeJobs().then(setJobs))}>Stop {job.name}</button>)}
       {unsupported && (
         <p className="text-[11px] text-amber-400/90 mt-2 max-w-2xl leading-relaxed">
@@ -204,7 +238,7 @@ export default function Quantize({ models, onBuilt }: {
       )}
       {model && !unsupported && (
         <p className="text-[11px] text-[var(--text-faint)] mt-2">
-          {model.size_gb} GB → {estimate(model, qBits)} · a few minutes, and the
+          Source: {model.size_gb} GB · {estimate(model, qBits)} · a few minutes, and the
           machine will be busy.
         </p>
       )}

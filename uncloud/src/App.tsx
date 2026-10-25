@@ -28,6 +28,8 @@ import Wordmark from './components/Wordmark';
 import { inDesktop, useNarrow } from './lib/platform';
 import UpdateBanner from './components/UpdateBanner';
 import { AddFromDiskHost } from './components/AddFromDisk';
+import { InteractionProvider } from './lib/interactions';
+import PendingInteractions from './components/PendingInteractions';
 
 
 /** Rendered once visited, then kept alive so tab switching is not destructive. */
@@ -204,6 +206,7 @@ export default function App() {
     <CapabilityGate setup
       names={initialSetup ? "chat,image,video,transcribe,kokoro,quantize,computer,image_train,train,mlx,browser,tools" : "tools"}
       optionalNames={initialSetup ? "music,realtime,quality,chatterbox" : ""}>
+    <InteractionProvider>
     <div className="h-screen w-screen flex bg-[var(--bg)]">
       {showRail && narrow && (
         <div className="rail-scrim" onClick={() => setDrawerOpen(false)} />
@@ -238,9 +241,13 @@ export default function App() {
           )}
         />
       </main>
+      {view !== 'chisel' && <div className="fixed bottom-4 right-4 z-[80] w-[min(480px,calc(100vw-2rem))] shadow-2xl">
+        <PendingInteractions />
+      </div>}
       <ApprovalPrompt />
       <AddFromDiskHost />
     </div>
+    </InteractionProvider>
     </CapabilityGate>
   );
 }

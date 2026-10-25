@@ -40,7 +40,7 @@ UPLOAD_DIR = STATE / "uploads"
 
 #: Engines whose pins conflict with the main engine get an environment of their
 #: own. Kokoro and Bark need nothing the main engine does not already carry.
-OWN_ENVIRONMENT = {"chatterbox": _SIDE / ".venv-chatterbox"}
+OWN_ENVIRONMENT = {"chatterbox": _SIDE / ".venv-chatterbox", "piper": _SIDE / ".venv-piper"}
 
 #: A spoken reply longer than this is still spoken, but a conversation that
 #: waits minutes for one answer has stopped being a conversation.

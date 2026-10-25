@@ -260,3 +260,99 @@ def test_cancel_cleans_staging_and_preserves_source(manager, model, tmp_path, mo
         assert not list((tmp_path / 'out').glob('*.building'))
         assert (model / 'model.safetensors').exists()
     asyncio.run(run())
+
+
+def gguf_model(tmp_path, file_type=15, name='source.gguf'):
+    import struct
+    source = tmp_path / name
+
+    def text(value):
+        raw = value.encode()
+        return struct.pack('<Q', len(raw)) + raw
+
+    source.write_bytes(b'GGUF' + struct.pack('<IQQ', 3, 0, 2)
+                      + text('general.architecture') + struct.pack('<I', 8) + text('llama')
+                      + text('general.file_type') + struct.pack('<II', 4, file_type))
+    return source
+
+
+def test_gguf_precision_comes_from_header_not_filename(tmp_path):
+    source = gguf_model(tmp_path, name='misleading-f16.gguf')
+    assert quantize.gguf_source(str(source)) == {
+        'quantization': 'Q4_K_M', 'file_type': 15, 'quantized': True, 'unchanged_bits': [4]}
+
+
+def test_gguf_same_format_is_refused_before_creating_a_job(manager, tmp_path):
+    source = gguf_model(tmp_path)
+    with pytest.raises(ValueError, match='already uses Q4_K_M'):
+        start(manager, source, tmp_path, kind='gguf', transformer_bits=4, encoder_bits=4,
+              allow_requantize=True)
+    assert not manager.jobs
+
+
+def test_gguf_requires_explicit_requantization_choice(manager, tmp_path):
+    source = gguf_model(tmp_path)
+    with pytest.raises(ValueError, match='Enable re-quantization'):
+        start(manager, source, tmp_path, kind='gguf', transformer_bits=3, encoder_bits=3)
+    assert not manager.jobs
+
+
+def test_gguf_explicit_requantization_is_retained(manager, tmp_path, monkeypatch, quiet):
+    source = gguf_model(tmp_path)
+    monkeypatch.setattr(quantize, 'gguf_quantizer', lambda: '/native/llama-quantize')
+    job = start(manager, source, tmp_path, kind='gguf', transformer_bits=3, encoder_bits=3,
+                allow_requantize=True)
+    assert job.allow_requantize and source.is_file()
+
+
+def test_gguf_two_bit_conversion_does_not_require_image_quantization(manager, tmp_path,
+                                                                    monkeypatch, quiet):
+    source = gguf_model(tmp_path, file_type=1)
+    monkeypatch.setattr(quantize, 'gguf_quantizer', lambda: '/native/llama-quantize')
+    job = start(manager, source, tmp_path, kind='gguf', transformer_bits=2, encoder_bits=8)
+    assert job.kind == 'gguf' and not job.allow_requantize
+
+
+def test_gguf_quantizer_can_be_beside_cpu_runtime_when_chat_uses_gpu(tmp_path, monkeypatch):
+    import sys
+
+    from uncloud_engine import native_chat
+    root = tmp_path / 'native'
+    (root / 'vulkan').mkdir(parents=True)
+    executable = root / 'llama-quantize.exe'
+    executable.touch()
+    monkeypatch.delenv('UNCLOUD_LLAMA_QUANTIZE', raising=False)
+    monkeypatch.setattr(sys, 'platform', 'win32')
+    monkeypatch.setattr(native_chat, 'server_path', lambda: str(root / 'vulkan/llama-server.exe'))
+    assert quantize.gguf_quantizer() == str(executable)
+
+
+def test_gguf_conversion_passes_requantize_and_validates_output(tmp_path, manager, monkeypatch):
+    source = gguf_model(tmp_path)
+    commands = []
+    monkeypatch.setattr(quantize, 'gguf_quantizer', lambda: '/native/llama-quantize')
+
+    async def command(job, cmd):
+        commands.append(cmd)
+        gguf_model(tmp_path, file_type=12, name='converted.gguf').replace(cmd[-2])
+
+    monkeypatch.setattr(manager, '_command', command)
+    job = quantize.QuantizeJob(id='gguf', name='Q3', dest=str(tmp_path/'out'),
+                               kind='gguf', allow_requantize=True)
+    asyncio.run(manager._text_save(job, str(source), tmp_path/'out', 3, tmp_path))
+    assert commands == [['/native/llama-quantize', '--allow-requantize', str(source),
+                         str(tmp_path/'out/model.gguf'), 'Q3_K_M']]
+    assert source.is_file()
+
+
+def test_gguf_output_with_wrong_precision_is_not_accepted(tmp_path, manager, monkeypatch):
+    source = gguf_model(tmp_path)
+    monkeypatch.setattr(quantize, 'gguf_quantizer', lambda: '/native/llama-quantize')
+
+    async def command(job, cmd):
+        gguf_model(tmp_path, file_type=15, name='wrong.gguf').replace(cmd[-2])
+
+    monkeypatch.setattr(manager, '_command', command)
+    job = quantize.QuantizeJob(id='gguf', name='Q3', dest=str(tmp_path/'out'), kind='gguf')
+    with pytest.raises(RuntimeError, match='requested GGUF precision'):
+        asyncio.run(manager._text_save(job, str(source), tmp_path/'out', 3, tmp_path))

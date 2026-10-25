@@ -217,3 +217,15 @@ def test_failed_request_offer_cleans_live_authority(tmp_path):
         assert store.listing("desktop")["requests"][0]["status"] == "cancelled"
 
     asyncio.run(check())
+
+
+def test_expired_permission_is_distinct_from_a_user_refusal_and_cannot_be_answered(tmp_path):
+    async def check():
+        store = EventStore(tmp_path / 'events.json', key=lambda: b'x' * 32)
+        assert await store.ask('desktop', 'run', 'permission', {}, ttl=0) == 'expired'
+        assert not store.waiters
+        request = next(iter(store.data['requests'].values()))
+        assert request['status'] == 'expired'
+        with pytest.raises(ValueError, match='no longer active'):
+            store.answer('desktop', request['id'], 'yes')
+    asyncio.run(check())

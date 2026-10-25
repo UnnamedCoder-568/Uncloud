@@ -1368,13 +1368,17 @@ export interface QuantizeJob {
 }
 
 export async function getQuantizeBases() {
-  return api<{ bits: number[]; bases: QuantizeBase[] }>('/api/quantize/bases');
+  return api<{ bits: number[]; gguf_bits: number[]; bases: QuantizeBase[] }>('/api/quantize/bases');
 }
+export interface QuantizeSource { quantization: string; file_type: number | null;
+  quantized: boolean; unchanged_bits: number[] }
+export const getQuantizeSource = (path: string) =>
+  apiPost<QuantizeSource>('/api/quantize/source', { path });
 export async function listQuantizeJobs() {
   return api<QuantizeJob[]>('/api/quantize');
 }
 export async function startQuantize(body: {
-  source: string; base: string; name: string; kind?: string; adapter_path?: string;
+  source: string; base: string; name: string; kind?: string; adapter_path?: string; allow_requantize?: boolean;
   transformer_bits: number; encoder_bits: number;
   lora_paths?: string[]; lora_scales?: number[];
 }) {

@@ -39,6 +39,41 @@ from .library import MLX_MARKER, invalidate_library_cache
 
 # What mflux will quantise to. 3 and 5 exist but are rarely worth it.
 BITS = (3, 4, 5, 6, 8)
+GGUF_TYPES = {2: (10, "Q2_K"), 3: (12, "Q3_K_M"), 4: (15, "Q4_K_M"),
+              5: (17, "Q5_K_M"), 6: (18, "Q6_K"), 8: (7, "Q8_0")}
+
+
+def gguf_source(source: str) -> dict:
+    """Read the stored precision, without loading weights or guessing from names."""
+    from .core.models.headers import read_gguf
+    from .core.models.identify import _GGUF_FILE_TYPES
+
+    header = read_gguf(Path(source))
+    if header is None:
+        raise ValueError("Choose a valid GGUF model file.")
+    kind = header.fields.get('general.file_type')
+    return {'quantization': _GGUF_FILE_TYPES.get(kind, 'Unknown precision'),
+            'file_type': kind, 'quantized': kind not in (0, 1, 32),
+            'unchanged_bits': [bits for bits, (value, _) in GGUF_TYPES.items() if value == kind]}
+
+
+def gguf_quantizer() -> str | None:
+    import sys
+
+    from .native_chat import RUNTIME_DIR, server_path
+
+    explicit = os.environ.get('UNCLOUD_LLAMA_QUANTIZE')
+    if explicit and Path(explicit).is_file():
+        return explicit
+    name = 'llama-quantize.exe' if sys.platform == 'win32' else 'llama-quantize'
+    roots = []
+    if server := server_path():
+        roots.extend((Path(server).parent, Path(server).parent.parent))
+    roots.append(RUNTIME_DIR)
+    if bundled := os.environ.get('UNCLOUD_LLAMA_RUNTIME_DIR'):
+        roots.append(Path(bundled))
+    found = next((str(root / name) for root in roots if (root / name).is_file()), None)
+    return found or shutil.which(name)
 
 # Components mflux writes. The first two are the ones worth choosing between.
 _COMPONENTS = ("transformer", "text_encoder", "vae", "tokenizer")
@@ -48,7 +83,10 @@ def base_models() -> list[dict]:
     """Base models mflux can configure, for the picker to offer."""
     import inspect
 
-    from mflux.models.common.config.model_config import ModelConfig
+    try:
+        from mflux.models.common.config.model_config import ModelConfig
+    except ImportError:
+        return []  # GGUF quantization does not require the Apple-only image engine.
 
     out: list[dict] = []
     for name in sorted(dir(ModelConfig)):
@@ -76,6 +114,7 @@ class QuantizeJob:
     dest: str
     kind: str = "image"
     adapter_path: str | None = None
+    allow_requantize: bool = False
     status: str = "running"  # running | done | error
     stage: str = "starting"
     error: str | None = None
@@ -132,6 +171,7 @@ class QuantizeManager:
         lora_scales: list[float] | None = None,
         kind: str = "image",
         adapter_path: str | None = None,
+        allow_requantize: bool = False,
     ) -> QuantizeJob:
         if kind not in {"image", "text", "gguf"}:
             raise ValueError("Choose image, text MLX or GGUF quantization.")
@@ -143,10 +183,12 @@ class QuantizeManager:
             raise ValueError("GGUF quantization requires a local GGUF file.")
         if adapter_path and kind != "text":
             raise ValueError("Text adapters can only be merged with their MLX base model.")
-        for bits in (transformer_bits, encoder_bits):
-            if bits not in BITS:
-                raise ValueError(f"{bits}-bit is not one of {BITS}")
-        if transformer_bits != encoder_bits:
+        allowed = tuple(GGUF_TYPES) if kind == 'gguf' else BITS
+        for bits in ((transformer_bits,) if kind == 'gguf'
+                     else (transformer_bits, encoder_bits)):
+            if bits not in allowed:
+                raise ValueError(f"{bits}-bit is not one of {allowed}")
+        if kind == 'image' and transformer_bits != encoder_bits:
             raise ValueError(
                 f"A mixed build cannot be loaded: mflux applies one precision to "
                 f"every component, taken from whichever it reads first. "
@@ -157,6 +199,18 @@ class QuantizeManager:
             )
         if not Path(source).exists():
             raise FileNotFoundError(f"No model at {source}")
+        if kind == 'gguf':
+            info = gguf_source(source)
+            target_type, target_name = GGUF_TYPES[transformer_bits]
+            if info['file_type'] == target_type:
+                raise ValueError(f"This model already uses {target_name}. Choose a lower "
+                                 "precision for a smaller copy.")
+            if info['quantized'] and not allow_requantize:
+                raise ValueError(f"This model already uses {info['quantization']}. Enable "
+                                 "re-quantization to compress it again; quality can decrease.")
+            if not gguf_quantizer():
+                raise RuntimeError("The GGUF quantizer is missing. Install the llama.cpp "
+                                   "quantizer or set UNCLOUD_LLAMA_QUANTIZE to its path.")
 
         dest = Path(dest_dir) / name
         if dest.exists() or any(
@@ -167,6 +221,7 @@ class QuantizeManager:
             )
         job = QuantizeJob(id=uuid.uuid4().hex[:12], name=name, dest=str(dest), kind=kind)
         job.adapter_path = adapter_path
+        job.allow_requantize = allow_requantize
         self.jobs[job.id] = job
         task = asyncio.create_task(
             self._run(
@@ -303,28 +358,17 @@ class QuantizeManager:
         import sys
 
         if job.kind == "gguf":
-            from .native_chat import server_path
-
-            server = server_path()
-            executable = (
-                Path(server).with_name(
-                    "llama-quantize.exe" if sys.platform == "win32" else "llama-quantize"
-                )
-                if server
-                else None
-            )
-            found = (
-                str(executable)
-                if executable and executable.is_file()
-                else shutil.which("llama-quantize")
-            )
+            found = gguf_quantizer()
             if not found:
                 raise RuntimeError(
                     "The GGUF quantizer is missing. Install the llama.cpp runtime before building."
                 )
-            types = {3: "Q3_K_M", 4: "Q4_K_M", 5: "Q5_K_M", 6: "Q6_K", 8: "Q8_0"}
             out.mkdir()
-            await self._command(job, [found, source, str(out / "model.gguf"), types[bits]])
+            options = ['--allow-requantize'] if job.allow_requantize else []
+            await self._command(job, [found, *options, source, str(out / "model.gguf"),
+                                      GGUF_TYPES[bits][1]])
+            if gguf_source(str(out / 'model.gguf'))['file_type'] != GGUF_TYPES[bits][0]:
+                raise RuntimeError('The quantizer did not produce the requested GGUF precision.')
             return
         adapter = job.adapter_path
         if adapter:

@@ -394,7 +394,7 @@ class EventStore:
         except TimeoutError:
             with self.lock:
                 self.data["requests"][request_id]["status"] = "expired"
-            return "no" if kind == "permission" else ""
+            return "expired" if kind == "permission" else ""
         finally:
             with self.lock:
                 self.waiters.pop(request_id, None)

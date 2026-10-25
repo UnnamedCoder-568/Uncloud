@@ -8,11 +8,15 @@ from typing import Any
 import httpx
 
 from ..chat_transport import connection
-from ..core import Effort, Plan
+from ..core import ApprovalRequired, Denied, Effort, Plan
 from ..core import translate as translate_effort
 from ..engines import engine_manager
-from .graph import ExecutionGraph, Task
+from .contracts import native_tool, plan_schema, tool_contract, validate_args
+from .graph import PERMISSION_STOP, ExecutionGraph, Task
+from .planning_stream import completion as _completion
 from .tools import TOOL_SPECS, run_tool
+
+MAX_ACTIONS = 40
 
 PLANNING_SYSTEM_PROMPT = {
     'task': 'plan', 'format': 'JSON', 'steps': 'minimal', 'goal_scope': 'current',
@@ -24,7 +28,7 @@ PLANNING_SYSTEM_PROMPT = {
 
 
 def _tools_description(specs: list[dict] | None = None) -> str:
-    return json.dumps([{'id': t['id'], 'args': t['args']}
+    return json.dumps([tool_contract(t)
                        for t in (specs if specs is not None else TOOL_SPECS)],
                       separators=(',', ':'))
 
@@ -40,19 +44,23 @@ def _active_tool_specs() -> list[dict]:
 
     scope = automation_tools()
     if scope is not None:
-        return [spec for spec in TOOL_SPECS if spec["id"] in scope]
-
-    groups = settings.agent_tool_groups
-    if groups is None:
-        active = engine_manager.active
-        groups = auto_groups(active.model_path if active else None)
-    return tools_for(groups)
+        specs = [spec for spec in TOOL_SPECS if spec["id"] in scope]
+    else:
+        groups = settings.agent_tool_groups
+        if groups is None:
+            active = engine_manager.active
+            groups = auto_groups(active.model_path if active else None)
+        specs = tools_for(groups)
+    # The runner persists its execution graph after every action. Letting a
+    # draft overwrite that same graph creates a second, conflicting tracker.
+    return [spec for spec in specs if spec['id'] not in {'plan_set', 'plan_show', 'plan_update'}]
 
 
 def _extract_json(text: str) -> dict:
     # raw_decode respects braces inside quoted shell commands and document text.
     # Prefer the plan over unrelated JSON in a model's preamble.
     decoder = json.JSONDecoder()
+    single = None
     for match in re.finditer(r"\{", text):
         try:
             value, _ = decoder.raw_decode(text[match.start() :])
@@ -60,19 +68,68 @@ def _extract_json(text: str) -> dict:
             continue
         if isinstance(value, dict) and "tasks" in value:
             return value
+        if isinstance(value, dict) and isinstance(value.get('tool_id'), str) \
+                and isinstance(value.get('args'), dict):
+            single = single or value
+    if single is not None:
+        ident = single.get('id', 'task_1')
+        return {'tasks': {ident: single}}
     raise ValueError("The model did not return a JSON task plan.")
 
 
-def _graph_from_plan(parsed: dict, goal: str, specs: list[dict]) -> ExecutionGraph:
+def _graph_from_plan(parsed: dict, goal: str, specs: list[dict],
+                     completed: dict[str, Task] | None = None, *,
+                     allow_empty: bool = False,
+                     literal_tasks: set[str] | None = None) -> ExecutionGraph:
     tasks = parsed.get("tasks")
-    if not isinstance(tasks, dict) or not tasks:
+    if not isinstance(tasks, dict) or not tasks and not allow_empty:
         raise ValueError("The plan must contain at least one task.")
-    if len(tasks) > 40:
+    if len(tasks) > MAX_ACTIONS:
         raise ValueError("The plan has too many tasks; use at most 40.")
-    allowed = {spec["id"] for spec in specs}
+    allowed = {spec["id"]: spec for spec in specs}
+    completed = completed or {}
+    literal_tasks = literal_tasks or set()
+    reused = {ident for ident, raw in tasks.items() if ident in completed
+              and isinstance(raw, dict) and completed[ident].status == 'completed'
+              and raw.get('tool_id') == completed[ident].tool_id
+              and raw.get('args') == completed[ident].args
+              and isinstance(raw.get('dependencies', []), list)
+              and all(isinstance(dep, str) for dep in raw.get('dependencies', []))}
+    # A repeated label with the same action refers to its completed result.
+    # If one of its local inputs changed, it is a new action instead.
+    while True:
+        changed = {ident for ident in reused if any(
+            dependency in tasks and dependency not in reused
+            for dependency in tasks[ident].get('dependencies', [])
+        ) or any(reference in tasks and reference not in reused
+                 for reference in _references(tasks[ident]['args'],
+                                              tasks.keys() | completed.keys()))}
+        if not changed:
+            break
+        reused -= changed
+    if reused:
+        tasks = {ident: raw for ident, raw in tasks.items() if ident not in reused}
+        if not tasks:
+            raise ValueError('The plan only repeats completed steps; remaining work is missing.')
+    if tasks.keys() & completed.keys():
+        # Labels in each model reply are local to that reply. A new t1 must
+        # not overwrite a completed t1 or make an otherwise valid plan fail.
+        if any(not isinstance(ident, str) or not re.fullmatch(r'[A-Za-z0-9_]+', ident)
+               or not isinstance(raw, dict) for ident, raw in tasks.items()):
+            raise ValueError('Each task needs a simple identifier and an object.')
+        names = _distinct_names(tasks, set(completed), 'next_')
+        literal_tasks = {names.get(ident, ident) for ident in literal_tasks}
+        tasks = {names[ident]: {**raw,
+                 'args': (raw.get('args') if names[ident] in literal_tasks
+                          else _rename_refs(raw.get('args'), names)),
+                 'dependencies': [names.get(dep, dep) if isinstance(dep, str) else dep
+                                  for dep in raw.get('dependencies', [])]
+                 if isinstance(raw.get('dependencies', []), list) else raw['dependencies']}
+                 for ident, raw in tasks.items()}
     graph = ExecutionGraph(goal=goal)
     for task_id, raw in tasks.items():
-        if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", task_id) or not isinstance(raw, dict):
+        if not isinstance(task_id, str) or not re.fullmatch(r"[A-Za-z0-9_]+", task_id) \
+                or not isinstance(raw, dict):
             raise ValueError("Each task needs a simple identifier and an object.")
         tool = raw.get("tool_id")
         args = raw.get("args")
@@ -81,8 +138,9 @@ def _graph_from_plan(parsed: dict, goal: str, specs: list[dict]) -> ExecutionGra
             raise ValueError(f"Unknown or disabled tool: {tool!r}.")
         if not isinstance(args, dict):
             raise ValueError(f"Task {task_id} needs an args object.")
+        validate_args(allowed[tool], args, references=task_id not in literal_tasks)
         if not isinstance(deps, list) or any(
-            not isinstance(d, str) or d not in tasks for d in deps
+            not isinstance(d, str) or d not in tasks and d not in completed for d in deps
         ):
             raise ValueError(f"Task {task_id} has an unknown dependency.")
         graph.add_task(
@@ -92,10 +150,11 @@ def _graph_from_plan(parsed: dict, goal: str, specs: list[dict]) -> ExecutionGra
                 tool_id=tool,
                 args=args,
                 dependencies=deps,
+                literal_args=task_id in literal_tasks,
             )
         )
-    resolved: set[str] = set()
-    while len(resolved) < len(tasks):
+    resolved: set[str] = set(completed)
+    while not tasks.keys() <= resolved:
         ready = {
             t.id
             for t in graph.tasks.values()
@@ -104,16 +163,43 @@ def _graph_from_plan(parsed: dict, goal: str, specs: list[dict]) -> ExecutionGra
         if not ready:
             raise ValueError("Task dependencies contain a cycle.")
         resolved.update(ready)
+    for task in graph.tasks.values():
+        if task.literal_args:
+            continue
+        ancestors = set(task.dependencies)
+        pending = list(ancestors)
+        while pending:
+            dependency = graph.tasks.get(pending.pop())
+            if dependency:
+                for parent in set(dependency.dependencies) - ancestors:
+                    ancestors.add(parent)
+                    pending.append(parent)
+        for ref in _references(task.args, tasks.keys() | completed.keys()):
+            if ref not in ancestors and ref not in completed:
+                raise ValueError(f'Task {task.id} references {ref} without a completed dependency.')
     graph.start_node_ids = [t.id for t in graph.tasks.values() if not t.dependencies]
     return graph
 
 
 # Accept {{t1}}, {t1}, {{ t1.output }} — models are inconsistent about brace count,
 # and a miss here silently turns into a literal string being passed to a tool.
-_REF = re.compile(r"\{\{?\s*(\w+)(?:\.output)?\s*\}?\}")
+_REF = re.compile(r"\{\{\s*(\w+)(?:\.output)?\s*\}\}|(?<!\{)\{(\w+)(?:\.output)?\}(?!\})")
 
 
-def _resolve_refs(args: dict[str, Any], graph: ExecutionGraph) -> dict[str, Any]:
+def _references(value: Any, known: set[str]) -> set[str]:
+    if isinstance(value, str):
+        # Double braces are explicit references. Single braces can also be code
+        # (f"{variable}"); only treat known task ids as legacy references later.
+        return {m.group(1) or m.group(2) for m in _REF.finditer(value)
+                if m.group(1) or m.group(2) in known and m.group(0) == value.strip()}
+    if isinstance(value, (list, dict)):
+        return set().union(*(_references(v, known) for v in (
+            value.values() if isinstance(value, dict) else value)))
+    return set()
+
+
+def _resolve_refs(args: dict[str, Any], graph: ExecutionGraph,
+                  tool_id: str | None = None) -> dict[str, Any]:
     """Substitute {{t1}} / {{t1.output}} in a task's arguments with what that task
     actually produced. Without this, a step can only ever use literals decided at
     planning time — which is how you end up writing '[content from t1]' to a file."""
@@ -122,8 +208,17 @@ def _resolve_refs(args: dict[str, Any], graph: ExecutionGraph) -> dict[str, Any]
         if isinstance(value, str):
 
             def replace(m: re.Match) -> str:
-                ref = graph.tasks.get(m.group(1))
-                return (ref.output or "") if ref else m.group(0)
+                if m.group(2) and m.group(0) != value.strip():
+                    return m.group(0)
+                name = m.group(1) or m.group(2)
+                ref = graph.tasks.get(name)
+                if not ref:
+                    if m.group(1):
+                        raise ValueError(f'Unknown task reference: {name}')
+                    return m.group(0)
+                if ref.status != 'completed' or ref.output is None:
+                    raise ValueError(f'Task reference is not completed: {name}')
+                return ref.output
 
             return _REF.sub(replace, value)
         if isinstance(value, list):
@@ -132,22 +227,49 @@ def _resolve_refs(args: dict[str, Any], graph: ExecutionGraph) -> dict[str, Any]
             return {k: sub(v) for k, v in value.items()}
         return value
 
-    return {k: sub(v) for k, v in args.items()}
+    resolved = {k: sub(v) for k, v in args.items()}
+    spec = next((s for s in TOOL_SPECS if s['id'] == tool_id), None)
+    if spec:
+        properties = tool_contract(spec)['parameters']['properties']
+        for key, value in resolved.items():
+            if isinstance(value, str) and isinstance(args[key], str) \
+                    and _REF.fullmatch(args[key]) and properties.get(key, {}).get('type') \
+                    in ('object', 'array', 'integer', 'number', 'boolean'):
+                resolved[key] = json.loads(value)
+    return resolved
 
 
 def _rename_refs(value: Any, names: dict[str, str]) -> Any:
     if isinstance(value, str):
-        return _REF.sub(
-            lambda match: match.group(0).replace(
-                match.group(1), names.get(match.group(1), match.group(1)), 1
-            ),
-            value,
-        )
+        def rename(match: re.Match) -> str:
+            # Embedded single braces are code/text, just as in _resolve_refs.
+            if match.group(2) and match.group(0) != value.strip():
+                return match.group(0)
+            return match.group(0).replace(
+                match.group(1) or match.group(2),
+                names.get(match.group(1) or match.group(2), match.group(1) or match.group(2)), 1
+            )
+
+        return _REF.sub(rename, value)
     if isinstance(value, list):
         return [_rename_refs(item, names) for item in value]
     if isinstance(value, dict):
         return {key: _rename_refs(item, names) for key, item in value.items()}
     return value
+
+
+def _distinct_names(identifiers, occupied: set[str], prefix: str) -> dict[str, str]:
+    names = {ident: ident for ident in identifiers}
+    reserved = occupied | set(names)
+    for ident in names:
+        if ident not in occupied:
+            continue
+        candidate = prefix + ident
+        while candidate in reserved:
+            candidate = prefix + candidate
+        names[ident] = candidate
+        reserved.add(candidate)
+    return names
 
 
 def _context_block(context: list[dict] | None) -> str:
@@ -173,10 +295,6 @@ def _context_block(context: list[dict] | None) -> str:
     return '\n\n' + json.dumps({'background': text}, ensure_ascii=False, separators=(',', ':'))
 
 
-RECOVERY_PROMPT = ('{{"task":"recover","report":{report},'
-                   '"reuse":"completed_results","output":"plan"}}')
-
-
 def planning_messages(goal: str, context: list[dict] | None = None, inference: dict | None = None):
     specs = _active_tool_specs()
     contract = {**PLANNING_SYSTEM_PROMPT, 'tools': json.loads(_tools_description(specs))}
@@ -190,6 +308,81 @@ def planning_messages(goal: str, context: list[dict] | None = None, inference: d
     ]
 
 
+def planning_input(active, goal: str, context: list[dict] | None = None,
+                   inference: dict | None = None, completed: dict[str, Task] | None = None):
+    """Verified native function calling; retain the legacy protocol for other backends."""
+    if not getattr(active, 'inference_profile', {}).get('capabilities', {}).get('native_tools'):
+        specs, messages = planning_messages(goal, context, inference)
+        return specs, messages, None
+    specs = _active_tool_specs()
+    definitions = [native_tool(spec) for spec in specs]
+    observations = list((completed or {}).values())
+    if completed is not None:
+        try:
+            request = json.loads(goal)
+        except ValueError:
+            request = None
+        if isinstance(request, dict) and isinstance(request.get('goal'), str) \
+                and request.get('task') in {'continue_plan', 'verify_completion', 'recover'}:
+            goal = request['goal']
+            if request['task'] == 'recover':
+                observations += [Task(**{key: value for key, value in raw.items()
+                                         if key in Task.__dataclass_fields__})
+                                 for raw in request.get('failures', [])]
+    messages = []
+    custom = (inference or {}).get('system_prompt')
+    if isinstance(custom, str) and custom:
+        messages.append({'role': 'system', 'content': custom})
+    messages.append({'role': 'user', 'content': goal + _context_block(context)})
+    history = ExecutionGraph(goal=goal, tasks=dict(completed or {}))
+    for index, task in enumerate(observations):
+        args = task.args if task.literal_args else _resolve_refs(task.args, history, task.tool_id)
+        ident = f'observed_{index}'
+        messages.append({'role': 'assistant', 'content': '', 'tool_calls': [{
+            'id': ident, 'type': 'function', 'function': {
+                'name': task.tool_id, 'arguments': json.dumps(args, ensure_ascii=False)}}]})
+        output = (task.output if task.status == 'completed'
+                  else json.dumps({'error': task.error}, ensure_ascii=False))
+        messages.append({'role': 'tool', 'tool_call_id': ident, 'content': output or ''})
+    return specs, messages, definitions
+
+
+def _graph_from_calls(message: dict, goal: str, specs: list[dict],
+                      completed: dict[str, Task] | None, allow_empty: bool,
+                      template: str = '') -> ExecutionGraph:
+    calls = message.get('tool_calls') or []
+    if not calls and isinstance(message.get('content'), str):
+        from .native_calls import from_text
+
+        calls = from_text(message['content'], specs, template)
+    if not isinstance(calls, list):
+        raise ValueError('The model returned invalid native tool calls.')
+    if not calls and allow_empty and not (isinstance(message.get('content'), str)
+                                          and message['content'].strip()):
+        raise ValueError('No native action or completion response returned.')
+    tasks = {}
+    occupied = set(completed or {})
+    previous = None
+    for index, call in enumerate(calls, start=len(occupied) + 1):
+        if not isinstance(call, dict) or call.get('type', 'function') != 'function' \
+                or not isinstance(call.get('function'), dict):
+            raise ValueError('The model returned an invalid native function call.')
+        function = call.get('function', {})
+        args = function.get('arguments')
+        if isinstance(args, str):
+            args = json.loads(args)
+        ident = _distinct_names([f'call_{index}'], occupied, 'next_')[f'call_{index}']
+        occupied.add(ident)
+        tasks[ident] = {'tool_id': function.get('name'), 'args': args,
+                        'dependencies': [previous] if previous else []}
+        previous = ident
+    graph = _graph_from_plan({'tasks': tasks}, goal, specs, completed,
+                             allow_empty=allow_empty, literal_tasks=set(tasks))
+    if not tasks and isinstance(message.get('content'), str):
+        graph.response = message['content']
+    return graph
+
+
 class Orchestrator:
     async def plan(
         self,
@@ -198,29 +391,41 @@ class Orchestrator:
         *,
         effort: Effort | str = Effort.BALANCED,
         inference: dict | None = None,
+        completed: dict[str, Task] | None = None,
+        allow_empty: bool = False,
     ) -> ExecutionGraph:
         if not engine_manager.active:
             raise RuntimeError("No text model is loaded. Start one from the Chat tab first.")
 
         active = engine_manager.active
 
-        specs, messages = planning_messages(goal, context, inference)
+        specs, messages, native_tools = planning_input(active, goal, context, inference, completed)
+        if not specs:
+            raise RuntimeError('No executable tools are enabled for this task. No tools ran.')
         from ..chat import model_payload
-        payload = model_payload(active, messages, inference=inference)
-        payload["stream"] = False
+        tool_options = {'native_tools': native_tools} if native_tools is not None else {}
+        payload = model_payload(active, messages, inference=inference, **tool_options)
+        payload["stream"] = True
         payload.pop("stream_options", None)
         # Keep native reasoning and samplers; structured-output enforcement is
         # used only when the running backend actually supports it.
         fields = getattr(active, "inference_profile", {}).get("capabilities", {}).get("fields", [])
-        if "response_format" in fields and "response_format" not in payload:
-            payload["response_format"] = {"type": "json_object"}
+        if native_tools is None and 'response_format' in fields \
+                and not (payload.get('response_format') or payload.get('grammar')):
+            payload['response_format'] = {'type': 'json_object'}
+            if active.engine == 'gguf' and getattr(active, 'runtime', {}).get('executable'):
+                # Native llama-server constrains decoding with this schema;
+                # it is not additional text in the model's prompt.
+                payload['response_format']['schema'] = plan_schema(specs)
         try:
             async with connection() as client:
                 for attempt in range(2):
                     if getattr(active, "context_limit", 0):
                         from ..context_count import count
 
-                        used = await count(active, messages, inference)
+                        used = await count(active, messages, inference,
+                                           **({'native_tools': native_tools}
+                                              if native_tools is not None else {}))
                         if used is None:
                             raise RuntimeError(
                                 "Native context accounting is unavailable. No tools ran."
@@ -236,24 +441,34 @@ class Orchestrator:
                         # Fit this request without changing saved manual values.
                         payload["max_tokens"] = min(
                             payload.get("max_tokens") or available, available)
-                    resp = await client.post(
-                        f"{active.base_url}/v1/chat/completions",
-                        json={**payload, "messages": messages}, timeout=900,
-                    )
-                    resp.raise_for_status()
-                    choice = resp.json()["choices"][0]
-                    content = (choice["message"].get("content") or "").strip()
+                    content = ''
                     try:
+                        resp = await _completion(
+                            client, f"{active.base_url}/v1/chat/completions",
+                            json={**payload, "messages": messages}, timeout=900,
+                        )
+                        resp.raise_for_status()
+                        choice = resp.json()["choices"][0]
+                        content = (choice["message"].get("content") or "").strip()
                         if choice.get("finish_reason") == "length":
                             raise ValueError("The plan was cut off. Use fewer, shorter steps.")
-                        graph = _graph_from_plan(_extract_json(content), goal, specs)
+                        graph = (_graph_from_calls(choice['message'], goal, specs, completed,
+                            allow_empty, getattr(active, 'inference_profile', {}).get(
+                                'capabilities', {}).get('template', ''))
+                                 if native_tools is not None else
+                                 _graph_from_plan(_extract_json(content), goal, specs, completed,
+                                                   allow_empty=allow_empty))
+                        if native_tools is not None and not graph.tasks \
+                                and choice.get('finish_reason') == 'tool_calls':
+                            raise ValueError('The backend reported a tool call without an action.')
                         graph.inference = dict(inference or {})
+                        graph.context = list(context or [])
                         return graph
                     except ValueError as exc:
                         if attempt:
                             raise RuntimeError(
                                 "The model could not produce a usable plan after two attempts. "
-                                "No tools were run. Try a shorter goal or another planning model."
+                                f"No tools were run. Last issue: {exc}"
                             ) from exc
                         # Keep the original goal and background. Repair formatting before
                         # any side effect, without treating private reasoning as a plan.
@@ -294,16 +509,44 @@ class Orchestrator:
         a task that writes files is not merely wasteful.
         """
         budget = translate_effort(effort)
-        await self._execute(graph, on_update)
+        observations = 0
+        actions = 0
+
+        def before_action(current: ExecutionGraph):
+            nonlocal actions
+            if actions >= MAX_ACTIONS:
+                current.halt_reason = ('The action limit was reached. Review saved progress '
+                                       'before continuing; no later actions ran.')
+                raise RuntimeError(current.halt_reason)
+            actions += 1
+
+        async def observe(current: ExecutionGraph):
+            nonlocal observations
+            observations += 1
+            await self._continue(current, observations, effort)
+
+        await self._execute(graph, on_update, observe=observe, before_action=before_action)
 
         for attempt in range(1, budget.passes):
-            failed = [t for t in graph.tasks.values() if t.status == "failed"]
+            if graph.halt_reason:
+                break
+            failed = graph.failed_tasks()
             if not failed:
                 break
             recovered = await self._replan(graph, failed, attempt)
             if recovered is None or not recovered.tasks:
+                self._persist_plan(graph)
+                await on_update(graph)
                 break
-            await self._execute(recovered, on_update, into=graph)
+            await self._execute(recovered, on_update, into=graph, observe=observe,
+                                before_action=before_action)
+            replacements = [t.id for t in recovered.tasks.values() if t.id not in {
+                old.id for old in failed} and t.status == 'completed']
+            if replacements and not recovered.failed_tasks():
+                for task in failed:
+                    task.recovered_by = replacements
+                self._persist_plan(graph)
+                await on_update(graph)
         return graph
 
     async def _execute(
@@ -312,6 +555,8 @@ class Orchestrator:
         on_update: Callable[[ExecutionGraph], Coroutine[Any, Any, None]],
         *,
         into: ExecutionGraph | None = None,
+        observe: Callable[[ExecutionGraph], Coroutine[Any, Any, None]] | None = None,
+        before_action: Callable[[ExecutionGraph], None] | None = None,
     ) -> ExecutionGraph:
         # Mirror the graph into durable memory as it executes. The in-flight graph
         # only lives for this run; the plan file survives, so a later session (or a
@@ -319,8 +564,10 @@ class Orchestrator:
         self._persist_plan(graph)
         await on_update(graph)
 
-        while not graph.all_terminal():
-            ready = graph.ready_tasks()
+        while not graph.all_terminal() and not graph.halt_reason:
+            # Actions are sequential. Mark only the task actually executing as
+            # in progress; future steps can change after a tool observation.
+            ready = graph.ready_tasks()[:1]
             if not ready:
                 for task in graph.tasks.values():
                     if task.status == "pending":
@@ -336,21 +583,89 @@ class Orchestrator:
 
             for task in ready:
                 try:
-                    task.output = await run_tool(task.tool_id, _resolve_refs(task.args, graph))
+                    if before_action:
+                        before_action(graph)
+                    task.output = await run_tool(task.tool_id, task.args if task.literal_args
+                                                else _resolve_refs(task.args, graph, task.tool_id))
                     task.status = "completed"
+                except (Denied, ApprovalRequired) as exc:
+                    task.status = 'failed'
+                    task.error = str(exc)
+                    graph.halt_reason = str(exc)
+                    for pending in graph.tasks.values():
+                        if pending.status == 'pending':
+                            pending.status = 'failed'
+                            pending.error = PERMISSION_STOP
                 except Exception as exc:  # noqa: BLE001 - surface tool failure on the node
                     task.status = "failed"
                     task.error = str(exc)
+                    for pending in graph.tasks.values():
+                        if pending.status == 'pending':
+                            pending.status = 'failed'
+                            pending.error = 'Earlier execution failed. Awaiting a revised plan.'
                 self._persist_plan(graph)
                 await on_update(graph)
+                if observe and task.status == 'completed':
+                    try:
+                        await observe(graph)
+                    except Exception as exc:
+                        # A draft made before an observation cannot safely
+                        # stand in for a plan that uses its actual result.
+                        pending = [t for t in graph.tasks.values() if t.status == 'pending']
+                        error = f'Could not plan from tool results: {exc}'
+                        if not pending:
+                            # A completed draft is not proof that the whole goal
+                            # was satisfied. Keep a failed final check visible.
+                            ident = _distinct_names(['completion_check'], set(graph.tasks),
+                                                    'next_')['completion_check']
+                            graph.add_task(Task(id=ident, description='Verify goal completion',
+                                                tool_id='completion_check', args={},
+                                                status='failed', error=error))
+                        for pending_task in pending:
+                            pending_task.status = 'failed'
+                            pending_task.error = error
+                    self._persist_plan(graph)
+                    await on_update(graph)
         if into is not None and into is not graph:
             # Fold a recovery plan back into the original, so the interface
             # shows one account of the work rather than two graphs.
             for task_id, task in graph.tasks.items():
                 into.tasks.setdefault(task_id, task)
+            if graph.halt_reason:
+                into.halt_reason = graph.halt_reason
+            into.response = graph.response
             self._persist_plan(into)
             await on_update(into)
         return graph
+
+    async def _continue(self, graph: ExecutionGraph, attempt: int,
+                        effort: Effort | str) -> None:
+        done = {t.id: t for t in graph.tasks.values() if t.status == 'completed'}
+        pending = [t for t in graph.tasks.values() if t.status == 'pending']
+        request = {'task': 'continue_plan' if pending else 'verify_completion',
+                   'goal': graph.goal,
+                   'observations': [task.to_dict() for task in done.values()],
+                   'remaining': [task.to_dict() for task in pending],
+                   'repeat_completed': False}
+        if not pending:
+            request['complete_output'] = {'tasks': {}}
+        revised = await self.plan(json.dumps(request, ensure_ascii=False, separators=(',', ':')),
+                                  context=graph.context, effort=effort,
+                                  inference=graph.inference, completed=done,
+                                  allow_empty=not pending)
+        names = _distinct_names(revised.tasks, {
+            ident for ident, task in graph.tasks.items() if task.status != 'pending'
+        }, f'o{attempt}_')
+        for task in revised.tasks.values():
+            task.id = names[task.id]
+            task.dependencies = [names.get(dep, dep) for dep in task.dependencies]
+            if not task.literal_args:
+                task.args = _rename_refs(task.args, names)
+        graph.tasks = {ident: task for ident, task in graph.tasks.items()
+                       if task.status != 'pending'}
+        graph.tasks.update({task.id: task for task in revised.tasks.values()})
+        graph.response = revised.response
+        graph.start_node_ids = [task.id for task in graph.tasks.values() if not task.dependencies]
 
     async def _replan(
         self, graph: ExecutionGraph, failed: list[Task], attempt: int
@@ -361,30 +676,26 @@ class Orchestrator:
         anything going wrong here ends the loop quietly and leaves the original
         result standing.
         """
-        report = "\n".join(
-            f"- {t.id} ({t.tool_id}): {t.description or 'no description'} — "
-            f"FAILED: {(t.error or 'no reason given')[:300]}"
-            for t in failed
-        )
         done = [t for t in graph.tasks.values() if t.status == "completed"]
-        if done:
-            report += "\n\nAlready finished, available as references:\n" + "\n".join(
-                f"- {{{t.id}}}: {t.description or t.tool_id}" for t in done
-            )
+        report = {'failed': [task.to_dict() for task in failed],
+                  'completed': [task.to_dict() for task in done]}
         try:
             recovered = await self.plan(
-                RECOVERY_PROMPT.format(report=json.dumps(report))
-                + '\n\n' + json.dumps({'goal': graph.goal}),
-                **({"inference": graph.inference} if graph.inference else {})
+                json.dumps({'task': 'recover', 'goal': graph.goal, 'report': report,
+                            'failures': [task.to_dict() for task in failed]}, ensure_ascii=False),
+                context=graph.context,
+                **({"inference": graph.inference} if graph.inference else {}),
+                completed={task.id: task for task in done},
             )
             # A new plan normally starts at t1 again. Keep its identity distinct
             # from the first attempt so completed recovery work is visible and
             # cannot be mistaken for an earlier successful task.
-            names = {task_id: f"r{attempt}_{task_id}" for task_id in recovered.tasks}
+            names = _distinct_names(recovered.tasks, set(graph.tasks), f'r{attempt}_')
             for task in recovered.tasks.values():
                 task.id = names[task.id]
                 task.dependencies = [names.get(dep, dep) for dep in task.dependencies]
-                task.args = _rename_refs(task.args, names)
+                if not task.literal_args:
+                    task.args = _rename_refs(task.args, names)
             recovered.tasks = {task.id: task for task in recovered.tasks.values()}
             recovered.start_node_ids = [
                 names.get(task_id, task_id) for task_id in recovered.start_node_ids
@@ -392,8 +703,11 @@ class Orchestrator:
             for task in graph.tasks.values():
                 if task.status == "completed":
                     recovered.tasks[task.id] = task
+            recovered.goal = graph.goal
             return recovered
-        except Exception:  # noqa: BLE001 - a failed recovery is not a new failure
+        except Exception as exc:  # noqa: BLE001 - keep the original failure and explain recovery
+            for task in failed:
+                task.error = f'{task.error or "Task failed"}\nRecovery planning failed: {exc}'
             return None
 
     @staticmethod

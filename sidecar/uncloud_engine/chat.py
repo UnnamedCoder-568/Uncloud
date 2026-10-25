@@ -17,6 +17,7 @@ def model_payload(
     web_tools: bool = False,
     history_tools: bool = False,
     chart_tools: bool = False,
+    native_tools: list[dict] | None = None,
 ) -> dict:
     """Native model recommendations with explicit request overrides.
 
@@ -30,7 +31,8 @@ def model_payload(
     metadata = getattr(active, "inference_profile", {})
     payload = {"messages": chat_turns(messages), "stream": True,
                "stream_options": {"include_usage": True}}
-    tools = definitions(active, web_tools, history_tools, chart_tools)
+    tools = (native_tools if native_tools is not None
+             else definitions(active, web_tools, history_tools, chart_tools))
     if tools:
         payload['tools'] = tools
     if active.engine == "mlx-vlm":

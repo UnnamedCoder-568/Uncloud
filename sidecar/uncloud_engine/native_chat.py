@@ -1,12 +1,14 @@
-"""Verified, compiler-free Windows chat runtime shared by packaging and repair."""
+"""Verified, compiler-free native chat runtimes shared by packaging and repair."""
 from __future__ import annotations
 
 import hashlib
 import os
+import platform
 import re
 import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
 import urllib.request
 import zipfile
@@ -21,27 +23,36 @@ GPU_URL = (f'https://github.com/ggml-org/llama.cpp/releases/download/{VERSION}/'
            f'llama-{VERSION}-bin-win-vulkan-x64.zip')
 GPU_SHA256 = 'edbae2fd24cb66e2419f09eb00d0b59a7365e26b449d8313ec498e851f987f05'
 RUNTIME_DIR = Path(__file__).resolve().parent.parent / '.llama'
+MAC_SHA256 = {
+    'arm64': '2a7d0f418440a386f840dabc7e676c3f02b0d82995c41143df567acd0310616a',
+    'x64': 'ca0fffd5d7b9f84cc6c1cd339c6a069f8fd19244d9bf76e27577797cc8fe9390',
+}
 
 
 @lru_cache(maxsize=16)
 def _inspect(executable: str, stamp: int, size: int) -> dict:
     """Probe the executable, without loading weights or allocating a model cache."""
     result = {'auto_fit': False, 'context_stop': False, 'devices': [], 'template_file': False}
-    options = dict(capture_output=True, text=True, timeout=15, check=False,
+    options = dict(capture_output=True, text=True, timeout=60, check=False,
                    creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
     try:
         help_text = subprocess.run([executable, '--help'], **options)
+        if help_text.returncode != 0:
+            raise subprocess.CalledProcessError(help_text.returncode, [executable, "--help"])
         text = help_text.stdout + help_text.stderr
         result['auto_fit'] = '--fit-ctx' in text and '--fit ' in text
         result['context_stop'] = '--no-context-shift' in text
         result['template_file'] = '--chat-template-file' in text
         devices = subprocess.run([executable, '--list-devices'], **options)
-        if devices.returncode == 0:
-            result['devices'] = [match.group(0).strip() for match in re.finditer(
-                r'(?m)^\s*(?:Vulkan\d+|CUDA\d+|SYCL\d+|Metal)\s*:\s*[^\n]+',
-                devices.stdout + devices.stderr)]
+        if devices.returncode != 0:
+            raise subprocess.CalledProcessError(devices.returncode,
+                                                [executable, '--list-devices'])
+        result['devices'] = [match.group(0).strip() for match in re.finditer(
+            r'(?m)^\s*(?:Vulkan\d+|CUDA\d+|SYCL\d+|MTL\d+|Metal\d*)\s*:\s*[^\n]+',
+            devices.stdout + devices.stderr)]
     except (OSError, subprocess.SubprocessError):
-        pass
+        # lru_cache must never retain a failed cold-start probe as CPU-only.
+        raise
     return result
 
 
@@ -50,7 +61,7 @@ def inspect_runtime(executable: str | None) -> dict:
         try:
             stat = Path(executable).stat()
             return _inspect(executable, stat.st_mtime_ns, stat.st_size)
-        except OSError:
+        except (OSError, subprocess.SubprocessError):
             pass
     return {'auto_fit': False, 'context_stop': False, 'devices': [], 'template_file': False}
 
@@ -106,6 +117,10 @@ def server_path() -> str | None:
             cpu = root / 'llama-server.exe'
             if cpu.is_file():
                 return str(cpu)
+    if sys.platform == 'darwin':
+        managed = RUNTIME_DIR / f'llama-{VERSION}' / 'llama-server'
+        if managed.is_file():
+            return str(managed)
     candidates.append(shutil.which('llama-server'))
     return next((p for p in candidates if p and Path(p).is_file()), None)
 
@@ -138,3 +153,34 @@ def install_windows_runtime(destination: Path = RUNTIME_DIR, say=print) -> None:
     _install_archive(GPU_URL, GPU_SHA256, destination / 'vulkan')
     _inspect.cache_clear()
     say('Windows CPU and Vulkan GPU runtimes are installed.')
+
+
+def install_native_runtime(destination: Path = RUNTIME_DIR, say=print) -> None:
+    if sys.platform == 'win32':
+        install_windows_runtime(destination, say)
+        return
+    if sys.platform != 'darwin':
+        raise ValueError('No verified native archive is configured for this platform.')
+    machine = platform.machine().lower()
+    arch = {'arm64': 'arm64', 'aarch64': 'arm64', 'x86_64': 'x64', 'amd64': 'x64'}.get(machine)
+    if arch is None:
+        raise ValueError(f'Unsupported Mac architecture: {machine}')
+    url = (f'https://github.com/ggml-org/llama.cpp/releases/download/{VERSION}/'
+           f'llama-{VERSION}-bin-macos-{arch}.tar.gz')
+    say('Downloading the verified Mac chat runtime…')
+    with tempfile.TemporaryDirectory() as temp:
+        archive = Path(temp) / 'runtime.tar.gz'
+        with urllib.request.urlopen(url, timeout=120) as response, archive.open('wb') as out:
+            shutil.copyfileobj(response, out)
+        if hashlib.sha256(archive.read_bytes()).hexdigest() != MAC_SHA256[arch]:
+            raise RuntimeError('Chat runtime checksum did not match. Please retry.')
+        unpacked = Path(temp) / 'unpacked'
+        with tarfile.open(archive) as bundle:
+            bundle.extractall(unpacked, filter='data')
+        source = unpacked / f'llama-{VERSION}'
+        if not (source / 'llama-server').is_file():
+            raise RuntimeError('Downloaded runtime does not contain the chat server.')
+        destination.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(source, destination / source.name, symlinks=True, dirs_exist_ok=True)
+    _inspect.cache_clear()
+    say('Mac native chat runtime is installed.')
