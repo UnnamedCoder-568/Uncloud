@@ -1,7 +1,35 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ApiError, CHAT_STALL_MS, chatRunStalled, isUnloadedModelError, streamChat, wireMessage } from './sidecar';
 
+vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(async () => ({ port: 1234, token: 'test-token' })) }));
+
 describe('chat run progress', () => {
+  it('sends identical clean model requests from desktop and paired web clients', async () => {
+    const requests: { body: unknown; options: RequestInit }[] = [];
+    vi.stubGlobal('fetch', async (_url: string, options: RequestInit = {}) => {
+      if (options.method === 'POST') {
+        requests.push({ body: JSON.parse(String(options.body)), options });
+        return new Response(JSON.stringify({ id: 'run', status: 'running', frames: [], cursor: 0 }));
+      }
+      expect(options.cache).toBe('no-store');
+      return new Response(JSON.stringify({ id: 'run', status: 'done', cursor: 1,
+        frames: [JSON.stringify({ choices: [{ delta: { content: 'Test response.' } }] })] }));
+    });
+    try {
+      for (const desktop of [true, false]) {
+        vi.stubGlobal('window', desktop ? { __TAURI_INTERNALS__: {} } : {});
+        for await (const _chunk of streamChat([{ role: 'user', content: 'What is your model name?' }],
+          undefined, undefined, { path: '/selected/model', engine: 'gguf', webTools: true, chartTools: true })) { /* Drain. */ }
+      }
+      expect(requests[0].body).toEqual(requests[1].body);
+      expect(requests[1].body).toMatchObject({ inherit_defaults: false, inference: {},
+        model_path: '/selected/model', web_tools: true, chart_tools: true,
+        messages: [{ role: 'user', content: 'What is your model name?' }] });
+      expect(requests[0].options.headers).toMatchObject({ Authorization: 'Bearer test-token' });
+      expect(requests[1].options.headers).not.toHaveProperty('Authorization');
+      expect(requests.every(request => request.options.cache === 'no-store')).toBe(true);
+    } finally { vi.unstubAllGlobals(); }
+  });
   it('allows slow local inference before the inactivity limit', () => {
     expect(chatRunStalled(1_000, 1_000 + CHAT_STALL_MS - 1)).toBe(false);
   });

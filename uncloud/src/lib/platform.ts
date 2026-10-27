@@ -8,10 +8,36 @@
  * disk anyway — so the handful of places that care ask here.
  */
 
-import { useSyncExternalStore } from 'react';
+import { useEffect, useSyncExternalStore } from 'react';
 
 export function inDesktop(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+}
+
+/** Keep navigation inside the visible browser area when a phone keyboard pans
+ * or shrinks the visual viewport. Desktop window geometry stays native. */
+export function useAppViewport(): void {
+  useEffect(() => {
+    if (inDesktop()) return;
+    const viewport = window.visualViewport;
+    const root = document.documentElement;
+    const names = ['--app-viewport-height', '--app-viewport-top'] as const;
+    const previous = names.map(name => root.style.getPropertyValue(name));
+    const sync = () => {
+      root.style.setProperty(names[0], `${viewport?.height ?? window.innerHeight}px`);
+      root.style.setProperty(names[1], `${viewport?.offsetTop ?? 0}px`);
+    };
+    sync();
+    viewport?.addEventListener('resize', sync);
+    viewport?.addEventListener('scroll', sync);
+    window.addEventListener('resize', sync);
+    return () => {
+      viewport?.removeEventListener('resize', sync);
+      viewport?.removeEventListener('scroll', sync);
+      window.removeEventListener('resize', sync);
+      names.forEach((name, i) => previous[i] ? root.style.setProperty(name, previous[i]) : root.style.removeProperty(name));
+    };
+  }, []);
 }
 
 /** The chassis's breakpoint. Kept in step with `.split` and the drawer. */

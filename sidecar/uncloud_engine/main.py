@@ -63,6 +63,17 @@ download_manager.on_finished = lambda state: user_events.notify(
 
 app = FastAPI(title="Uncloud Engine")
 logger = logging.getLogger(__name__)
+
+
+@app.middleware("http")
+async def fresh_browser_state(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith('/api/') or response.headers.get(
+            'content-type', '').startswith('text/html'):
+        response.headers['Cache-Control'] = 'no-store'
+    return response
+
+
 app.add_middleware(
     CORSMiddleware,
     # Tauri's production origin is platform-specific: Windows and Android use

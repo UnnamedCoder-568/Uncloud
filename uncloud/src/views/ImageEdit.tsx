@@ -1,6 +1,7 @@
 import AutoGrowTextarea from "../components/AutoGrowTextarea";
 import { useDismiss } from '../lib/useDismiss';
 import ActivityOrb from '../components/ActivityOrb';
+import ImagePreview from '../components/ImagePreview';
 import { useEffect, useRef, useState } from 'react';
 import { ChevronDown, ImagePlus, Wand2, X, ArrowRight } from 'lucide-react';
 import { getLibrary, uploadImage, editImage, getImageJob, fetchImageBlobUrl, stopImage } from '../lib/sidecar';
@@ -222,7 +223,7 @@ export default function ImageEdit() {
       <div className={`flex-1 min-w-0 overflow-y-auto p-6 flex items-center justify-center split-pane${split.on(1)}`}>
         {outUrl ? (
           <div className="flex flex-col items-center gap-3 max-h-full">
-            <img src={outUrl} alt="result" className="max-h-[70vh] rounded-xl border border-[var(--border)]" />
+            <ImagePreview src={outUrl} alt="Edited image" name={job?.output_path?.split(/[\\/]/).pop()} className="max-h-[70vh] rounded-xl border border-[var(--border)]" />
             <button
               onClick={useResultAsInput}
               className="flex items-center gap-1.5 text-[11px] px-3 py-1.5 rounded-full bg-[var(--bg-inset)] text-[var(--text-dim)] hover:text-white transition"

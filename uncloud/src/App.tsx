@@ -25,7 +25,7 @@ import OutputsView from './views/OutputsView';
 import SetupView from './views/SetupView';
 import { getLegalState, getSettings, runtimeStatus, startRuntime } from './lib/sidecar';
 import Wordmark from './components/Wordmark';
-import { inDesktop, useNarrow } from './lib/platform';
+import { inDesktop, useNarrow, useAppViewport } from './lib/platform';
 import UpdateBanner from './components/UpdateBanner';
 import { AddFromDiskHost } from './components/AddFromDisk';
 import { InteractionProvider } from './lib/interactions';
@@ -56,6 +56,7 @@ function loadRailOpen(): boolean {
 }
 
 export default function App() {
+  useAppViewport();
   // null while we're still asking; false sends the user to setup.
   const [engineUp, setEngineUp] = useState<boolean | null>(null);
   const [ready, setReady] = useState(false);
@@ -88,16 +89,23 @@ export default function App() {
   // returns to the conversation.
   useEffect(() => onHandoffSignal(() => setView('chisel')), [setView]);
 
+  const narrow = useNarrow();
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  useEffect(() => {
+    if (!drawerOpen) return;
+    const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') setDrawerOpen(false); };
+    document.addEventListener('keydown', escape);
+    return () => document.removeEventListener('keydown', escape);
+  }, [drawerOpen]);
+
   const goBack = useCallback(
-    () => setNav((n) => (n.at > 0 ? { ...n, at: n.at - 1 } : n)), []);
+    () => { setDrawerOpen(false); setNav((n) => (n.at > 0 ? { ...n, at: n.at - 1 } : n)); }, []);
   const goForward = useCallback(
-    () => setNav((n) => (n.at < n.stack.length - 1 ? { ...n, at: n.at + 1 } : n)), []);
+    () => { setDrawerOpen(false); setNav((n) => (n.at < n.stack.length - 1 ? { ...n, at: n.at + 1 } : n)); }, []);
 
   // On a phone the rail is a drawer: closed to begin with, closed again after
   // every move, and never written into the desktop's remembered preference —
   // closing it on a phone must not hide it the next time the app opens.
-  const narrow = useNarrow();
-  const [drawerOpen, setDrawerOpen] = useState(false);
   const showRail = narrow ? drawerOpen : railOpen;
   const go = useCallback((next: View) => {
     setView(next);
@@ -207,7 +215,7 @@ export default function App() {
       names={initialSetup ? "chat,image,video,transcribe,kokoro,quantize,computer,image_train,train,mlx,browser,tools" : "tools"}
       optionalNames={initialSetup ? "music,realtime,quality,chatterbox" : ""}>
     <InteractionProvider>
-    <div className="h-screen w-screen flex bg-[var(--bg)]">
+    <div className="app-shell flex bg-[var(--bg)]">
       {showRail && narrow && (
         <div className="rail-scrim" onClick={() => setDrawerOpen(false)} />
       )}
@@ -219,14 +227,14 @@ export default function App() {
           top={<TitleBar inset={showRail}>{showRail && controls}</TitleBar>}
         />
       )}
-      <main className="flex-1 min-w-0 flex flex-col">
+      <main className="flex-1 min-w-0 min-h-0 overflow-hidden flex flex-col">
         {/* With the rail hidden this is the only strip, so it takes the inset
             for the traffic lights and carries the navigation controls too. */}
         {/* On a phone the drawer lies over this strip rather than replacing
             it, so the controls stay here whether or not it is open. */}
-        <TitleBar inset={narrow}>
+        <TitleBar inset={narrow} className="app-titlebar">
           {(!showRail || narrow) && controls}
-          <div ref={setSlot} className="flex items-center gap-1 flex-1 min-w-0" />
+          <div ref={setSlot} className="titlebar-slot flex items-center gap-1 flex-1 min-w-0" />
           <NotificationCenter navigate={go} />
         </TitleBar>
         <UpdateBanner />

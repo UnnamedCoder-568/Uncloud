@@ -2,6 +2,7 @@ import { open } from '@tauri-apps/plugin-dialog';
 import AutoGrowTextarea from "../components/AutoGrowTextarea";
 import { useDismiss } from '../lib/useDismiss';
 import ActivityOrb from '../components/ActivityOrb';
+import ImagePreview from '../components/ImagePreview';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ChevronDown, LayoutGrid, Shuffle, SlidersHorizontal, Sparkles, UserRound, UserRoundPlus } from 'lucide-react';
 import { getLibrary, generateImage, editImage, getImageJob, fetchImageBlobUrl,
@@ -401,9 +402,10 @@ export default function ImageGenerate({ onEdit }: { onEdit?: () => void }) {
                   <LayoutGrid size={13} /> All {batch.length} images{job?.seed != null ? ` · this one is seed ${job.seed}` : ''}
                 </button>
               )}
-              <img
+              <ImagePreview
                 src={imageUrl}
                 alt={prompt}
+                name={job?.output_path?.split(/[\\/]/).pop()}
                 className="min-h-0 max-h-full max-w-full object-contain rounded-xl border border-[var(--border)]"
               />
               <div className="flex items-center gap-2">

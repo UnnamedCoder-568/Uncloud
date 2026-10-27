@@ -1,4 +1,5 @@
 import ActivityOrb from '../components/ActivityOrb';
+import ImagePreview from '../components/ImagePreview';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { FolderOpen, Trash2, RefreshCw, FolderCog } from 'lucide-react';
@@ -48,7 +49,7 @@ function Thumb({ file }: { file: OutputFile }) {
   }
   if (file.kind === 'image') {
     return url
-      ? <img src={url} alt={file.name} className="w-full h-full object-cover" />
+      ? <ImagePreview src={url} alt={file.name} name={file.name} buttonClassName="w-full h-full" className="w-full h-full object-cover" />
       : <div className="w-full h-full bg-[var(--bg-inset)]" />;
   }
   return (

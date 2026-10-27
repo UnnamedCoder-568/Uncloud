@@ -52,7 +52,7 @@ export function NavControls({
   canForward: boolean;
 }) {
   return (
-    <>
+    <div className="nav-controls" role="group" aria-label="Navigation">
       <button
         className="tb-btn"
         onClick={onToggleRail}
@@ -69,18 +69,19 @@ export function NavControls({
               title="Forward" aria-label="Forward">
         <ChevronRight size={18} strokeWidth={1.75} />
       </button>
-    </>
+    </div>
   );
 }
 
-export default function TitleBar({ inset = false, children, actions }: {
+export default function TitleBar({ inset = false, children, actions, className = '' }: {
   /** Reserve room for the traffic lights. Exactly one strip should do this. */
   inset?: boolean;
   children?: ReactNode;
   actions?: ReactNode;
+  className?: string;
 }) {
   return (
-    <div className={inset ? 'titlebar titlebar-pad' : 'titlebar'}>
+    <div className={`${inset ? 'titlebar titlebar-pad' : 'titlebar'} ${className}`}>
       {children}
       {actions && <div className="titlebar-actions">{actions}</div>}
     </div>

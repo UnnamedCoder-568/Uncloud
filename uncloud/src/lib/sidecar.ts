@@ -88,7 +88,7 @@ export async function api<T>(path: string, opts: RequestInit = {},
                              retried = false): Promise<T> {
   const url = `${await baseUrl()}${path}`;
   const headers = { ...(await authHeaders()), ...(opts.body ? { 'Content-Type': 'application/json' } : {}), ...(opts.headers || {}) };
-  const resp = await fetch(url, { ...opts, headers });
+  const resp = await fetch(url, { ...opts, cache: 'no-store', headers });
   if (!resp.ok) {
     // A paired device whose session was revoked, or that never paired.
     if (resp.status === 401) goPair();

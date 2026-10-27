@@ -10,6 +10,7 @@ import { ChevronDown, ArrowUp, Square, Mic, Volume2, VolumeX, Hammer, PanelRight
 import { TitleBarPortal } from '../components/TitleBar';
 import { Mark } from '../components/Wordmark';
 import Markdown from '../components/Markdown';
+import ImagePreview from '../components/ImagePreview';
 import { fromConversation, sendToChisel } from '../lib/handoff';
 import Conversations from '../components/Conversations';
 import { usePaneVisible, useWhenVisible } from '../components/Panes';
@@ -1425,7 +1426,10 @@ export default function ChatView({ persona }: { persona?: PersonaSnapshot } = {}
     <div className="h-full flex flex-col relative">
       {/* Conversation navigation stays in the window chrome. */}
       <TitleBarPortal>
-        <span className="text-sm text-[var(--text-dim)] px-2">{persona ? `Personas · ${persona.name}` : 'Chat'}</span>
+        <div className="min-w-0 px-2">
+          <span className="block truncate text-sm text-[var(--text-dim)]">{persona ? `Personas · ${persona.name}` : 'Chat'}</span>
+          {activeModel && <span className="block truncate text-[10px] text-[var(--text-faint)]" title={activeModel.name} aria-label={`Selected model: ${activeModel.name}`}>{activeModel.name}</span>}
+        </div>
         <span className="flex-1" />
 
         {/* Starting again, and going back to something. Both belong in the
@@ -1630,9 +1634,10 @@ export default function ChatView({ persona }: { persona?: PersonaSnapshot } = {}
                 {(previews[i] || []).map((p, k) => (
                   <div key={k} className="mt-2 max-w-[280px]">
                     {p.url ? (
-                      <img
+                      <ImagePreview
                         src={p.url}
                         alt={p.prompt}
+                        name={`chat-image-${i + 1}-${k + 1}.png`}
                         className="w-full rounded-lg border border-[var(--border)]"
                       />
                     ) : p.error ? (

@@ -1,6 +1,7 @@
 import AutoGrowTextarea from "../components/AutoGrowTextarea";
 import { useDismiss } from '../lib/useDismiss';
 import ActivityOrb from '../components/ActivityOrb';
+import ImagePreview from '../components/ImagePreview';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, ImagePlus, Sparkles, X, Check, FolderDown } from 'lucide-react';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
@@ -440,7 +441,7 @@ export default function ProductStudio() {
               <div key={job.id} className="card overflow-hidden">
                 <div className="aspect-[3/4] bg-[var(--bg-inset)] flex items-center justify-center">
                   {url ? (
-                    <img src={url} alt={job.label ?? job.prompt} className="w-full h-full object-cover" />
+                    <ImagePreview src={url} alt={job.label ?? job.prompt} name={job.output_path?.split(/[\\/]/).pop()} buttonClassName="w-full h-full" className="w-full h-full object-cover" />
                   ) : job.status === 'error' ? (
                     <div className="text-[11px] text-rose-400 px-4 text-center">{job.error}</div>
                   ) : (
