@@ -63,7 +63,7 @@ class ImageJob:
     total_steps: int = 0
     output_path: str | None = None
     error: str | None = None
-    kind: str = "generate"  # generate | edit
+    kind: str = "generate"  # generate | edit | upscale
     label: str | None = None  # e.g. the shot name in a Product batch
     #: Decided before the job runs, so every image in a batch can be made again.
     seed: int | None = None
@@ -71,6 +71,13 @@ class ImageJob:
     #: ends at the next one rather than running to completion unwatched.
     cancelled: bool = False
     phase: str = "Queued"
+    source_path: str | None = None
+    started_at: float | None = None
+    finished_at: float | None = None
+    auto_enhance: bool = False
+    original_path: str | None = None
+    enhanced: bool = False
+    enhancement_error: str | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -79,6 +86,13 @@ class ImageJob:
             "done": self.status in ("done", "error", "cancelled"), "error": self.error,
             "kind": self.kind, "label": self.label, "seed": self.seed,
             "phase": self.phase,
+            "source_path": self.source_path,
+            "original_path": self.original_path,
+            "auto_enhance": self.auto_enhance,
+            "enhanced": self.enhanced,
+            "enhancement_error": self.enhancement_error,
+            "elapsed_seconds": (max(0, (self.finished_at or time.monotonic()) - self.started_at)
+                                if self.started_at is not None else 0),
             # The UI needs the path to offer Save / Save as / Reveal on a result.
             "output_path": self.output_path,
         }
@@ -168,9 +182,10 @@ class ImageEngine:
         text_encoder_path: str | None = None,
         lora_paths: list[str] | None = None, lora_scales: list[float] | None = None,
         label: str | None = None,
+        auto_enhance: bool = False,
     ) -> ImageJob:
         job = ImageJob(id=uuid.uuid4().hex[:12], prompt=prompt, total_steps=steps or 0,
-                       label=label, seed=seed)
+                       label=label, seed=seed, auto_enhance=auto_enhance)
         self.jobs[job.id] = job
         task = asyncio.create_task(self._run(
             job, model_path, engine, prompt, negative_prompt, steps, guidance, width, height,
@@ -205,6 +220,7 @@ class ImageEngine:
         lora_paths: list[str] | None, lora_scales: list[float] | None,
     ) -> None:
         job.status = "running"
+        job.started_at = time.monotonic()
         try:
             # Diffusion can run for minutes on a laptop; hold sleep off.
             with keep_awake("image"):
@@ -233,6 +249,7 @@ class ImageEngine:
                 # failure, not a picture, and must not be handed over as one.
                 verify_image(out)
                 job.output_path = out
+                await self._enhance_generated(job)
                 job.status = "done"
         except Cancelled:
             job.status = "cancelled"
@@ -243,8 +260,96 @@ class ImageEngine:
             job.error = None if job.cancelled else str(exc)
 
         finally:
+            job.finished_at = time.monotonic()
             from .job_events import finished
 
+            finished("image", job)
+
+    async def _enhance_generated(self, job: ImageJob) -> None:
+        """Finish in the same queue, even if the originating UI goes away.
+
+        Enhancement failure or Stop must never hide a successful source render.
+        The finished notification and elapsed time cover both stages.
+        """
+        if not job.auto_enhance or not job.output_path:
+            return
+        from .config import settings
+        from .image_upscale import enhance, validate_source
+
+        job.original_path = job.output_path
+        job.step = job.total_steps = 0
+        job.phase = "Preparing enhancement"
+        out = Path(job.output_path).with_name(f"{job.id}-2x.png")
+        try:
+            source = await asyncio.to_thread(
+                validate_source, job.original_path, settings.output_dir)
+
+            def phase(message):
+                job.phase = message
+
+            def progress(step, total):
+                job.step, job.total_steps = step, total
+
+            await asyncio.to_thread(
+                enhance, source, out, download=True,
+                cancelled=lambda: job.cancelled, phase=phase, progress=progress,
+            )
+            job.output_path = str(out)
+            job.enhanced = True
+            job.phase = "Enhanced · original preserved"
+        except Cancelled:
+            job.enhancement_error = "Enhancement stopped. Original image is ready."
+            job.phase = "Original ready · enhancement stopped"
+        except Exception as exc:  # noqa: BLE001 - the original is still a valid result
+            job.enhancement_error = f"Enhancement unavailable: {exc}. Original image is ready."
+            job.phase = "Original ready · enhancement unavailable"
+
+    def start_upscale(self, source_path: str, *, download: bool = False) -> ImageJob:
+        job = ImageJob(id=uuid.uuid4().hex[:12], prompt="", kind="upscale",
+                       source_path=source_path, label="2× enhancement")
+        self.jobs[job.id] = job
+        task = asyncio.create_task(self._run_upscale(job, download=download))
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
+        return job
+
+    async def _run_upscale(self, job: ImageJob, *, download: bool) -> None:
+        from .config import settings
+        from .image_upscale import enhance, validate_source
+        from .job_events import finished
+
+        try:
+            # Shares the generation queue: enhancement never competes with
+            # another image render for GPU memory. Keep its model resident.
+            async with self._queue:
+                if job.cancelled:
+                    raise Cancelled("Enhancement stopped")
+                job.status = "running"
+                job.started_at = time.monotonic()
+                source = validate_source(job.source_path or "", settings.output_dir)
+                out = output_dir_for() / f"{job.id}-2x.png"
+
+                def phase(message):
+                    job.phase = message
+
+                def progress(step, total):
+                    job.step, job.total_steps = step, total
+
+                with keep_awake("image enhancement"):
+                    await asyncio.to_thread(
+                        enhance, source, out, download=download,
+                        cancelled=lambda: job.cancelled, phase=phase, progress=progress,
+                    )
+                job.output_path = str(out)
+                job.status = "done"
+                job.phase = "Enhanced · original preserved"
+        except Cancelled:
+            job.status = "cancelled"
+        except Exception as exc:  # noqa: BLE001 - surface download/GPU/disk failures
+            job.status = "cancelled" if job.cancelled else "error"
+            job.error = None if job.cancelled else str(exc)
+        finally:
+            job.finished_at = time.monotonic()
             finished("image", job)
 
     def start_edit(
@@ -253,10 +358,11 @@ class ImageEngine:
         width: int | None = None, height: int | None = None, seed: int | None = None,
         strength: float | None = None, mflux_cli: str = "mflux-generate-kontext",
         label: str | None = None,
+        auto_enhance: bool = False,
     ) -> ImageJob:
         """Reference-image editing: an input image plus an instruction."""
         job = ImageJob(id=uuid.uuid4().hex[:12], prompt=prompt, total_steps=steps or 0,
-                       kind="edit", label=label, seed=seed)
+                       kind="edit", label=label, seed=seed, auto_enhance=auto_enhance)
         self.jobs[job.id] = job
         task = asyncio.create_task(self._run_edit(
             job, model_path, prompt, reference_path, steps, guidance,
@@ -284,11 +390,14 @@ class ImageEngine:
         seed: int | None, strength: float | None, mflux_cli: str,
     ) -> None:
         job.status = "running"
+        job.started_at = time.monotonic()
         try:
             with keep_awake("image edit"):
                 await self._edit_with_wake_lock(
                     job, model_path, prompt, reference_path, steps, guidance,
                     width, height, seed, strength, mflux_cli)
+                await self._enhance_generated(job)
+                job.status = "done"
         except Cancelled:
             job.status = "cancelled"
         except Exception as exc:  # noqa: BLE001 - surface any failure to the UI
@@ -296,6 +405,7 @@ class ImageEngine:
             job.error = None if job.cancelled else str(exc)
 
         finally:
+            job.finished_at = time.monotonic()
             from .job_events import finished
 
             finished("image", job)
@@ -345,7 +455,6 @@ class ImageEngine:
         await self._stream_mflux(job, cmd, out_path, mflux_cli)
         verify_image(out_path, what="edited image")
         job.output_path = str(out_path)
-        job.status = "done"
 
     async def _stream_mflux(self, job: ImageJob, cmd: list[str], out_path: Path,
                             cli_name: str) -> None:
@@ -420,6 +529,11 @@ class ImageEngine:
         # subprocess below reloaded every weight for every image, which on a
         # 22 GB model is minutes of work repeated for no reason.
         if can_run_in_process(mflux_cli):
+            def on_phase(phase: str) -> None:
+                if job.cancelled:
+                    raise Cancelled
+                job.phase = phase
+
             def on_step(n: int) -> None:
                 if job.cancelled:
                     raise Cancelled
@@ -431,7 +545,7 @@ class ImageEngine:
                 base=mflux_base, steps=steps, width=width, height=height,
                 lora_paths=lora_paths, lora_scales=lora_scales,
                 guidance=guidance if guidance is not None else 1.0,
-                on_step=on_step, out_path=out_path,
+                on_step=on_step, on_phase=on_phase, out_path=out_path,
             )
 
         mflux_bin = _mflux_bin(mflux_cli)

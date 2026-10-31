@@ -545,8 +545,14 @@ export interface ImageJob {
   total_steps: number;
   done: boolean;
   error: string | null;
-  kind: 'generate' | 'edit';
+  kind: 'generate' | 'edit' | 'upscale';
   phase?: string;
+  source_path?: string | null;
+  original_path?: string | null;
+  auto_enhance?: boolean;
+  enhanced?: boolean;
+  enhancement_error?: string | null;
+  elapsed_seconds?: number;
   label: string | null;
   /** Where the finished file landed, for Save / Save as / Reveal. */
   output_path: string | null;
@@ -557,6 +563,7 @@ export interface ImageJob {
 }
 
 export interface ImageGenerateOptions {
+  auto_enhance?: boolean;
   negative_prompt?: string;
   /** Uncensored text encoder, for pipelines whose encoder is a causal LM. */
   text_encoder_path?: string;
@@ -574,10 +581,17 @@ export interface ImageGenerateOptions {
 }
 
 export async function generateImage(model_path: string, engine: string, prompt: string, catalog_id: string | null, opts: ImageGenerateOptions = {}) {
+  if (opts.auto_enhance) await apiPost('/api/image/enhancement/prepare');
   return apiPost<ImageJob>('/api/image/generate', { model_path, engine, prompt, catalog_id, ...opts });
 }
 export async function getImageJob(id: string) {
   return api<ImageJob>(`/api/image/jobs/${id}`);
+}
+export function imageEnhancementInfo() {
+  return api<{ ready: boolean; size_bytes: number; name: string }>('/api/image/enhancement');
+}
+export function enhanceImage(source_path: string, download_model = false) {
+  return apiPost<ImageJob>('/api/image/enhance', { source_path, download_model });
 }
 /** Stop a generation, or every one still running when given no job. */
 export async function stopImage(id?: string) {
@@ -622,8 +636,9 @@ export async function editImage(
   prompt: string,
   reference_path: string,
   catalog_id: string | null,
-  opts: { steps?: number; guidance?: number; width?: number; height?: number; seed?: number; strength?: number; count?: number } = {},
+  opts: { steps?: number; guidance?: number; width?: number; height?: number; seed?: number; strength?: number; count?: number; auto_enhance?: boolean } = {},
 ) {
+  if (opts.auto_enhance) await apiPost('/api/image/enhancement/prepare');
   return apiPost<ImageJob>('/api/image/edit', { model_path, prompt, reference_path, catalog_id, ...opts });
 }
 
@@ -632,6 +647,7 @@ export async function getProductCategories() {
 }
 
 export async function generateProductShots(body: {
+  auto_enhance?: boolean;
   model_path: string;
   reference_path: string;
   category: string;
@@ -644,6 +660,7 @@ export async function generateProductShots(body: {
   guidance?: number;
   seed?: number;
 }) {
+  if (body.auto_enhance) await apiPost('/api/image/enhancement/prepare');
   return apiPost<ImageJob[]>('/api/product/generate', body);
 }
 
@@ -681,15 +698,15 @@ export async function characterReferenceUrl(slug: string): Promise<string> {
   return URL.createObjectURL(await resp.blob());
 }
 
-export async function fetchImageBlob(id: string): Promise<Blob> {
-  const url = `${await baseUrl()}/api/image/output/${id}`;
+export async function fetchImageBlob(id: string, original = false): Promise<Blob> {
+  const url = `${await baseUrl()}/api/image/output/${id}${original ? '?original=true' : ''}`;
   const resp = await fetch(url, { headers: await authHeaders() });
   if (!resp.ok) throw new Error(`Failed to fetch image: ${resp.status}`);
   return resp.blob();
 }
 
-export async function fetchImageBlobUrl(id: string): Promise<string> {
-  const blob = await fetchImageBlob(id);
+export async function fetchImageBlobUrl(id: string, original = false): Promise<string> {
+  const blob = await fetchImageBlob(id, original);
   return URL.createObjectURL(blob);
 }
 

@@ -2,13 +2,19 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Download, Minus, Plus, Scan, X } from 'lucide-react';
 import { usePaneVisible } from './Panes';
+import ImageEnhancer from './ImageEnhancer';
+import EnhancedImageComparison from './EnhancedImageComparison';
+import type { ImageJob } from '../lib/sidecar';
 
 /** Uses the already authenticated blob URL; opening a preview never navigates
  * away from the app or creates a public URL for a private generated image. */
-export function ImageViewer({ src, alt, name, onClose }: {
-  src: string; alt: string; name?: string; onClose: () => void;
+export function ImageViewer({ src, alt, name, sourcePath, job, onClose }: {
+  src: string; alt: string; name?: string; sourcePath?: string; job?: ImageJob; onClose: () => void;
 }) {
   const [zoom, setZoom] = useState(1);
+  const [enhanced, setEnhanced] = useState<{ src: string; name: string } | null>(null);
+  const [dimensions, setDimensions] = useState('');
+  const display = enhanced ?? { src, name };
   const panel = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -33,20 +39,23 @@ export function ImageViewer({ src, alt, name, onClose }: {
           <span className="text-xs tabular-nums">{zoom === 1 ? 'Fit' : `${zoom * 100}%`}</span>
           <button className="tb-btn" aria-label="Zoom in" disabled={zoom === 4} onClick={() => setZoom(value => Math.min(4, value + 0.5))}><Plus size={18} /></button>
           <button className="tb-btn" aria-label="Fit image" onClick={() => setZoom(1)}><Scan size={18} /></button>
-          {name && <a className="tb-btn" href={src} download={name} aria-label="Download image"><Download size={18} /></a>}
+          {display.name && <a className="tb-btn" href={display.src} download={display.name} aria-label="Download image"><Download size={18} /></a>}
           <button className="tb-btn" aria-label="Close image" onClick={onClose}><X size={20} /></button>
         </div>
         <div className="image-viewer-canvas">
           <div className="image-viewer-content" style={{ width: `${zoom * 100}%`, height: zoom === 1 ? '100%' : 'auto' }}>
-            <img src={src} alt={alt} style={{ maxHeight: zoom === 1 ? '100%' : undefined, width: zoom === 1 ? 'auto' : '100%' }} />
+            <img src={display.src} alt={alt} onLoad={event => setDimensions(`${event.currentTarget.naturalWidth} × ${event.currentTarget.naturalHeight}`)} style={{ maxHeight: zoom === 1 ? '100%' : undefined, width: zoom === 1 ? 'auto' : '100%' }} />
           </div>
         </div>
+        {job?.enhanced ? <EnhancedImageComparison job={job} onView={setEnhanced} />
+          : sourcePath && <ImageEnhancer sourcePath={sourcePath} onView={setEnhanced} />}
+        {dimensions && <div className="text-xs text-[var(--text-faint)] px-3 pb-2">{dimensions} pixels</div>}
       </div>
     </div>, document.body);
 }
 
-function PreviewButton({ src, alt, className, name, buttonClassName = '' }: {
-  src: string; alt: string; className?: string; name?: string; buttonClassName?: string;
+function PreviewButton({ src, alt, className, name, sourcePath, job, buttonClassName = '' }: {
+  src: string; alt: string; className?: string; name?: string; sourcePath?: string; job?: ImageJob; buttonClassName?: string;
 }) {
   const [open, setOpen] = useState(false);
   const close = useCallback(() => setOpen(false), []);
@@ -54,7 +63,7 @@ function PreviewButton({ src, alt, className, name, buttonClassName = '' }: {
     <button type="button" className={`image-preview-button ${buttonClassName}`} aria-label={`Enlarge ${alt || 'image'}`} onClick={() => setOpen(true)}>
       <img src={src} alt={alt} className={className} />
     </button>
-    {open && <ImageViewer src={src} alt={alt} name={name} onClose={close} />}
+    {open && <ImageViewer key={sourcePath ?? src} src={src} alt={alt} name={name} sourcePath={sourcePath} job={job} onClose={close} />}
   </>;
 }
 

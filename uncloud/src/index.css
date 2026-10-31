@@ -129,6 +129,14 @@ html, body, #root { height: 100%; margin: 0; }
 .image-viewer-canvas { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; }
 .image-viewer-content { display: flex; align-items: center; justify-content: center; min-height: 100%; padding: 12px; }
 .image-viewer-content img { display: block; max-width: 100%; object-fit: contain; }
+.image-enhancement-panel { flex: 0 0 auto; padding: 8px 12px; border-top: 1px solid var(--border); max-height: 30%; overflow-y: auto; }
+.image-enhancement-panel [aria-pressed="true"] { background: var(--bg-raised); }
+.image-enhancement-button { width: auto; min-height: 36px; padding: 6px 12px; border: 1px solid var(--border); border-radius: 8px; white-space: nowrap; font-size: 12px; cursor: pointer; }
+.image-enhancement-button:disabled { opacity: .5; cursor: default; }
+.image-enhancement-save { margin-top: 6px; }
+.image-enhancement-save > div { align-items: flex-start; }
+.image-enhancement-save > div > div { justify-content: flex-start; }
+.image-enhancement-save button { white-space: nowrap; }
 @media (max-width: 767.98px) {
   .image-viewer-backdrop { padding: 0; }
   .image-viewer { border: 0; border-radius: 0; }

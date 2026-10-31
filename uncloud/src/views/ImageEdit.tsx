@@ -2,6 +2,7 @@ import AutoGrowTextarea from "../components/AutoGrowTextarea";
 import { useDismiss } from '../lib/useDismiss';
 import ActivityOrb from '../components/ActivityOrb';
 import ImagePreview from '../components/ImagePreview';
+import AutoImageEnhancement, { useAutoImageEnhancement } from '../components/AutoImageEnhancement';
 import { useEffect, useRef, useState } from 'react';
 import { ChevronDown, ImagePlus, Wand2, X, ArrowRight } from 'lucide-react';
 import { getLibrary, uploadImage, editImage, getImageJob, fetchImageBlobUrl, stopImage } from '../lib/sidecar';
@@ -23,6 +24,7 @@ const PRESETS = [
 ];
 
 export default function ImageEdit() {
+  const [autoEnhance] = useAutoImageEnhancement();
   const libraryVersion = useLibraryVersion();
   const [models, setModels] = useState<LocalModel[]>([]);
   const [model, setModel] = useState<LocalModel | null>(null);
@@ -32,6 +34,8 @@ export default function ImageEdit() {
   const [refPath, setRefPath] = useState<string | null>(null);
   const [refPreview, setRefPreview] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [starting, setStarting] = useState(false);
+  const [startError, setStartError] = useState('');
 
   const [instruction, setInstruction] = useState('');
   const [job, setJob] = useState<ImageJob | null>(null);
@@ -92,12 +96,17 @@ export default function ImageEdit() {
   }
 
   async function run() {
-    if (!model || !refPath || !instruction.trim() || (job && !job.done)) return;
+    if (!model || !refPath || !instruction.trim() || busy) return;
+    setStarting(true); setStartError('');
     setOutUrl(null);
+    try {
     setJob(await editImage(model.path, instruction.trim(), refPath, model.catalog_id, {
       steps: model.defaults?.steps,
       guidance: model.defaults?.guidance,
+      auto_enhance: autoEnhance,
     }));
+    } catch (error) { setStartError(String(error)); }
+    finally { setStarting(false); }
   }
 
   /** Send the current result back round as the new input, so edits can stack. */
@@ -107,7 +116,7 @@ export default function ImageEdit() {
     await onFile(new File([blob], 'edited.png', { type: 'image/png' }));
   }
 
-  const busy = !!job && !job.done;
+  const busy = starting || !!job && !job.done;
 
   const split = useSplit(busy);
 
@@ -210,6 +219,9 @@ export default function ImageEdit() {
           </p>
         </div>
 
+        <AutoImageEnhancement disabled={busy} />
+        {startError && <p role="alert" className="text-xs text-rose-400">{startError}</p>}
+
         <button
           onClick={run}
           disabled={!model || !refPath || !instruction.trim() || busy}
@@ -223,7 +235,8 @@ export default function ImageEdit() {
       <div className={`flex-1 min-w-0 overflow-y-auto p-6 flex items-center justify-center split-pane${split.on(1)}`}>
         {outUrl ? (
           <div className="flex flex-col items-center gap-3 max-h-full">
-            <ImagePreview src={outUrl} alt="Edited image" name={job?.output_path?.split(/[\\/]/).pop()} className="max-h-[70vh] rounded-xl border border-[var(--border)]" />
+            <ImagePreview src={outUrl} alt="Edited image" name={job?.output_path?.split(/[\\/]/).pop()} sourcePath={job?.output_path ?? undefined} job={job ?? undefined} className="max-h-[70vh] rounded-xl border border-[var(--border)]" />
+            {job?.enhancement_error && <p role="status" className="text-xs text-[var(--text-dim)] max-w-md text-center">{job.enhancement_error}</p>}
             <button
               onClick={useResultAsInput}
               className="flex items-center gap-1.5 text-[11px] px-3 py-1.5 rounded-full bg-[var(--bg-inset)] text-[var(--text-dim)] hover:text-white transition"
@@ -243,7 +256,7 @@ export default function ImageEdit() {
           <div className="flex flex-col items-center gap-3 text-[var(--text-dim)]">
             <ActivityOrb state="working" size={20} label="Working…" />
             <span className="text-sm">
-              {job?.step ? `Editing — step ${job.step}/${job.total_steps}` : (job?.phase || 'Preparing edit…')}
+              {job?.original_path ? job.phase : job?.step ? `Editing — step ${job.step}/${job.total_steps}` : (job?.phase || 'Preparing edit…')}
             </span>
             <button
               onClick={() => { void stopImage(); }}

@@ -49,7 +49,7 @@ function Thumb({ file }: { file: OutputFile }) {
   }
   if (file.kind === 'image') {
     return url
-      ? <ImagePreview src={url} alt={file.name} name={file.name} buttonClassName="w-full h-full" className="w-full h-full object-cover" />
+      ? <ImagePreview src={url} alt={file.name} name={file.name} sourcePath={file.path} buttonClassName="w-full h-full" className="w-full h-full object-cover" />
       : <div className="w-full h-full bg-[var(--bg-inset)]" />;
   }
   return (

@@ -2522,11 +2522,27 @@ class ImageGenerateBody(BaseModel):
     seed: int | None = None
     #: How many images. They render one after another, each on its own seed.
     count: int = 1
+    auto_enhance: bool = False
 
 
 #: A batch is queued work the machine is committed to; past this it is better
 #: started again than left running for an hour.
 MAX_BATCH = 8
+
+
+async def _authorize_auto_enhancement(enabled: bool) -> None:
+    if not enabled:
+        return
+    from .image_upscale import model_info
+
+    info = await asyncio.to_thread(model_info)
+    if not info["ready"]:
+        gated(
+            "install_image_enhancement", Risk.INSTALL,
+            "Download the 64 MB model for automatic 2× image enhancement",
+            preview={"download_bytes": info["size_bytes"], "scale": 2,
+                     "original_preserved": True}, origin="image",
+        )
 
 
 def _batch_seeds(seed: int | None, count: int) -> list[int]:
@@ -2547,6 +2563,7 @@ async def generate_image(body: ImageGenerateBody, request: Request) -> dict:
     """Start one image or a batch. Returns the first job, with every job in
     the batch under `batch`. Approved once for the whole batch."""
     seeds = _batch_seeds(body.seed, body.count)
+    await _authorize_auto_enhancement(body.auto_enhance)
     gated(
         "generate_image",
         Risk.GENERATE,
@@ -2573,6 +2590,7 @@ async def generate_image(body: ImageGenerateBody, request: Request) -> dict:
             lora_scales=body.lora_scales,
             text_encoder_path=body.text_encoder_path,
             label=f"{i + 1} of {body.count}" if body.count > 1 else None,
+            auto_enhance=body.auto_enhance,
         )
         for i, seed in enumerate(seeds)
     ]
@@ -2582,6 +2600,54 @@ async def generate_image(body: ImageGenerateBody, request: Request) -> dict:
 
 UPLOAD_DIR = CONFIG_DIR / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+
+@app.get("/api/image/enhancement", dependencies=[Depends(require_token)])
+async def image_enhancement_info() -> dict:
+    from .image_upscale import model_info
+
+    return await asyncio.to_thread(model_info)
+
+
+@app.post("/api/image/enhancement/prepare", dependencies=[Depends(require_token)])
+async def prepare_image_enhancement() -> dict:
+    """First-use setup has its own approval, before a render is submitted."""
+    from .image_upscale import ensure_model, model_info
+
+    await _authorize_auto_enhancement(True)
+    await asyncio.to_thread(
+        ensure_model, download=True, check=lambda: None, progress=lambda _: None)
+    return await asyncio.to_thread(model_info)
+
+
+class ImageEnhanceBody(BaseModel):
+    source_path: str
+    download_model: bool = False
+
+
+@app.post("/api/image/enhance", dependencies=[Depends(require_token)])
+async def enhance_image(body: ImageEnhanceBody, request: Request) -> dict:
+    from .image_upscale import model_info, validate_source
+
+    try:
+        source = await asyncio.to_thread(validate_source, body.source_path, settings.output_dir)
+    except (ValueError, OSError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    info = await asyncio.to_thread(model_info)
+    if not info["ready"] and not body.download_model:
+        raise HTTPException(status_code=409, detail="Download the 64 MB enhancement model first")
+    gated(
+        "enhance_image", Risk.INSTALL if not info["ready"] else Risk.GENERATE,
+        ("Download the 64 MB enhancement model and enhance " if not info["ready"]
+         else "Enhance 2×: ") + source.name,
+        preview={"source": str(source), "scale": 2, "original_preserved": True,
+                 "download_bytes": 0 if info["ready"] else info["size_bytes"]},
+        origin="image",
+    )
+    job = image_engine.start_upscale(str(source), download=body.download_model)
+    claim_jobs("image", [job.id], request)
+    return job.to_dict()
+
 
 @app.post("/api/chat/attachments", dependencies=[Depends(require_token)])
 async def upload_chat_attachment(file: UploadFile = File(...)) -> dict:
@@ -2636,11 +2702,13 @@ class ImageEditBody(BaseModel):
     seed: int | None = None
     strength: float | None = None
     count: int = 1
+    auto_enhance: bool = False
 
 
 @app.post("/api/image/edit", dependencies=[Depends(require_token)])
 async def edit_image(body: ImageEditBody, request: Request) -> dict:
     seeds = _batch_seeds(body.seed, body.count)
+    await _authorize_auto_enhancement(body.auto_enhance)
     entry = get_entry(body.catalog_id) if body.catalog_id else None
     jobs = [
         image_engine.start_edit(
@@ -2655,6 +2723,7 @@ async def edit_image(body: ImageEditBody, request: Request) -> dict:
             strength=body.strength,
             mflux_cli=entry.mflux_cli if entry else "mflux-generate-kontext",
             label=f"{i + 1} of {body.count}" if body.count > 1 else None,
+            auto_enhance=body.auto_enhance,
         )
         for i, seed in enumerate(seeds)
     ]
@@ -2680,6 +2749,7 @@ class ProductGenerateBody(BaseModel):
     steps: int | None = None
     guidance: float | None = None
     seed: int | None = None
+    auto_enhance: bool = False
 
 
 @app.post("/api/product/generate", dependencies=[Depends(require_token)])
@@ -2688,6 +2758,7 @@ async def product_generate(body: ProductGenerateBody, request: Request) -> list[
     holds several GB, so overlapping them would thrash memory."""
     if not body.shots:
         raise HTTPException(status_code=400, detail="Pick at least one shot type")
+    await _authorize_auto_enhancement(body.auto_enhance)
     entry = get_entry(body.catalog_id) if body.catalog_id else None
     cli = entry.mflux_cli if entry else "mflux-generate-kontext"
 
@@ -2718,6 +2789,7 @@ async def product_generate(body: ProductGenerateBody, request: Request) -> list[
             seed=body.seed,
             mflux_cli=cli,
             label=shot.name if shot else shot_id,
+            auto_enhance=body.auto_enhance,
         )
         jobs.append(job.to_dict())
         claim_jobs("image", [job.id], request)
@@ -2833,12 +2905,15 @@ def stop_image_jobs(job_id: str | None = None) -> dict:
 
 
 @app.get("/api/image/output/{job_id}", dependencies=[Depends(require_token)])
-def get_image_output(job_id: str, request: Request) -> FileResponse:
+def get_image_output(job_id: str, request: Request, original: bool = False) -> FileResponse:
     require_job("image", job_id, request)
     job = image_engine.jobs.get(job_id)
-    if not job or not job.output_path:
+    if not job:
+        raise HTTPException(status_code=404, detail="Unknown job")
+    path = (job.original_path or job.output_path) if original else job.output_path
+    if not path:
         raise HTTPException(status_code=404, detail="Image not ready")
-    return FileResponse(job.output_path, media_type="image/png")
+    return FileResponse(path, media_type="image/png")
 
 
 # ------------------------------------------------------------------- video

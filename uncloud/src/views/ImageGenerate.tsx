@@ -3,6 +3,7 @@ import AutoGrowTextarea from "../components/AutoGrowTextarea";
 import { useDismiss } from '../lib/useDismiss';
 import ActivityOrb from '../components/ActivityOrb';
 import ImagePreview from '../components/ImagePreview';
+import AutoImageEnhancement, { useAutoImageEnhancement } from '../components/AutoImageEnhancement';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ChevronDown, LayoutGrid, Shuffle, SlidersHorizontal, Sparkles, UserRound, UserRoundPlus } from 'lucide-react';
 import { getLibrary, generateImage, editImage, getImageJob, fetchImageBlobUrl,
@@ -42,6 +43,7 @@ const ENGINE_LABEL: Record<string, string> = { 'gguf-diffusion': 'assembled' };
 const REMEMBERED = 'uncloud.image.jobs';
 
 export default function ImageGenerate({ onEdit }: { onEdit?: () => void }) {
+  const [autoEnhance] = useAutoImageEnhancement();
   const [hasEditors, setHasEditors] = useState(false);
   const [models, setModels] = useState<LocalModel[]>([]);
   const libraryVersion = useLibraryVersion();
@@ -52,6 +54,8 @@ export default function ImageGenerate({ onEdit }: { onEdit?: () => void }) {
   // of the width, so there it starts closed and opens over the canvas instead.
   const [optionsOpen, setOptionsOpen] = useState(() => !isNarrow());
   const [defaultsError, setDefaultsError] = useState('');
+  const [starting, setStarting] = useState(false);
+  const [startError, setStartError] = useState('');
   const [loraPath, setLoraPath] = useState('');
   const [loraScale, setLoraScale] = useState(1);
   const [prompt, setPrompt] = useState('');
@@ -220,7 +224,9 @@ export default function ImageGenerate({ onEdit }: { onEdit?: () => void }) {
   }
 
   async function generate() {
-    if (!model || !prompt.trim()) return;
+    if (!model || !prompt.trim() || running) return;
+    setStarting(true); setStartError('');
+    try {
 
     // A character's description goes into the prompt either way; the reference
     // image is what actually holds the likeness, so use it when we can.
@@ -231,7 +237,7 @@ export default function ImageGenerate({ onEdit }: { onEdit?: () => void }) {
     if (canUseReference && character?.reference_path) {
       begin(await editImage(model.path, described, character.reference_path,
                             model.catalog_id, {
-        steps, guidance, width, height, count,
+        steps, guidance, width, height, count, auto_enhance: autoEnhance,
         seed: seed.trim() ? Number(seed.trim()) : undefined,
       }));
       return;
@@ -239,7 +245,7 @@ export default function ImageGenerate({ onEdit }: { onEdit?: () => void }) {
 
     const newJob = await generateImage(model.path, model.engine, described, model.catalog_id, {
       negative_prompt: negativePrompt.trim() || undefined,
-      steps, guidance, width, height, count,
+      steps, guidance, width, height, count, auto_enhance: autoEnhance,
       seed: seed.trim() ? Number(seed.trim()) : undefined,
       // Set for MLX checkpoints found on disk; catalog models leave these
       // unset and the engine falls back to the catalog's own entry point.
@@ -249,9 +255,14 @@ export default function ImageGenerate({ onEdit }: { onEdit?: () => void }) {
       lora_scales: loraPath ? [...(model.lora_paths ?? []).map((_, i) => model.lora_scales?.[i] ?? 1), loraScale] : model.lora_scales,
     });
     begin(newJob);
+    } catch (error) {
+      setStartError(String(error));
+    } finally {
+      setStarting(false);
+    }
   }
 
-  const running = batch.some((j) => !j.done);
+  const running = starting || batch.some((j) => !j.done);
   //: The one rendering now, for the progress line.
   const current = batch.find((j) => j.status === 'running') ?? batch.find((j) => !j.done) ?? null;
 
@@ -362,6 +373,9 @@ export default function ImageGenerate({ onEdit }: { onEdit?: () => void }) {
           </button>
         </header>
 
+        {starting && <p role="status" className="px-5 py-2 text-xs text-[var(--text-dim)]">Preparing image…</p>}
+        {startError && <p role="alert" className="px-5 py-2 text-xs text-rose-400">{startError}</p>}
+
         <div className="flex-1 flex items-center justify-center p-6 overflow-hidden">
           {batch.length > 1 && !focus ? (
             <div className="w-full h-full overflow-y-auto">
@@ -378,7 +392,7 @@ export default function ImageGenerate({ onEdit }: { onEdit?: () => void }) {
                       <span className="flex flex-col items-center gap-2 text-[11px] text-[var(--text-faint)]">
                         {j.status === 'running' && <ActivityOrb state="working" size={20} label="Working…" />}
                         {j.status === 'running'
-                          ? (j.total_steps ? `Step ${j.step}/${j.total_steps}` : 'Starting…')
+                          ? (j.original_path ? j.phase : j.total_steps ? `Step ${j.step}/${j.total_steps}` : j.phase || 'Starting…')
                           : 'Waiting its turn'}
                       </span>
                     )}
@@ -406,6 +420,8 @@ export default function ImageGenerate({ onEdit }: { onEdit?: () => void }) {
                 src={imageUrl}
                 alt={prompt}
                 name={job?.output_path?.split(/[\\/]/).pop()}
+                sourcePath={job?.output_path ?? undefined}
+                job={job ?? undefined}
                 className="min-h-0 max-h-full max-w-full object-contain rounded-xl border border-[var(--border)]"
               />
               <div className="flex items-center gap-2">
@@ -432,14 +448,18 @@ export default function ImageGenerate({ onEdit }: { onEdit?: () => void }) {
                 path={job?.output_path ?? null}
                 onDiscarded={() => job && forget(job.id)}
               />
+              {job?.enhancement_error && <p role="status" className="text-xs text-[var(--text-dim)] max-w-md text-center">{job.enhancement_error}</p>}
             </div>
           ) : running && current ? (
             <div className="relative w-full max-w-2xl min-h-80 rounded-2xl overflow-hidden flex flex-col items-center justify-center gap-3 bg-black/40 text-[var(--text-dim)] p-8">
               <ActivityOrb state="shaping" size={64} label="Generating image…" />
               <span className="text-sm">
-                {current.total_steps ? `Generating — step ${current.step}/${current.total_steps}` : 'Generating…'}
+                {current.original_path || ['Loading model', 'Reading prompt', 'Decoding image', 'Saving image'].includes(current.phase ?? '')
+                  ? `${current.phase}…`
+                  : current.total_steps ? `Generating — step ${current.step}/${current.total_steps}` : 'Generating…'}
+                {current.elapsed_seconds != null ? ` · ${Math.round(current.elapsed_seconds)}s` : ''}
               </span>
-              {model?.engine === 'mflux' && (
+              {model?.engine === 'mflux' && !current.original_path && !['Decoding image', 'Saving image'].includes(current.phase ?? '') && (
                 <span className="text-[11px] text-[var(--text-faint)]">
                   {current.step > 0
                     ? 'Model is loaded — rendering.'
@@ -450,7 +470,7 @@ export default function ImageGenerate({ onEdit }: { onEdit?: () => void }) {
                   together, so a new prompt means loading the encoder, then
                   swapping it for the image model. Saying "it stays loaded"
                   here would be a lie the timer immediately exposes. */}
-              {model?.engine === 'flux2-profile' && (
+              {model?.engine === 'flux2-profile' && !current.original_path && (
                 <span className="text-[11px] text-[var(--text-faint)] max-w-sm text-center leading-relaxed">
                   {current.step > 0
                     ? 'Rendering.'
@@ -563,6 +583,8 @@ export default function ImageGenerate({ onEdit }: { onEdit?: () => void }) {
               Done
             </button>
           </div>
+
+          <AutoImageEnhancement disabled={running} />
 
           {model?.engine === 'mflux' && <div className="flex flex-col gap-2">
             <span className="text-xs text-[var(--text-dim)]">LoRA adapter</span>

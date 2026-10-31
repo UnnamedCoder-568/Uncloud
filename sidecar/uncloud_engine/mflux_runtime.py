@@ -114,14 +114,27 @@ _fix_lokr_dims_for_odd_bit_widths()
 
 
 class _StepProgress:
-    """mflux's in-loop callback protocol, used only to report step counts."""
+    """Job-local progress, including decode after the last diffusion step."""
 
-    def __init__(self, on_step: Callable[[int], None]) -> None:
+    def __init__(self, on_step: Callable[[int], None] | None,
+                 on_phase: Callable[[str], None] | None = None) -> None:
         self._on_step = on_step
+        self._on_phase = on_phase
+
+    def phase(self, message: str) -> None:
+        if self._on_phase:
+            self._on_phase(message)
+
+    def call_before_loop(self, **kwargs) -> None:
+        self.phase("Rendering")
+
+    def call_after_loop(self, **kwargs) -> None:
+        self.phase("Decoding image")
 
     def call_in_loop(self, t, seed, prompt, latents, config, time_steps) -> None:  # noqa: ANN001
         try:
-            self._on_step(int(t) + 1)
+            if self._on_step:
+                self._on_step(int(t) + 1)
         except Cancelled:
             # The one exception that is allowed through. Suppressing everything
             # here meant Stop did nothing at all to an mflux render: the
@@ -197,6 +210,7 @@ class MfluxRuntime:
         lora_paths: list[str] | None = None,
         lora_scales: list[float] | None = None,
         on_step: Callable[[int], None] | None = None,
+        on_phase: Callable[[str], None] | None = None,
         out_path: str | Path,
     ) -> str:
         if cli not in _VARIANTS:
@@ -208,19 +222,11 @@ class MfluxRuntime:
         # adapters is a different model and must not be served from the cache.
         key = (cli, model_path, quantize, base, loras, scales)
         if self._key != key:
+            if on_phase:
+                on_phase("Loading model")
             self.unload()
             self._model = self._build(cli, model_path, quantize, base, loras, scales)
             self._key = key
-
-        if on_step is not None:
-            try:
-                from mflux.callbacks.callback_registry import CallbackRegistry
-
-                registry = getattr(self._model, "callbacks", None)
-                if isinstance(registry, CallbackRegistry):
-                    registry.register(_StepProgress(on_step))
-            except Exception:  # noqa: BLE001 - progress is optional
-                pass
 
         kwargs: dict[str, Any] = {
             "seed": int(seed),
@@ -233,11 +239,36 @@ class MfluxRuntime:
         if negative_prompt:
             kwargs["negative_prompt"] = negative_prompt
 
-        image = self._model.generate_image(**kwargs)
-        out = Path(out_path)
-        out.parent.mkdir(parents=True, exist_ok=True)
-        image.save(str(out))
-        return str(out)
+        registry = None
+        progress = None
+        if on_step is not None or on_phase is not None:
+            try:
+                from mflux.callbacks.callback_registry import CallbackRegistry
+
+                registry = getattr(self._model, "callbacks", None)
+                if isinstance(registry, CallbackRegistry):
+                    progress = _StepProgress(on_step, on_phase)
+                    registry.register(progress)
+            except Exception:  # noqa: BLE001 - progress is optional
+                pass
+
+        try:
+            if on_phase:
+                on_phase("Reading prompt")
+            image = self._model.generate_image(**kwargs)
+            out = Path(out_path)
+            out.parent.mkdir(parents=True, exist_ok=True)
+            if on_phase:
+                on_phase("Saving image")
+            image.save(str(out))
+            return str(out)
+        finally:
+            # The model stays resident, but a job's progress/cancellation
+            # callback must not. Keep the registry and all other callbacks.
+            for group in ("in_loop", "before_loop", "after_loop"):
+                callbacks = getattr(registry, group, None)
+                if progress is not None and isinstance(callbacks, list):
+                    callbacks[:] = [item for item in callbacks if item is not progress]
 
 
 mflux_runtime = MfluxRuntime()

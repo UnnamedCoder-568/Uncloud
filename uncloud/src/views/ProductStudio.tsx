@@ -2,6 +2,7 @@ import AutoGrowTextarea from "../components/AutoGrowTextarea";
 import { useDismiss } from '../lib/useDismiss';
 import ActivityOrb from '../components/ActivityOrb';
 import ImagePreview from '../components/ImagePreview';
+import AutoImageEnhancement, { useAutoImageEnhancement } from '../components/AutoImageEnhancement';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, ImagePlus, Sparkles, X, Check, FolderDown } from 'lucide-react';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
@@ -34,6 +35,7 @@ interface Result {
 const REMEMBERED = 'uncloud.product.jobs';
 
 export default function ProductStudio() {
+  const [autoEnhance] = useAutoImageEnhancement();
   const libraryVersion = useLibraryVersion();
   const [models, setModels] = useState<LocalModel[]>([]);
   const [model, setModel] = useState<LocalModel | null>(null);
@@ -171,6 +173,7 @@ export default function ProductStudio() {
     setResults([]);
     try {
       const jobs = await generateProductShots({
+        auto_enhance: autoEnhance,
         model_path: model.path,
         reference_path: refPath,
         category: categoryId,
@@ -392,6 +395,8 @@ export default function ProductStudio() {
           />
         </div>
 
+        <AutoImageEnhancement disabled={running} />
+
         <button
           onClick={run}
           disabled={!canRun}
@@ -441,19 +446,20 @@ export default function ProductStudio() {
               <div key={job.id} className="card overflow-hidden">
                 <div className="aspect-[3/4] bg-[var(--bg-inset)] flex items-center justify-center">
                   {url ? (
-                    <ImagePreview src={url} alt={job.label ?? job.prompt} name={job.output_path?.split(/[\\/]/).pop()} buttonClassName="w-full h-full" className="w-full h-full object-cover" />
+                    <ImagePreview src={url} alt={job.label ?? job.prompt} name={job.output_path?.split(/[\\/]/).pop()} sourcePath={job.output_path ?? undefined} job={job} buttonClassName="w-full h-full" className="w-full h-full object-cover" />
                   ) : job.status === 'error' ? (
                     <div className="text-[11px] text-rose-400 px-4 text-center">{job.error}</div>
                   ) : (
                     <div className="flex flex-col items-center gap-2 text-[var(--text-faint)]">
                       <ActivityOrb state="working" size={20} label="Working…" />
                       <span className="text-[11px]">
-                        {job.total_steps ? `${job.step}/${job.total_steps}` : 'Queued'}
+                        {job.original_path ? job.phase : job.total_steps ? `${job.step}/${job.total_steps}` : job.phase || 'Queued'}
                       </span>
                     </div>
                   )}
                 </div>
                 <div className="px-3 py-2 text-[11px] text-[var(--text-dim)]">{job.label ?? 'Shot'}</div>
+                {job.enhancement_error && <p role="status" className="px-3 pb-2 text-xs text-[var(--text-dim)]">{job.enhancement_error}</p>}
               </div>
             ))}
             </div>
